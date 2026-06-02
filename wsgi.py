@@ -19,6 +19,43 @@ def test():
     return {'status': 'ok'}, 200
 
 
+@app.route('/init-admin')
+def init_admin():
+    from app import db
+    from app.models import Barbearia, Usuario
+    from werkzeug.security import generate_password_hash
+    try:
+        barbearia = Barbearia.query.filter_by(slug='admin').first()
+        if not barbearia:
+            barbearia = Barbearia(nome='Admin', slug='admin')
+            db.session.add(barbearia)
+            db.session.flush()
+
+        usuario = Usuario.query.filter_by(email='adm@barbearia.com').first()
+        if not usuario:
+            usuario = Usuario(
+                barbearia_id=barbearia.id,
+                nome='Admin',
+                telefone='00000000000',
+                email='adm@barbearia.com',
+                senha=generate_password_hash('123456'),
+                perfil='super_admin',
+                ativo=True,
+            )
+            db.session.add(usuario)
+            msg = 'Usuário criado com sucesso.'
+        else:
+            usuario.senha = generate_password_hash('123456')
+            usuario.ativo = True
+            usuario.perfil = 'super_admin'
+            msg = 'Senha resetada com sucesso.'
+
+        db.session.commit()
+        return {'status': 'ok', 'msg': msg, 'email': 'adm@barbearia.com', 'senha': '123456'}, 200
+    except Exception as e:
+        return {'status': 'erro', 'msg': str(e)}, 500
+
+
 @app.cli.command('seed-admin')
 def seed_admin():
     """Cria ou reseta o usuário super_admin inicial."""
