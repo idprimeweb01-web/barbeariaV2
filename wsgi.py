@@ -86,5 +86,58 @@ def init_barbearia():
         return {'status': 'erro', 'msg': str(e)}, 500
 
 
+@app.cli.command('limpar-testes')
+def limpar_testes():
+    """Apaga dados de teste, mantendo barbearia c.c.barber e adm@barbearia.com."""
+    from app import db
+    from app.models import (
+        Pagamento, AtendimentoItem, ReservaProduto, AgendamentoServico,
+        Atendimento, Agendamento, HorarioBloqueado, SolicitacaoLiberacao,
+        SolicitacaoSenha, BarbeiroServico, ConfiguracaoAgenda,
+        Barbeiro, Servico, Produto, Cliente, Usuario, Barbearia,
+    )
+
+    # Preserva barbearia c.c.barber e usuário admin
+    barbearia = Barbearia.query.filter_by(slug='c.c.barber').first()
+    admin = Usuario.query.filter_by(email='adm@barbearia.com').first()
+
+    barbearia_id = barbearia.id if barbearia else None
+    admin_id = admin.id if admin else None
+
+    tabelas = [
+        Pagamento, AtendimentoItem, ReservaProduto, AgendamentoServico,
+        Atendimento, Agendamento, HorarioBloqueado, SolicitacaoLiberacao,
+        SolicitacaoSenha, BarbeiroServico, ConfiguracaoAgenda,
+    ]
+    for modelo in tabelas:
+        n = db.session.query(modelo).delete(synchronize_session=False)
+        if n: print(f"  {modelo.__tablename__}: {n} removido(s)")
+
+    # Barbeiros e usuários ligados a eles (exceto admin)
+    barbeiros = Barbeiro.query.all()
+    for b in barbeiros:
+        if b.usuario_id != admin_id:
+            u = db.session.get(Usuario, b.usuario_id)
+            db.session.delete(b)
+            if u: db.session.delete(u)
+    print(f"  barbeiros: {len(barbeiros)} removido(s)")
+
+    # Serviços, produtos, clientes
+    for modelo in [Servico, Produto, Cliente]:
+        n = db.session.query(modelo).delete(synchronize_session=False)
+        if n: print(f"  {modelo.__tablename__}: {n} removido(s)")
+
+    # Usuários extras (não admin)
+    n = db.session.query(Usuario).filter(Usuario.id != admin_id).delete(synchronize_session=False)
+    if n: print(f"  usuarios extras: {n} removido(s)")
+
+    # Barbearias extras (não c.c.barber)
+    n = db.session.query(Barbearia).filter(Barbearia.id != barbearia_id).delete(synchronize_session=False)
+    if n: print(f"  barbearias extras: {n} removido(s)")
+
+    db.session.commit()
+    print("\nOK — banco limpo. Mantidos: c.c.barber + adm@barbearia.com")
+
+
 if __name__ == "__main__":
     app.run()
