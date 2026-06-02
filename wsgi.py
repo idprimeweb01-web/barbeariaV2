@@ -1,10 +1,18 @@
 import os
-print(f"DATABASE_URL = {repr(os.getenv('DATABASE_URL'))}")
-print(f"FLASK_APP = {repr(os.getenv('FLASK_APP'))}")
+import traceback
 
-from app import create_app
+print(f"DATABASE_URL = {repr(os.getenv('DATABASE_URL'))}", flush=True)
+print(f"FLASK_APP = {repr(os.getenv('FLASK_APP'))}", flush=True)
 
-app = create_app()
+try:
+    from app import create_app
+    app = create_app()
+    print("SUCCESS: app created OK", flush=True)
+except Exception as e:
+    print(f"FATAL ERROR during app creation: {e}", flush=True)
+    traceback.print_exc()
+    raise
+
 
 @app.route('/test')
 def test():
