@@ -10,7 +10,10 @@
       "PowerShell($body = '{\"nome\":\"Caio Admin\",\"telefone\":\"11999990000\",\"email\":\"caio@barbearia.com\",\"senha\":\"123456\",\"perfil\":\"admin\"}'; $resp = Invoke-WebRequest -Uri \"http://127.0.0.1:5000/auth/register\" -Method POST -Body $body -ContentType \"application/json\" -ErrorAction Stop; Write-Output \"STATUS: $\\($resp.StatusCode\\)\"; $resp.Content)",
       "PowerShell($body = '{\"email\":\"caio@barbearia.com\",\"senha\":\"123456\"}'; $resp = Invoke-WebRequest -Uri \"http://127.0.0.1:5000/auth/login\" -Method POST -Body $body -ContentType \"application/json\" -ErrorAction Stop; Write-Output \"STATUS: $\\($resp.StatusCode\\)\"; $resp.Content; $json = $resp.Content | ConvertFrom-Json; $global:TOKEN = $json.token; Write-Output \"\"; Write-Output \"Token salvo.\")",
       "PowerShell($resp = Invoke-WebRequest -Uri \"http://127.0.0.1:5000/auth/me\" -Method GET -Headers @{ Authorization = \"Bearer $global:TOKEN\" } -ErrorAction Stop; Write-Output \"STATUS: $\\($resp.StatusCode\\)\"; $resp.Content)",
-      "PowerShell(New-Item *)"
+      "PowerShell(New-Item *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }

@@ -22,6 +22,8 @@ class Barbearia(db.Model):
     # Booking
     url_agendamento = db.Column(db.String(255), nullable=True)
 
+    chave_pix = db.Column(db.String(255), nullable=True)
+
 
 class Usuario(db.Model):
     __tablename__ = 'usuarios'
@@ -71,6 +73,10 @@ class Cliente(db.Model):
     observacoes  = db.Column(db.Text)
     ativo        = db.Column(db.Boolean, nullable=False, default=True)
     criado_em    = db.Column(db.DateTime, default=datetime.utcnow)
+
+    senha_hash       = db.Column(db.String(255), nullable=True)
+    ultimo_acesso    = db.Column(db.DateTime, nullable=True)
+    primeira_visita  = db.Column(db.Date, nullable=True)
 
 
 class Servico(db.Model):
@@ -238,3 +244,142 @@ class SolicitacaoLiberacao(db.Model):
     notificado       = db.Column(db.Boolean, default=False)   # barbeiro foi notificado da resposta
     data_solicitacao = db.Column(db.DateTime, default=datetime.utcnow)
     data_resposta    = db.Column(db.DateTime)
+
+
+class Plano(db.Model):
+    __tablename__ = 'planos'
+
+    id            = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    barbearia_id  = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False)
+    barbeiro_id   = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=False)
+    nome          = db.Column(db.String(150), nullable=False)
+    descricao     = db.Column(db.Text, nullable=True)
+    preco_mensal  = db.Column(db.Numeric(10, 2), nullable=False)
+    ativo         = db.Column(db.Boolean, default=True)
+    criado_em     = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PlanoServico(db.Model):
+    __tablename__ = 'plano_servicos'
+    __table_args__ = (
+        db.UniqueConstraint('plano_id', 'servico_id', name='uq_plano_servico'),
+    )
+
+    id                  = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    plano_id            = db.Column(db.Integer, db.ForeignKey('planos.id'), nullable=False)
+    servico_id          = db.Column(db.Integer, db.ForeignKey('servicos.id'), nullable=False)
+    limite_uso_mensal   = db.Column(db.Integer, nullable=False)
+    dias_expiracao      = db.Column(db.Integer, nullable=False)
+    ativo               = db.Column(db.Boolean, default=True)
+
+
+class ClientePlano(db.Model):
+    __tablename__ = 'cliente_plano'
+
+    id           = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    cliente_id   = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
+    plano_id     = db.Column(db.Integer, db.ForeignKey('planos.id'), nullable=False)
+    barbeiro_id  = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=False)
+    barbearia_id = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False)
+    data_inicio  = db.Column(db.Date, nullable=False)
+    data_fim     = db.Column(db.Date, nullable=True)
+    ativo        = db.Column(db.Boolean, default=True)
+    criado_em    = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ClientePlanoUso(db.Model):
+    __tablename__ = 'cliente_plano_uso'
+
+    id                = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    cliente_plano_id  = db.Column(db.Integer, db.ForeignKey('cliente_plano.id'), nullable=False)
+    servico_id        = db.Column(db.Integer, db.ForeignKey('servicos.id'), nullable=False)
+    data_uso          = db.Column(db.Date, nullable=False)
+    semana_do_mes     = db.Column(db.Integer, nullable=False)  # valores 1..4/5
+    usado             = db.Column(db.Boolean, default=False)
+
+
+class ClientePlanoSolicitacao(db.Model):
+    __tablename__ = 'cliente_plano_solicitacao'
+
+    id               = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    cliente_id       = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
+    plano_id         = db.Column(db.Integer, db.ForeignKey('planos.id'), nullable=False)
+    barbeiro_id      = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=False)
+    barbearia_id     = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False)
+    valor            = db.Column(db.Numeric(10, 2), nullable=False)
+    comprovante_url  = db.Column(db.String(255), nullable=True)  # URL do Cloudinary
+    status           = db.Column(db.String(20), nullable=False, default='pendente')  # pendente, aprovado, rejeitado
+    criado_em        = db.Column(db.DateTime, default=datetime.utcnow)
+    aprovado_em      = db.Column(db.DateTime, nullable=True)
+
+
+class VipNivel(db.Model):
+    __tablename__ = 'vip_niveis'
+    __table_args__ = (
+        db.UniqueConstraint('barbearia_id', 'nivel', name='uq_barbearia_nivel'),
+    )
+
+    id                = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    barbearia_id      = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False)
+    nivel             = db.Column(db.Integer, nullable=False)
+    brinde_descricao  = db.Column(db.Text, nullable=False)
+    tipo_brinde       = db.Column(db.String(20), nullable=False)  # fisico, desconto
+    valor_desconto    = db.Column(db.Numeric(10, 2), nullable=True)
+    ativo             = db.Column(db.Boolean, default=True)
+    criado_em         = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ClienteVip(db.Model):
+    __tablename__ = 'cliente_vip'
+    __table_args__ = (
+        db.UniqueConstraint('cliente_id', 'barbearia_id', name='uq_cliente_barbearia_vip'),
+    )
+
+    id                      = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    cliente_id              = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
+    barbearia_id            = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False)
+    nivel_vip_atual         = db.Column(db.Integer, default=0)
+    brindes_resgatados      = db.Column(db.Text, nullable=True, default='[]')  # JSON serializado como texto
+    data_proxima_renovacao  = db.Column(db.Date, nullable=True)
+    criado_em               = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizado_em           = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FeatureBarbearia(db.Model):
+    __tablename__ = 'feature_barbearia'
+
+    id                     = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    barbearia_id           = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, unique=True)
+    planos                 = db.Column(db.Boolean, default=False)
+    relatorios_avancados   = db.Column(db.Boolean, default=False)
+    vip_brindes            = db.Column(db.Boolean, default=False)
+    agendamento_login      = db.Column(db.Boolean, default=False)
+    historico_cliente      = db.Column(db.Boolean, default=False)
+    cupons                 = db.Column(db.Boolean, default=False)
+    fila_espera            = db.Column(db.Boolean, default=False)
+    comissao               = db.Column(db.Boolean, default=False)
+    notificacoes           = db.Column(db.Boolean, default=False)
+    pix_integrado          = db.Column(db.Boolean, default=False)
+    criado_em              = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizado_em          = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BarbeariaCustomizacao(db.Model):
+    __tablename__ = 'barbearia_customizacao'
+
+    id                      = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    barbearia_id            = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, unique=True)
+    cor_primaria            = db.Column(db.String(7), default='#BA7517')
+    cor_secundaria          = db.Column(db.String(7), default='#1a1a1a')
+    cor_acentuacao          = db.Column(db.String(7), default='#FFD700')
+    texto_primario          = db.Column(db.String(7), default='#FFFFFF')
+    texto_secundario        = db.Column(db.String(7), default='#CCCCCC')
+    texto_terciario         = db.Column(db.String(7), default='#888888')
+    botao_primario          = db.Column(db.String(7), default='#FFD700')
+    botao_secundario        = db.Column(db.String(7), default='#555555')
+    logo_filename           = db.Column(db.String(255), nullable=True)
+    fundo_padrao_filename   = db.Column(db.String(255), nullable=True)
+    fonte                   = db.Column(db.String(50), default='Inter')
+    criado_em               = db.Column(db.DateTime, default=datetime.utcnow)
+    atualizado_em           = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

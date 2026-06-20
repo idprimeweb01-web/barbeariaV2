@@ -64,6 +64,8 @@ def create_app():
         ConfiguracaoAgenda, Agendamento, AgendamentoServico, HorarioBloqueado, Produto,
         ReservaProduto, Atendimento, AtendimentoItem, Pagamento,
         SolicitacaoSenha, SolicitacaoLiberacao,
+        Plano, PlanoServico, ClientePlano, ClientePlanoUso, ClientePlanoSolicitacao,
+        VipNivel, ClienteVip, FeatureBarbearia, BarbeariaCustomizacao,
     )
 
     return app
