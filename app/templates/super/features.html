@@ -1,0 +1,168 @@
+{% extends "super/base.html" %}
+{% block title %}Features{% endblock %}
+{% block page_title %}Gerenciar Features{% endblock %}
+
+{% block styles %}
+<style>
+.features-container { max-width: 900px; }
+
+.barbearia-select-wrap { margin-bottom: 24px; }
+.barbearia-select-wrap label {
+  display: block; font-size: 12px; color: #666; font-weight: 600; margin-bottom: 6px;
+}
+#selectBarbearia {
+  width: 100%; max-width: 360px; padding: 10px 12px;
+  background: #1e1e1e; border: 1.5px solid #2a2a2a; border-radius: 8px;
+  color: #fff; font-family: inherit; font-size: 14px; outline: none; cursor: pointer;
+}
+#selectBarbearia:focus { border-color: var(--cor-primaria); }
+
+.feature-section {
+  background: #1e1e1e;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.feature-section-title {
+  font-size: 12px; font-weight: 700; color: #555;
+  text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px;
+}
+.feature-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 0; border-bottom: 1px solid #181818;
+}
+.feature-row:last-child { border-bottom: none; }
+.feature-name { font-size: 14px; font-weight: 700; color: #ddd; margin-bottom: 4px; }
+.feature-desc { font-size: 12px; color: #555; }
+
+.toggle-ios {
+  position: relative; width: 46px; height: 26px;
+  background: #181818; border: 1px solid #2d2d2d; border-radius: 999px;
+  cursor: pointer; transition: all .2s; flex-shrink: 0;
+}
+.toggle-ios.active { background: var(--cor-primaria); border-color: var(--cor-primaria); }
+.toggle-ios::after {
+  content: ''; position: absolute; width: 22px; height: 22px;
+  background: #fff; border-radius: 50%; top: 1px; left: 1px; transition: left .2s;
+}
+.toggle-ios.active::after { left: 22px; }
+.toggle-ios.busy { opacity: .5; cursor: wait; pointer-events: none; }
+
+.toggle-label {
+  font-size: 11px; color: #666; margin-left: 10px; font-weight: 600;
+  min-width: 56px; text-align: right;
+}
+.toggle-row.active .toggle-label { color: var(--cor-primaria); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="features-container">
+  <div class="barbearia-select-wrap">
+    <label for="selectBarbearia">Barbearia</label>
+    <select id="selectBarbearia" onchange="carregarFeatures()">
+      <option value="">Selecione uma barbearia…</option>
+    </select>
+  </div>
+
+  <div id="featuresContainer">
+    <div class="empty-state">Selecione uma barbearia para ver as features.</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const FEATURES = [
+  { key: 'planos',               name: 'Planos de Assinatura',     desc: 'Clientes podem contratar planos mensais com serviços inclusos' },
+  { key: 'vip_brindes',          name: 'Programa VIP + Brindes',   desc: 'Clientes VIP recebem brinde ao renovar plano' },
+  { key: 'pix_integrado',        name: 'PIX Integrado',            desc: 'Gestor gerencia aprovação de pagamentos PIX no painel' },
+  { key: 'agendamento_login',    name: 'Login para Agendamento',   desc: 'Clientes autenticam para agendar (requer conta)' },
+  { key: 'historico_cliente',    name: 'Histórico do Cliente',     desc: 'Clientes veem histórico completo de agendamentos' },
+  { key: 'cupons',               name: 'Sistema de Cupons',        desc: 'Criar e aplicar cupons de desconto' },
+  { key: 'fila_espera',          name: 'Fila de Espera',           desc: 'Clientes podem entrar em fila quando lotado' },
+  { key: 'relatorios_avancados', name: 'Relatórios Avançados',     desc: 'Dashboards detalhados de receita e performance' },
+  { key: 'comissao',             name: 'Controle de Comissão',     desc: 'Gerenciar comissões individuais dos barbeiros' },
+  { key: 'notificacoes',         name: 'Notificações Push',        desc: 'Enviar notificações automáticas para clientes' },
+];
+
+const SECTIONS = [
+  { title: 'CLIENTE — PLANOS',          keys: ['planos', 'vip_brindes', 'pix_integrado'] },
+  { title: 'CLIENTE — FUNCIONALIDADES', keys: ['agendamento_login', 'historico_cliente', 'cupons', 'fila_espera'] },
+  { title: 'NEGÓCIO',                   keys: ['relatorios_avancados', 'comissao', 'notificacoes'] },
+];
+
+async function carregarBarbearias() {
+  const select = document.getElementById('selectBarbearia');
+  try {
+    const barbearias = await api.super.barbearias.listar();
+    select.innerHTML = '<option value="">Selecione uma barbearia…</option>' +
+      barbearias.map(b => `<option value="${b.id}">${esc(b.nome)} (${esc(b.slug)})</option>`).join('');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+function linha(barbeariaId, f, ativo) {
+  return `
+    <div class="feature-row">
+      <div>
+        <div class="feature-name">${f.name}</div>
+        <div class="feature-desc">${f.desc}</div>
+      </div>
+      <div class="toggle-row ${ativo ? 'active' : ''}" data-feature="${f.key}" style="display:flex;align-items:center;">
+        <div class="toggle-ios ${ativo ? 'active' : ''}" onclick="alternar(${barbeariaId}, '${f.key}')"></div>
+        <div class="toggle-label">${ativo ? 'ativada' : 'inativa'}</div>
+      </div>
+    </div>`;
+}
+
+function renderizar(barbeariaId, estado) {
+  document.getElementById('featuresContainer').innerHTML = SECTIONS.map(s => `
+    <div class="feature-section">
+      <div class="feature-section-title">${s.title}</div>
+      ${FEATURES.filter(f => s.keys.includes(f.key)).map(f => linha(barbeariaId, f, !!estado[f.key])).join('')}
+    </div>
+  `).join('');
+}
+
+async function carregarFeatures() {
+  const barbeariaId = document.getElementById('selectBarbearia').value;
+  const container = document.getElementById('featuresContainer');
+  if (!barbeariaId) {
+    container.innerHTML = '<div class="empty-state">Selecione uma barbearia para ver as features.</div>';
+    return;
+  }
+
+  container.innerHTML = '<div class="empty-state">Carregando features…</div>';
+  try {
+    const estado = await api.super.features.listar(barbeariaId);
+    renderizar(barbeariaId, estado);
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state">❌ Erro ao carregar: ${e.message}</div>`;
+  }
+}
+
+async function alternar(barbeariaId, nome) {
+  const row    = document.querySelector(`.toggle-row[data-feature="${nome}"]`);
+  const toggle = row.querySelector('.toggle-ios');
+  const label  = row.querySelector('.toggle-label');
+
+  toggle.classList.add('busy');
+  try {
+    const d = await api.super.features.toggle(barbeariaId, nome);
+    toggle.classList.toggle('active', d.ativo);
+    row.classList.toggle('active', d.ativo);
+    label.textContent = d.ativo ? 'ativada' : 'inativa';
+    toast(d.mensagem, 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    toggle.classList.remove('busy');
+  }
+}
+
+carregarBarbearias();
+</script>
+{% endblock %}

@@ -306,10 +306,27 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         Relatórios
       </a>
+      <div class="nav-section">Plataforma</div>
+      <a href="/gestor/planos" class="nav-link" data-path="/gestor/planos" id="nav-planos" style="display:none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14.5 2.5-9 9"/><path d="m7.5 4.5 7 7"/><path d="m2 22 6-2 10-10-4-4L4 16l-2 6z"/></svg>
+        Planos
+      </a>
+      <a href="/gestor/vip" class="nav-link" data-path="/gestor/vip" id="nav-vip" style="display:none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 8.5 22 9.5 17 14.5 18.5 21.5 12 18 5.5 21.5 7 14.5 2 9.5 9 8.5 12 2"/></svg>
+        VIP + Brindes
+      </a>
+      <a href="/gestor/pix-approval" class="nav-link" data-path="/gestor/pix-approval" id="nav-pix" style="display:none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        Compras (PIX)
+      </a>
       <a href="/gestor/esqueci-senha" class="nav-link" data-path="/gestor/esqueci-senha" id="nav-senha">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         Redefinições
         <span class="badge-num" id="sidebar-badge" style="display:none;margin-left:auto">0</span>
+      </a>
+      <a href="/gestor/configuracoes/pix" class="nav-link" data-path="/gestor/configuracoes/pix">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><path d="M6 15h2"/></svg>
+        Configurar PIX
       </a>
     </nav>
   </aside>
@@ -440,6 +457,17 @@
     } catch {}
   }
   carregarBadge();
+
+  // ── Mostra itens de nav conforme features ativas ────────────
+  (async function() {
+    try {
+      const f = await api.features.minhaBarbearia();
+      window.features = f;
+      if (f.planos)        document.getElementById('nav-planos').style.display = '';
+      if (f.vip_brindes)   document.getElementById('nav-vip').style.display = '';
+      if (f.pix_integrado) document.getElementById('nav-pix').style.display = '';
+    } catch (e) { /* silencioso */ }
+  })();
 
   // ── Tema da barbearia ──────────────────────────────────────
   (async function() {

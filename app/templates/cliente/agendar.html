@@ -1,0 +1,206 @@
+{% extends "cliente/base.html" %}
+{% block title %}Agendar{% endblock %}
+
+{% block styles %}
+.plano-info-box { background: rgba(186,117,23,.08); border: 1px solid rgba(186,117,23,.25); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 12px; color: #ccc; }
+.plano-info-box strong { color: var(--cor-primaria); }
+.step-title { font-size: 12px; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 10px; }
+.radio-list { display: flex; flex-direction: column; gap: 8px; }
+.radio-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 8px; padding: 10px 12px;
+  cursor: pointer; font-size: 13px; color: #ccc;
+}
+.radio-item.selected { border-color: var(--cor-primaria); background: rgba(186,117,23,.08); }
+.radio-item input { accent-color: var(--cor-primaria); }
+.radio-meta { font-size: 11px; color: #777; }
+.slots-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.slot-btn {
+  padding: 9px; background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 7px;
+  color: #ccc; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.slot-btn.selected { background: var(--cor-primaria); border-color: var(--cor-primaria); color: #fff; }
+.resumo-row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 13px; border-bottom: 1px solid #2d2d2d; }
+.resumo-row:last-child { border-bottom: none; }
+.btn-block { display: block; width: 100%; text-align: center; padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 700; border: none; cursor: pointer; font-family: inherit; box-sizing: border-box; margin-top: 14px; }
+.btn-primario { background: var(--cor-primaria); color: #fff; }
+.btn-primario:disabled { opacity: .5; cursor: not-allowed; }
+{% endblock %}
+
+{% block content %}
+<div id="bLoading" class="b-loading">Carregando…</div>
+
+<div id="agendarConteudo" style="display:none">
+  <div class="plano-info-box" id="planoInfoBox" style="display:none"></div>
+
+  <div class="b-card">
+    <div class="step-title">1. Escolha o serviço</div>
+    <div class="radio-list" id="listaServicos"></div>
+  </div>
+
+  <div class="b-card">
+    <div class="step-title">2. Escolha o barbeiro</div>
+    <div class="radio-list" id="listaBarbeiros"></div>
+  </div>
+
+  <div class="b-card">
+    <div class="step-title">3. Escolha data e horário</div>
+    <input type="date" class="form-input" id="inputData" style="width:100%;padding:9px;background:#1e1e1e;border:1px solid #2d2d2d;border-radius:6px;color:#ddd;font-family:inherit;font-size:13px;box-sizing:border-box;">
+    <div class="slots-grid" id="slotsGrid"></div>
+  </div>
+
+  <div class="b-card" id="resumoBox" style="display:none">
+    <div class="step-title">Resumo</div>
+    <div class="resumo-row"><span>Serviço</span><span id="resumoServico">—</span></div>
+    <div class="resumo-row"><span>Barbeiro</span><span id="resumoBarbeiro">—</span></div>
+    <div class="resumo-row"><span>Data/Hora</span><span id="resumoDataHora">—</span></div>
+    <div class="resumo-row"><span>Preço</span><span id="resumoPreco">—</span></div>
+    <button class="btn-block btn-primario" id="btnConfirmar" onclick="confirmarAgendamento()">CONFIRMAR AGENDAMENTO</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let opcoes = null;
+let selecao = { servicoId: null, usarPlano: false, barbeiroId: null, data: null, hora: null };
+
+function atualizarResumo() {
+  const box = document.getElementById('resumoBox');
+  if (!selecao.servicoId || !selecao.barbeiroId || !selecao.hora) { box.style.display = 'none'; return; }
+
+  const sv = selecao.usarPlano
+    ? opcoes.servicos_plano.find(s => s.id === selecao.servicoId)
+    : opcoes.servicos_avulso.find(s => s.id === selecao.servicoId);
+  const barb = opcoes.barbeiros.find(b => b.id === selecao.barbeiroId);
+
+  document.getElementById('resumoServico').textContent = sv ? sv.nome : '—';
+  document.getElementById('resumoBarbeiro').textContent = barb ? barb.nome : '—';
+  document.getElementById('resumoDataHora').textContent =
+    `${new Date(selecao.data + 'T00:00').toLocaleDateString('pt-BR')} às ${selecao.hora}`;
+  document.getElementById('resumoPreco').textContent = selecao.usarPlano
+    ? '✓ Incluído no plano' : (sv ? `R$ ${sv.preco.toFixed(2)} (avulso)` : '—');
+  box.style.display = '';
+}
+
+function renderizarServicos() {
+  const temPlano = opcoes.tem_plano && opcoes.servicos_plano.length > 0;
+  let html = '';
+  if (temPlano) {
+    html += `<div class="radio-meta" style="margin-bottom:4px;">Incluídos no seu plano:</div>`;
+    html += opcoes.servicos_plano.map(s => `
+      <label class="radio-item" data-id="plano-${s.id}">
+        <span>✂️ ${s.nome} <span class="radio-meta">(${s.disponivel} disponível)</span></span>
+        <input type="radio" name="servico" onchange="selecionarServico(${s.id}, true)">
+      </label>
+    `).join('');
+    html += `<div class="radio-meta" style="margin:10px 0 4px;">Ou pague avulso:</div>`;
+  } else {
+    html += `<div class="radio-meta" style="margin-bottom:4px;">Escolha um serviço (pagará avulso):</div>`;
+  }
+  html += opcoes.servicos_avulso.map(s => `
+    <label class="radio-item" data-id="avulso-${s.id}">
+      <span>${s.nome} <span class="radio-meta">— R$ ${s.preco.toFixed(2)}</span></span>
+      <input type="radio" name="servico" onchange="selecionarServico(${s.id}, false)">
+    </label>
+  `).join('');
+  document.getElementById('listaServicos').innerHTML = html;
+}
+
+function selecionarServico(id, usarPlano) {
+  selecao.servicoId = id;
+  selecao.usarPlano = usarPlano;
+  document.querySelectorAll('#listaServicos .radio-item').forEach(el => el.classList.remove('selected'));
+  document.querySelector(`#listaServicos [data-id="${usarPlano ? 'plano' : 'avulso'}-${id}"]`)?.classList.add('selected');
+  atualizarResumo();
+}
+
+function renderizarBarbeiros() {
+  document.getElementById('listaBarbeiros').innerHTML = opcoes.barbeiros.map(b => `
+    <label class="radio-item" data-id="${b.id}">
+      <span>${b.nome}</span>
+      <input type="radio" name="barbeiro" onchange="selecionarBarbeiro(${b.id})">
+    </label>
+  `).join('') || '<p style="font-size:12px;color:#555;">Nenhum barbeiro disponível.</p>';
+}
+
+function selecionarBarbeiro(id) {
+  selecao.barbeiroId = id;
+  selecao.hora = null;
+  document.querySelectorAll('#listaBarbeiros .radio-item').forEach(el => el.classList.remove('selected'));
+  document.querySelector(`#listaBarbeiros [data-id="${id}"]`)?.classList.add('selected');
+  carregarHorarios();
+  atualizarResumo();
+}
+
+async function carregarHorarios() {
+  const grid = document.getElementById('slotsGrid');
+  grid.innerHTML = '';
+  if (!selecao.barbeiroId || !selecao.data) return;
+  try {
+    const r = await api.cliente.horariosAgendar(selecao.barbeiroId, selecao.data);
+    if (!r.slots.length) { grid.innerHTML = '<p style="font-size:12px;color:#555;">Sem horários livres nesta data.</p>'; return; }
+    grid.innerHTML = r.slots.map(h => `<button class="slot-btn" data-hora="${h}" onclick="selecionarHora('${h}')">${h}</button>`).join('');
+  } catch (e) {
+    grid.innerHTML = `<p style="font-size:12px;color:#f87171;">${e.message}</p>`;
+  }
+}
+
+function selecionarHora(h) {
+  selecao.hora = h;
+  document.querySelectorAll('.slot-btn').forEach(el => el.classList.remove('selected'));
+  document.querySelector(`.slot-btn[data-hora="${h}"]`)?.classList.add('selected');
+  atualizarResumo();
+}
+
+document.getElementById('inputData').addEventListener('change', (e) => {
+  selecao.data = e.target.value;
+  selecao.hora = null;
+  carregarHorarios();
+  atualizarResumo();
+});
+
+async function confirmarAgendamento() {
+  const btn = document.getElementById('btnConfirmar');
+  btn.disabled = true;
+  try {
+    const r = await api.cliente.agendar({
+      servico_id: selecao.servicoId,
+      barbeiro_id: selecao.barbeiroId,
+      data: selecao.data,
+      hora: selecao.hora,
+      usar_plano: selecao.usarPlano,
+    });
+    toast(r.mensagem || 'Agendamento confirmado!', 'success');
+    setTimeout(() => window.location.href = '/cliente/dashboard', 1200);
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false;
+  }
+}
+
+(async function() {
+  try {
+    opcoes = await api.cliente.opcoesAgendar();
+    if (opcoes.tem_plano) {
+      document.getElementById('planoInfoBox').style.display = '';
+      document.getElementById('planoInfoBox').innerHTML =
+        `<strong>Você tem um plano ativo.</strong> Serviços inclusos aparecem destacados abaixo.`;
+    }
+    renderizarServicos();
+    renderizarBarbeiros();
+
+    const hoje = new Date().toISOString().slice(0, 10);
+    document.getElementById('inputData').min = hoje;
+    document.getElementById('inputData').value = hoje;
+    selecao.data = hoje;
+
+    document.getElementById('agendarConteudo').style.display = '';
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    document.getElementById('bLoading').style.display = 'none';
+  }
+})();
+</script>
+{% endblock %}

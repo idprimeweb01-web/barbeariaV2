@@ -1,0 +1,256 @@
+{% extends "gestor/base.html" %}
+{% block title %}VIP + Brindes{% endblock %}
+{% block page_title %}VIP + Brindes{% endblock %}
+
+{% block styles %}
+<style>
+.vip-header { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+.btn-primary {
+  background: #2563eb; color: #fff; border: none; border-radius: 8px;
+  padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+  font-family: inherit; transition: background .15s;
+}
+.btn-primary:hover { background: #1d4ed8; }
+
+.form-group { margin-bottom: 14px; }
+.form-label { display: block; font-size: 12px; color: #888; font-weight: 600; margin-bottom: 6px; }
+.form-input, .form-textarea, .form-select {
+  width: 100%; padding: 9px 12px; background: #1e1e1e; border: 1px solid #2d2d2d;
+  border-radius: 6px; color: #ddd; font-family: inherit; font-size: 13px;
+  outline: none; box-sizing: border-box; transition: border-color .2s;
+}
+.form-input:focus, .form-textarea:focus, .form-select:focus { border-color: var(--cor-primaria); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.view-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #2d2d2d; font-size: 13px; }
+.view-row span:first-child { color: #777; }
+.view-row span:last-child { color: #ddd; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="vip-header">
+  <button class="btn-primary" onclick="abrirModalNovo()">+ Novo Nível</button>
+</div>
+
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Nível</th><th>Brinde</th><th>Tipo</th><th>Valor</th>
+        <th>Modo Brinde</th><th>Status</th><th>Ações</th>
+      </tr>
+    </thead>
+    <tbody id="vipTbody">
+      <tr><td colspan="7" style="text-align:center;color:#555;">Carregando…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Modal Editar/Novo -->
+<div class="modal-overlay" id="modalVip">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="modalVipTitulo">Novo Nível</h3>
+      <button class="modal-close" onclick="fecharModal('modalVip')">✕</button>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Nível</label>
+      <input class="form-input" id="fNivel" type="number" min="1" placeholder="1">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Nome / descrição do brinde</label>
+      <textarea class="form-textarea" id="fDescricao" rows="2" placeholder="Ex: Corte grátis no aniversário"></textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Tipo</label>
+        <select class="form-select" id="fTipo" onchange="onTipoChange()">
+          <option value="fisico">Físico</option>
+          <option value="desconto">Desconto</option>
+        </select>
+      </div>
+      <div class="form-group" id="grupoValor" style="display:none">
+        <label class="form-label">Valor do desconto</label>
+        <input class="form-input" id="fValor" type="number" min="0" step="0.01" placeholder="0,00">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="toggle-label">
+        <input type="checkbox" id="fModoBrinde" checked>
+        <span class="toggle-track"></span>
+        Modo Brinde ativo (cliente pode resgatar)
+      </label>
+    </div>
+    <div class="form-group">
+      <label class="toggle-label">
+        <input type="checkbox" id="fAtivo" checked>
+        <span class="toggle-track"></span>
+        Nível ativo
+      </label>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn-icon" onclick="fecharModal('modalVip')">Cancelar</button>
+      <button class="btn-icon" id="btnSalvarVip" onclick="salvarNivel()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Ver (read-only) -->
+<div class="modal-overlay" id="modalVerVip">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Detalhes do Nível</h3>
+      <button class="modal-close" onclick="fecharModal('modalVerVip')">✕</button>
+    </div>
+    <div id="verVipBody"></div>
+    <div class="modal-footer">
+      <button class="btn-icon" onclick="fecharModal('modalVerVip')">Fechar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let nivelEmEdicao = null;
+
+function onTipoChange() {
+  document.getElementById('grupoValor').style.display =
+    document.getElementById('fTipo').value === 'desconto' ? '' : 'none';
+}
+
+async function carregarNiveis() {
+  try {
+    const lista = await api.vip.listar();
+    renderizarNiveis(lista);
+  } catch (e) {
+    document.getElementById('vipTbody').innerHTML =
+      `<tr><td colspan="7" style="text-align:center;color:#f87171;">Erro: ${e.message}</td></tr>`;
+  }
+}
+
+function renderizarNiveis(lista) {
+  const tbody = document.getElementById('vipTbody');
+  if (!lista.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#555;">Nenhum nível VIP cadastrado.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = lista.map(v => `
+    <tr>
+      <td>🏆 ${v.nivel}</td>
+      <td>${v.brinde_descricao}</td>
+      <td>${v.tipo_brinde === 'desconto' ? 'Desconto' : 'Físico'}</td>
+      <td>${v.tipo_brinde === 'desconto' && v.valor_desconto != null ? 'R$ ' + v.valor_desconto.toFixed(2) : '—'}</td>
+      <td>
+        <label class="toggle-label" style="display:inline-flex">
+          <input type="checkbox" ${v.modo_brinde_ativo ? 'checked' : ''} onchange="toggleModoBrinde(${v.id})">
+          <span class="toggle-track"></span>
+        </label>
+      </td>
+      <td>${v.ativo ? '<span class="badge-green">ATIVO</span>' : '<span class="badge-gray">INATIVO</span>'}</td>
+      <td class="td-actions">
+        <button class="btn-icon" title="Editar" onclick="abrirModalEditar(${v.id})">✏️</button>
+        <button class="btn-icon" title="Ver" onclick="abrirModalVer(${v.id})">👁️</button>
+        <button class="btn-icon danger" title="Deletar" onclick="deletarNivel(${v.id})">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+  window._vipCache = lista;
+}
+
+function abrirModalNovo() {
+  nivelEmEdicao = null;
+  document.getElementById('modalVipTitulo').textContent = 'Novo Nível';
+  document.getElementById('fNivel').value = '';
+  document.getElementById('fDescricao').value = '';
+  document.getElementById('fTipo').value = 'fisico';
+  document.getElementById('fValor').value = '';
+  document.getElementById('fModoBrinde').checked = true;
+  document.getElementById('fAtivo').checked = true;
+  onTipoChange();
+  abrirModal('modalVip');
+}
+
+function abrirModalEditar(id) {
+  const v = (window._vipCache || []).find(x => x.id === id);
+  if (!v) return;
+  nivelEmEdicao = id;
+  document.getElementById('modalVipTitulo').textContent = 'Editar Nível';
+  document.getElementById('fNivel').value = v.nivel;
+  document.getElementById('fDescricao').value = v.brinde_descricao;
+  document.getElementById('fTipo').value = v.tipo_brinde;
+  document.getElementById('fValor').value = v.valor_desconto ?? '';
+  document.getElementById('fModoBrinde').checked = v.modo_brinde_ativo;
+  document.getElementById('fAtivo').checked = v.ativo;
+  onTipoChange();
+  abrirModal('modalVip');
+}
+
+function abrirModalVer(id) {
+  const v = (window._vipCache || []).find(x => x.id === id);
+  if (!v) return;
+  document.getElementById('verVipBody').innerHTML = `
+    <div class="view-row"><span>Nível</span><span>🏆 ${v.nivel}</span></div>
+    <div class="view-row"><span>Brinde</span><span>${v.brinde_descricao}</span></div>
+    <div class="view-row"><span>Tipo</span><span>${v.tipo_brinde === 'desconto' ? 'Desconto' : 'Físico'}</span></div>
+    <div class="view-row"><span>Valor</span><span>${v.tipo_brinde === 'desconto' && v.valor_desconto != null ? 'R$ ' + v.valor_desconto.toFixed(2) : '—'}</span></div>
+    <div class="view-row"><span>Modo Brinde</span><span>${v.modo_brinde_ativo ? 'Ativo' : 'Inativo'}</span></div>
+    <div class="view-row"><span>Status</span><span>${v.ativo ? 'Ativo' : 'Inativo'}</span></div>
+  `;
+  abrirModal('modalVerVip');
+}
+
+async function salvarNivel() {
+  const nivel     = parseInt(document.getElementById('fNivel').value);
+  const descricao = document.getElementById('fDescricao').value.trim();
+  const tipo      = document.getElementById('fTipo').value;
+  const valor     = parseFloat(document.getElementById('fValor').value);
+  const modoBrinde = document.getElementById('fModoBrinde').checked;
+  const ativo     = document.getElementById('fAtivo').checked;
+
+  if (isNaN(nivel) || nivel < 1) { toast('Informe o número do nível.', 'error'); return; }
+  if (!descricao) { toast('Informe a descrição do brinde.', 'error'); return; }
+  if (tipo === 'desconto' && (isNaN(valor) || valor < 0)) { toast('Informe um valor de desconto válido.', 'error'); return; }
+
+  const payload = {
+    nivel, brinde_descricao: descricao, tipo_brinde: tipo,
+    valor_desconto: tipo === 'desconto' ? valor : null,
+    modo_brinde_ativo: modoBrinde, ativo,
+  };
+
+  const btn = document.getElementById('btnSalvarVip');
+  btn.disabled = true;
+  try {
+    if (nivelEmEdicao) await api.vip.editar(nivelEmEdicao, payload);
+    else await api.vip.criar(payload);
+    toast('Nível salvo.', 'success');
+    fecharModal('modalVip');
+    carregarNiveis();
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function toggleModoBrinde(id) {
+  try {
+    await api.vip.toggleModoBrinde(id);
+    carregarNiveis();
+  } catch (e) { toast(e.message, 'error'); carregarNiveis(); }
+}
+
+async function deletarNivel(id) {
+  if (!confirm('Deletar este nível VIP permanentemente?')) return;
+  try {
+    await api.vip.deletar(id);
+    toast('Nível deletado.', 'success');
+    carregarNiveis();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+carregarNiveis();
+</script>
+{% endblock %}

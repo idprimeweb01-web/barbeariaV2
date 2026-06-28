@@ -8,12 +8,13 @@
   <style>
     :root {
       --cor-primaria:#BA7517; --cor-fundo:#1a1a1a; --cor-card:#2a2a2a; --fonte:'Inter',sans-serif;
+      --cor-acentuacao:#FFD700; --texto-primario:#FFFFFF; --texto-secundario:#CCCCCC; --texto-terciario:#888888;
       --cp-08:var(--cp-08); --cp-10:rgba(186,117,23,.10); --cp-12:var(--cp-12);
       --cp-15:rgba(186,117,23,.15); --cp-18:var(--cp-18); --cp-20:rgba(186,117,23,.20);
       --cp-25:var(--cp-25); --cp-30:rgba(186,117,23,.30); --cp-35:var(--cp-35);
     }
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:var(--fonte);background:var(--cor-fundo);color:#fff;min-height:100dvh;display:flex;flex-direction:column;}
+    body{font-family:var(--fonte);background:var(--cor-fundo);color:var(--texto-primario);min-height:100dvh;display:flex;flex-direction:column;}
 
     /* ── Header ──────────────────────────────────── */
     .ag-header{background:#1e1e1e;border-bottom:1px solid rgba(255,255,255,.08);padding:14px 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100;}
@@ -30,7 +31,7 @@
     /* ── Content ─────────────────────────────────── */
     .ag-content{flex:1;padding:20px;max-width:520px;margin:0 auto;width:100%;padding-bottom:6px;}
     .step-title{font-size:20px;font-weight:800;margin-bottom:6px;}
-    .step-sub{font-size:13px;color:rgba(255,255,255,.4);margin-bottom:20px;}
+    .step-sub{font-size:13px;color:var(--texto-secundario);margin-bottom:20px;}
     .step{display:none;}
     .step.active{display:block;}
     .loading-msg{text-align:center;color:rgba(255,255,255,.3);padding:24px;font-size:14px;}
@@ -49,11 +50,11 @@
     .item-row.has-qty{border-color:var(--cor-primaria);}
     .item-info{flex:1;min-width:0;}
     .item-nome{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-    .item-meta{font-size:12px;color:rgba(255,255,255,.4);margin-top:2px;}
+    .item-meta{font-size:12px;color:var(--texto-secundario);margin-top:2px;}
     .item-preco{font-size:14px;font-weight:700;color:var(--cor-primaria);white-space:nowrap;flex-shrink:0;}
     .item-counter{display:flex;align-items:center;gap:8px;flex-shrink:0;}
     .cnt-btn{width:30px;height:30px;border-radius:50%;border:1.5px solid rgba(255,255,255,.18);background:none;color:#fff;font-size:18px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;font-family:var(--fonte);padding:0;}
-    .cnt-btn:hover{border-color:var(--cor-primaria);color:var(--cor-primaria);}
+    .cnt-btn:hover{border-color:var(--cor-acentuacao);color:var(--cor-acentuacao);}
     .cnt-btn.add{background:var(--cor-primaria);border-color:var(--cor-primaria);}
     .cnt-btn.add:hover{opacity:.85;}
     .cnt-val{font-size:15px;font-weight:700;min-width:20px;text-align:center;}
@@ -69,18 +70,18 @@
     .cal-nav:hover{border-color:var(--cor-primaria);color:var(--cor-primaria);}
     .cal-month{font-size:16px;font-weight:700;}
     .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:16px;}
-    .cal-day-header{text-align:center;font-size:11px;font-weight:700;color:rgba(255,255,255,.55);padding:4px 0;}
+    .cal-day-header{text-align:center;font-size:11px;font-weight:700;color:var(--texto-secundario);padding:4px 0;}
     .cal-day{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid transparent;transition:all .15s;}
-    .cal-day:not(.disabled):not(.empty):hover{border-color:var(--cor-primaria);color:var(--cor-primaria);}
+    .cal-day:not(.disabled):not(.empty):hover{border-color:var(--cor-acentuacao);color:var(--cor-acentuacao);}
     .cal-day.selected{background:var(--cor-primaria);color:#fff;font-weight:800;border-color:var(--cor-primaria);text-shadow:0 1px 3px rgba(0,0,0,.55);}
-    .cal-day.today:not(.selected){border-color:var(--cor-primaria);color:var(--cor-primaria);font-weight:700;}
+    .cal-day.today:not(.selected){border-color:var(--cor-acentuacao);color:var(--cor-acentuacao);font-weight:700;}
     .cal-day.disabled{color:rgba(255,255,255,.15);cursor:default;}
     .cal-day.empty{cursor:default;}
 
     /* ── Slots ───────────────────────────────────── */
     .slots-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
     .slot-btn{padding:12px;background:var(--cor-card);border:2px solid rgba(255,255,255,.06);border-radius:10px;color:#fff;font-size:14px;font-weight:600;font-family:var(--fonte);cursor:pointer;text-align:center;transition:all .15s;}
-    .slot-btn:hover{border-color:var(--cor-primaria);color:var(--cor-primaria);}
+    .slot-btn:hover{border-color:var(--cor-acentuacao);color:var(--cor-acentuacao);}
     .slot-btn.selected{background:var(--cor-primaria);border-color:var(--cor-primaria);color:#fff;}
     .slot-btn.ocupado{background:rgba(220,38,38,.22);border-color:rgba(220,38,38,.55);color:#fca5a5;cursor:not-allowed;padding:8px 4px;pointer-events:none;opacity:1;}
     .slot-btn.ocupado:hover{background:rgba(220,38,38,.22);border-color:rgba(220,38,38,.55);color:#fca5a5;}
@@ -90,13 +91,13 @@
     /* ── Formulário de dados (passo 5) ───────────── */
     .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
     .form-field{margin-bottom:16px;}
-    .form-field label{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:rgba(255,255,255,.45);margin-bottom:7px;text-transform:uppercase;letter-spacing:.4px;}
+    .form-field label{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--texto-secundario);margin-bottom:7px;text-transform:uppercase;letter-spacing:.4px;}
     .form-field label .req{color:var(--cor-primaria);font-size:13px;}
     .form-field input{width:100%;padding:14px 16px;background:#1e1e1e;border:1.5px solid rgba(255,255,255,.1);border-radius:10px;color:#fff;font-family:var(--fonte);font-size:16px;outline:none;transition:border-color .2s;-webkit-appearance:none;}
-    .form-field input:focus{border-color:var(--cor-primaria);}
+    .form-field input:focus{border-color:var(--cor-acentuacao);}
     .form-field input.error{border-color:#f87171;}
     .form-field input::placeholder{color:rgba(255,255,255,.2);}
-    .field-hint{font-size:11px;color:rgba(255,255,255,.25);margin-top:5px;}
+    .field-hint{font-size:11px;color:var(--texto-terciario);margin-top:5px;}
     .field-error{font-size:11px;color:#f87171;margin-top:5px;display:none;}
     .tel-wrap{position:relative;}
     .tel-flag{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:16px;pointer-events:none;}
@@ -104,10 +105,10 @@
 
     /* ── Resumo (passo 6) ────────────────────────── */
     .resumo-card{background:var(--cor-card);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:16px;}
-    .resumo-section-title{font-size:10px;font-weight:700;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:.6px;margin:12px 0 6px;}
+    .resumo-section-title{font-size:10px;font-weight:700;color:var(--texto-terciario);text-transform:uppercase;letter-spacing:.6px;margin:12px 0 6px;}
     .resumo-row{display:flex;justify-content:space-between;align-items:flex-start;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);}
     .resumo-row:last-child{border-bottom:none;}
-    .resumo-label{font-size:13px;color:rgba(255,255,255,.4);max-width:55%;}
+    .resumo-label{font-size:13px;color:var(--texto-secundario);max-width:55%;}
     .resumo-val{font-size:13px;font-weight:600;text-align:right;max-width:55%;}
     .resumo-total{padding-top:12px;margin-top:4px;border-top:1px solid rgba(255,255,255,.1) !important;}
     .resumo-total .resumo-label{font-size:14px;font-weight:700;color:#fff;}
@@ -115,7 +116,7 @@
     .resumo-cliente-banner{display:flex;align-items:center;gap:10px;background:var(--cp-08);border:1px solid var(--cp-18);border-radius:10px;padding:12px 14px;margin-bottom:14px;}
     .rcb-av{width:34px;height:34px;border-radius:50%;background:var(--cp-20);border:1.5px solid var(--cp-35);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:var(--cor-primaria);flex-shrink:0;}
     .rcb-nome{font-size:14px;font-weight:700;}
-    .rcb-sub{font-size:12px;color:rgba(255,255,255,.4);margin-top:1px;}
+    .rcb-sub{font-size:12px;color:var(--texto-secundario);margin-top:1px;}
 
     /* ── Bottom bar ──────────────────────────────── */
     .bottom-bar{position:sticky;bottom:0;background:var(--cor-fundo);border-top:1px solid rgba(255,255,255,.06);padding:12px 20px 16px;}
@@ -124,7 +125,7 @@
     .btn-next:not(:disabled):active{transform:scale(.98);}
 
     /* ── Empty state ─────────────────────────────── */
-    .empty-state{text-align:center;padding:32px 20px;color:rgba(255,255,255,.25);font-size:13px;}
+    .empty-state{text-align:center;padding:32px 20px;color:var(--texto-terciario);font-size:13px;}
 
     /* ── Produto foto ────────────────────────────── */
     .pd-foto{width:52px;height:52px;border-radius:10px;object-fit:cover;flex-shrink:0;background:rgba(255,255,255,.05);}
@@ -148,7 +149,7 @@
   <span class="ag-header-title" id="headerTitle">Agendar</span>
 </header>
 
-<!-- 6 pontos no stepper -->
+<!-- 7 pontos no stepper -->
 <div class="stepper">
   <div class="step-dot active" id="dot1"></div>
   <div class="step-dot" id="dot2"></div>
@@ -156,6 +157,7 @@
   <div class="step-dot" id="dot4"></div>
   <div class="step-dot" id="dot5"></div>
   <div class="step-dot" id="dot6"></div>
+  <div class="step-dot" id="dot7"></div>
 </div>
 
 <div class="ag-content">
@@ -236,15 +238,37 @@
     </div>
 
     <div class="form-field">
-      <label>✉️ E-mail <span style="font-size:10px;color:rgba(255,255,255,.25);text-transform:none;letter-spacing:0">(opcional)</span></label>
+      <label>✉️ E-mail <span style="font-size:10px;color:var(--texto-terciario);text-transform:none;letter-spacing:0">(opcional)</span></label>
       <input type="email" id="cEmail" placeholder="joao@email.com" autocomplete="email"
              oninput="_syncDados()">
       <div class="field-hint">Usado para confirmações e lembretes.</div>
     </div>
   </div>
 
-  <!-- ── Passo 6: Resumo + Confirmar ────────────────────────────── -->
+  <!-- ── Passo 6: Forma de pagamento ─────────────────────────────── -->
   <div class="step" id="step6">
+    <div class="step-title">Forma de pagamento</div>
+    <div class="step-sub">Como você prefere pagar?</div>
+    <div class="barb-grid" style="grid-template-columns:1fr;gap:12px">
+      <div class="barb-card" id="pag-pix" onclick="selecionarPagamento('pix')" style="text-align:left;display:flex;align-items:center;gap:14px;padding:18px">
+        <div style="font-size:28px">💠</div>
+        <div>
+          <div class="barb-nome" style="font-size:15px">PIX</div>
+          <div class="item-meta" style="margin-top:2px">Pague agora e garanta seu horário</div>
+        </div>
+      </div>
+      <div class="barb-card" id="pag-local" onclick="selecionarPagamento('local')" style="text-align:left;display:flex;align-items:center;gap:14px;padding:18px">
+        <div style="font-size:28px">💵</div>
+        <div>
+          <div class="barb-nome" style="font-size:15px">Pagar no local</div>
+          <div class="item-meta" style="margin-top:2px">Pague na hora do atendimento</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Passo 7: Resumo + Confirmar ────────────────────────────── -->
+  <div class="step" id="step7">
     <div class="step-title">Confirmar</div>
     <div class="step-sub">Revise e confirme seu agendamento</div>
 
@@ -286,6 +310,12 @@
         <span class="resumo-val" id="rDur">—</span>
       </div>
 
+      <div class="resumo-section-title">Pagamento</div>
+      <div class="resumo-row">
+        <span class="resumo-label">Forma de pagamento</span>
+        <span class="resumo-val" id="rPagamento">—</span>
+      </div>
+
       <div class="resumo-row resumo-total">
         <span class="resumo-label">Total</span>
         <span class="resumo-val" id="rTotal">—</span>
@@ -315,6 +345,7 @@
     sobrenome: '',
     telefone:  '',
     email:     '',
+    metodoPagamento: null,
   };
   let _step = 1;
   let _calAno, _calMes;
@@ -379,7 +410,7 @@
   }
 
   /* ── Navegação ───────────────────────────────────────────────── */
-  const TOTAL_PASSOS = 6;
+  const TOTAL_PASSOS = 7;
 
   function irPasso(n) {
     document.getElementById(`step${_step}`).classList.remove('active');
@@ -397,7 +428,7 @@
       const d = document.getElementById(`dot${i}`);
       d.className = 'step-dot' + (i < _step ? ' done' : i === _step ? ' active' : '');
     }
-    const titulos = ['Barbeiro', 'Serviços', 'Produtos', 'Data e Hora', 'Seus Dados', 'Confirmar'];
+    const titulos = ['Barbeiro', 'Serviços', 'Produtos', 'Data e Hora', 'Seus Dados', 'Pagamento', 'Confirmar'];
     document.getElementById('headerTitle').textContent = titulos[_step - 1];
   }
 
@@ -409,12 +440,20 @@
       3: true,
       4: !!(S.data && S.hora),
       5: !!(S.nome && S.telefone.length >= 8),
-      6: true,
+      6: !!S.metodoPagamento,
+      7: true,
     }[_step];
     btn.disabled    = !ok;
-    btn.textContent = _step === 5 ? 'Ver resumo →'
-                    : _step === 6 ? 'Confirmar agendamento'
+    btn.textContent = _step === 6 ? 'Ver resumo →'
+                    : _step === 7 ? 'Confirmar agendamento'
                     : 'Próximo →';
+  }
+
+  function selecionarPagamento(metodo) {
+    S.metodoPagamento = metodo;
+    document.getElementById('pag-pix').classList.toggle('selected', metodo === 'pix');
+    document.getElementById('pag-local').classList.toggle('selected', metodo === 'local');
+    _atualizarBotao();
   }
 
   function voltar() {
@@ -427,7 +466,8 @@
     else if (_step === 2) { irPasso(3); carregarProdutos(); }
     else if (_step === 3) { irPasso(4); carregarStep4(); }
     else if (_step === 4) { irPasso(5); }
-    else if (_step === 5) { _syncDados(); if (!_validarStep5()) return; irPasso(6); preencherResumo(); }
+    else if (_step === 5) { _syncDados(); if (!_validarStep5()) return; irPasso(6); }
+    else if (_step === 6) { irPasso(7); preencherResumo(); }
     else                  { await confirmar(); }
   });
 
@@ -709,6 +749,7 @@
     document.getElementById('rHora').textContent  = S.hora || '—';
     const dur = _duracao();
     document.getElementById('rDur').textContent   = dur ? `${dur} min` : '—';
+    document.getElementById('rPagamento').textContent = S.metodoPagamento === 'pix' ? 'PIX' : 'Pagar no local';
     document.getElementById('rTotal').textContent = fmtR(_totalGeral());
   }
 
@@ -729,6 +770,7 @@
         data_hora:   `${S.data}T${S.hora}`,
         servicos:    S.servicos.map(sv=>({id: sv.id, quantidade: sv.quantidade})),
         produtos:    S.produtos.map(pd=>({id: pd.id, quantidade: pd.quantidade})),
+        metodo_pagamento: S.metodoPagamento,
       };
       if (S.email) payload.email = S.email;
 
@@ -761,7 +803,19 @@
       root.setProperty('--cor-primaria', cp);
       root.setProperty('--cor-fundo',    info.cor_fundo || '#1a1a1a');
       root.setProperty('--cor-card',     info.cor_card  || '#2a2a2a');
-      if (info.fonte) root.setProperty('--fonte', `'${info.fonte}', sans-serif`);
+      if (info.fonte) {
+        root.setProperty('--fonte', `'${info.fonte}', sans-serif`);
+        if (info.fonte !== 'Inter') {
+          const link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = `https://fonts.googleapis.com/css2?family=${info.fonte.replace(/ /g, '+')}:wght@400;500;600;700;800&display=swap`;
+          document.head.appendChild(link);
+        }
+      }
+      if (info.cor_acentuacao)   root.setProperty('--cor-acentuacao',   info.cor_acentuacao);
+      if (info.texto_primario)   root.setProperty('--texto-primario',   info.texto_primario);
+      if (info.texto_secundario) root.setProperty('--texto-secundario', info.texto_secundario);
+      if (info.texto_terciario)  root.setProperty('--texto-terciario',  info.texto_terciario);
       [.08,.10,.12,.15,.18,.20,.25,.30,.35].forEach(a => {
         root.setProperty(`--cp-${String(a*100).replace('.','').padStart(2,'0')}`, _rgba(cp, a));
       });

@@ -1,11 +1,13 @@
 import re
 from datetime import datetime, timedelta, time as Time, date
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import get_jwt_identity
 from werkzeug.security import generate_password_hash
 from sqlalchemy import func
 from app import db
 from app.models import Barbearia, Usuario, Barbeiro, Pagamento, Atendimento
 from app.routes.auth import super_admin_required
+from app.utils import registrar_auditoria
 
 super_admin = Blueprint('super_admin', __name__, url_prefix='/super')
 
@@ -94,6 +96,8 @@ def criar_barbearia():
     )
     db.session.add(barbearia)
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia.id, 'create', 'barbearia', barbearia.id,
+                         f'Criou barbearia "{nome}".')
 
     return jsonify({
         'mensagem':  'Barbearia criada com sucesso.',
@@ -155,6 +159,8 @@ def editar_barbearia(barbearia_id):
         barbearia.url_agendamento = url or None
 
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'barbearia', barbearia_id,
+                         f'Editou barbearia "{barbearia.nome}".')
     return jsonify({'mensagem': 'Barbearia atualizada com sucesso.', 'barbearia': _fmt_barbearia(barbearia)})
 
 
@@ -183,6 +189,8 @@ def atualizar_tema(barbearia_id):
         barbearia.fonte = (dados['fonte'] or '').strip() or 'Inter'
 
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'barbearia', barbearia_id,
+                         f'Atualizou tema de "{barbearia.nome}".')
     return jsonify({
         'mensagem': 'Tema atualizado com sucesso.',
         'tema': {
@@ -263,6 +271,8 @@ def criar_gestor():
     )
     db.session.add(usuario)
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'create', 'usuario', usuario.id,
+                         f'Criou gestor "{nome}" para "{barbearia.nome}".')
 
     return jsonify({
         'mensagem': 'Gestor criado com sucesso.',
@@ -326,6 +336,8 @@ def editar_gestor(gestor_id):
     if 'ativo' in dados:
         u.ativo = bool(dados['ativo'])
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), u.barbearia_id, 'edit', 'usuario', u.id,
+                         f'Editou gestor "{u.nome}".')
     return jsonify({'mensagem': 'Gestor atualizado.', 'gestor': {'id': u.id, 'nome': u.nome}})
 
 
@@ -343,6 +355,8 @@ def resetar_senha_gestor(gestor_id):
         return _erro('Senha mínima de 6 caracteres.')
     u.senha = _hash_senha(nova)
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), u.barbearia_id, 'edit', 'usuario', u.id,
+                         f'Redefiniu senha do gestor "{u.nome}".')
     return jsonify({'mensagem': 'Senha redefinida.', 'gestor': {'id': u.id, 'nome': u.nome}})
 
 

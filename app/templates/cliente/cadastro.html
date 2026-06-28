@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BarberOS — Cadastro</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    body { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100dvh; padding: 24px 20px; }
+    .login-wrap { width: 100%; max-width: 420px; }
+    .logo-area { text-align: center; margin-bottom: 36px; }
+    .logo-area h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+    .logo-area h1 span { color: var(--cor-primaria); }
+    .logo-area p { margin-top: 6px; color: var(--cor-texto-secundario); font-size: 14px; }
+    .auth-links { text-align: center; margin-top: 18px; font-size: 13px; color: var(--cor-texto-secundario); }
+    #msg-erro { display: none; }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="logo-area">
+      <h1>Barber<span>OS</span></h1>
+      <p>Cliente — Cadastro</p>
+    </div>
+
+    <div class="card">
+      <div id="msg-erro" class="alert alert-error" role="alert">
+        <span id="msg-erro-texto"></span>
+      </div>
+
+      <form id="form-cadastro" novalidate>
+        <div class="field">
+          <label for="slug">Barbearia (código)</label>
+          <div class="input-wrap">
+            <input type="text" id="slug" name="slug" placeholder="ex: cc-barber" required>
+          </div>
+        </div>
+        <div class="field">
+          <label for="nome">Nome completo</label>
+          <div class="input-wrap">
+            <input type="text" id="nome" name="nome" placeholder="Seu nome" required>
+          </div>
+        </div>
+        <div class="field">
+          <label for="email">E-mail</label>
+          <div class="input-wrap">
+            <input type="email" id="email" name="email" placeholder="seu@email.com" autocomplete="email" required>
+          </div>
+        </div>
+        <div class="field">
+          <label for="telefone">Telefone</label>
+          <div class="input-wrap">
+            <input type="text" id="telefone" name="telefone" placeholder="(XX) XXXXX-XXXX" required>
+          </div>
+        </div>
+        <div class="field">
+          <label for="senha">Senha</label>
+          <div class="input-wrap">
+            <input type="password" id="senha" name="senha" placeholder="Mínimo 6 caracteres" autocomplete="new-password" required>
+          </div>
+        </div>
+        <div class="field">
+          <label for="confirmar">Confirmar senha</label>
+          <div class="input-wrap">
+            <input type="password" id="confirmar" name="confirmar" placeholder="Repita a senha" autocomplete="new-password" required>
+          </div>
+        </div>
+
+        <div class="form-footer" style="justify-content:flex-start;gap:8px">
+          <label class="checkbox-wrap">
+            <input type="checkbox" id="termos" name="termos">
+            <span>Concordo com os termos de serviço</span>
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="btn-criar">
+          <span id="btn-texto">CRIAR CONTA</span>
+          <span id="btn-spinner" class="spinner" style="display:none"></span>
+        </button>
+      </form>
+    </div>
+
+    <p class="auth-links">
+      Já tem conta? <a href="/cliente/login" id="linkLogin">Entrar</a>
+    </p>
+  </div>
+
+  <script src="/static/js/api.js"></script>
+  <script>
+    (function() {
+      const slug = new URLSearchParams(location.search).get('b');
+      if (slug) {
+        document.getElementById('slug').value = slug;
+        document.getElementById('linkLogin').href = `/cliente/login?b=${encodeURIComponent(slug)}`;
+      }
+    })();
+
+    function mostrarErro(msg) {
+      const box = document.getElementById('msg-erro');
+      document.getElementById('msg-erro-texto').textContent = msg;
+      box.style.display = 'flex';
+    }
+
+    function setCarregando(ativo) {
+      document.getElementById('btn-criar').disabled = ativo;
+      document.getElementById('btn-texto').style.display = ativo ? 'none' : '';
+      document.getElementById('btn-spinner').style.display = ativo ? '' : 'none';
+    }
+
+    function mascararTelefone(v) {
+      v = v.replace(/\D/g, '').slice(0, 11);
+      if (v.length > 10) return v.replace(/(\d{2})(\d{5})(\d{0,4})/, '($1) $2-$3').trim();
+      if (v.length > 5)  return v.replace(/(\d{2})(\d{4})(\d{0,4})/, '($1) $2-$3').trim();
+      if (v.length > 2)  return v.replace(/(\d{2})(\d{0,5})/, '($1) $2').trim();
+      return v;
+    }
+    document.getElementById('telefone').addEventListener('input', (e) => {
+      e.target.value = mascararTelefone(e.target.value);
+    });
+
+    document.getElementById('form-cadastro').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      document.getElementById('msg-erro').style.display = 'none';
+
+      const slug      = document.getElementById('slug').value.trim().toLowerCase();
+      const nome      = document.getElementById('nome').value.trim();
+      const email     = document.getElementById('email').value.trim();
+      const telefone  = document.getElementById('telefone').value.trim();
+      const senha     = document.getElementById('senha').value;
+      const confirmar = document.getElementById('confirmar').value;
+      const termos    = document.getElementById('termos').checked;
+
+      if (!slug)       { mostrarErro('Informe o código da barbearia.'); return; }
+      if (!nome)       { mostrarErro('Informe seu nome.'); return; }
+      if (!telefone)   { mostrarErro('Informe seu telefone.'); return; }
+      if (!senha || senha.length < 6) { mostrarErro('A senha deve ter no mínimo 6 caracteres.'); return; }
+      if (senha !== confirmar) { mostrarErro('As senhas não coincidem.'); return; }
+      if (!termos)     { mostrarErro('É necessário concordar com os termos de serviço.'); return; }
+
+      setCarregando(true);
+      try {
+        const dados = await api.post('/auth/register', {
+          nome, email, telefone, senha, perfil: 'cliente', barbearia_slug: slug,
+        });
+        const login = await api.post('/auth/login', { email, senha });
+        api.setToken(login.token);
+        api.setUser(login.usuario);
+        window.location.href = '/cliente/dashboard';
+      } catch (err) {
+        setCarregando(false);
+        mostrarErro(err.message || 'Erro ao criar conta.');
+      }
+    });
+  </script>
+</body>
+</html>

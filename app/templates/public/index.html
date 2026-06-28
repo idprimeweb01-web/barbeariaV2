@@ -12,6 +12,10 @@
       --cor-fundo:    #1a1a1a;
       --cor-card:     #2a2a2a;
       --cor-texto:    #ffffff;
+      --texto-secundario: #CCCCCC;
+      --texto-terciario:  #888888;
+      --botao-secundario: #555555;
+      --cor-acentuacao:   #FFD700;
       --fonte:        'Inter', sans-serif;
       --cp-08: rgba(186,117,23,.08); --cp-10: rgba(186,117,23,.10);
       --cp-12: var(--cp-12); --cp-15: var(--cp-15);
@@ -40,17 +44,27 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 36px; font-weight: 800; color: var(--cor-primaria);
     }
-    .hero-nome { font-size: 32px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.5px; }
-    .hero-sub  { font-size: 16px; color: rgba(255,255,255,.5); margin-bottom: 36px; }
-    .hero-cta  {
-      display: inline-flex; align-items: center; gap: 8px;
-      background: var(--cor-primaria); color: #fff;
-      padding: 16px 36px; border-radius: 50px; font-size: 17px; font-weight: 700;
-      text-decoration: none; transition: all .2s;
+    .hero-nome { font-size: 32px; font-weight: 800; margin-bottom: 8px; letter-spacing: -0.5px; color: var(--texto-primario, var(--cor-texto)); }
+    .hero-sub  { font-size: 16px; color: var(--texto-secundario); margin-bottom: 36px; }
+
+    .hero-acoes { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 12px; }
+    .btn-acao-primaria, .btn-acao-secundaria {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 16px 28px; border-radius: 14px; font-size: 16px; font-weight: 700;
+      transition: all .2s; cursor: pointer;
+    }
+    .btn-acao-primaria {
+      background: var(--cor-primaria); color: #fff; border: none;
       box-shadow: 0 8px 32px var(--cp-35);
     }
-    .hero-cta:hover { transform: translateY(-2px); box-shadow: 0 12px 40px var(--cp-45); color:#fff; }
-    .hero-scroll { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,.3); font-size: 12px; }
+    .btn-acao-primaria:hover { transform: translateY(-2px); box-shadow: 0 12px 40px var(--cp-45); color: #fff; }
+    .btn-acao-secundaria {
+      background: transparent; color: var(--cor-texto); border: 2px solid var(--botao-secundario);
+    }
+    .btn-acao-secundaria:hover { border-color: var(--cor-primaria); color: var(--cor-primaria); }
+
+    .hero-cadastro { margin-top: 20px; font-size: 13px; color: var(--texto-terciario); }
+    .hero-cadastro a { font-weight: 700; }
 
     /* ── Sections ──────────────────────────────────────────── */
     .section { padding: 48px 24px; max-width: 600px; margin: 0 auto; }
@@ -76,7 +90,7 @@
     }
     .barbeiro-av img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
     .barbeiro-nome { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-    .barbeiro-bio  { font-size: 12px; color: rgba(255,255,255,.4); }
+    .barbeiro-bio  { font-size: 12px; color: var(--texto-terciario); }
 
     /* ── Serviços ──────────────────────────────────────────── */
     .servicos-list { display: flex; flex-direction: column; gap: 10px; }
@@ -85,25 +99,13 @@
       padding: 16px 18px; display: flex; justify-content: space-between; align-items: center;
     }
     .servico-nome { font-size: 15px; font-weight: 600; }
-    .servico-meta { font-size: 12px; color: rgba(255,255,255,.4); margin-top: 2px; }
-    .servico-preco { font-size: 16px; font-weight: 800; color: var(--cor-primaria); }
-
-    /* ── Footer CTA ────────────────────────────────────────── */
-    .footer-cta {
-      position: sticky; bottom: 0; background: var(--cor-fundo);
-      border-top: 1px solid rgba(255,255,255,.06); padding: 14px 24px;
-    }
-    .footer-cta a {
-      display: block; text-align: center; background: var(--cor-primaria); color: #fff;
-      padding: 15px; border-radius: 12px; font-size: 16px; font-weight: 700;
-      transition: all .2s;
-    }
-    .footer-cta a:hover { filter: brightness(1.1); }
+    .servico-meta { font-size: 12px; color: var(--texto-terciario); margin-top: 2px; }
+    .servico-preco { font-size: 16px; font-weight: 800; color: var(--cor-acentuacao); }
 
     /* ── Divider ───────────────────────────────────────────── */
     .divider { height: 1px; background: rgba(255,255,255,.06); margin: 0 24px; }
 
-    .loading { text-align: center; color: rgba(255,255,255,.3); padding: 32px; font-size: 14px; }
+    .loading { text-align: center; color: var(--texto-terciario); padding: 32px; font-size: 14px; }
   </style>
 </head>
 <body>
@@ -114,10 +116,17 @@
     <div id="logoArea"></div>
     <h1 class="hero-nome" id="heroNome">Carregando…</h1>
     <p class="hero-sub">Agende seu horário online, rápido e fácil</p>
-    <a class="hero-cta" id="heroBtn" href="#barbeiros">
-      Agendar agora
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-    </a>
+
+    <div class="hero-acoes">
+      <a class="btn-acao-primaria" id="btnAgendamentoRapido" href="agendar">
+        📅 Agendamento Rápido
+      </a>
+      <a class="btn-acao-secundaria" id="btnFazerLogin" href="login">
+        🔐 Fazer Login
+      </a>
+    </div>
+
+    <p class="hero-cadastro">Não tem conta? <a id="linkCadastro" href="#">Crie uma aqui</a></p>
   </section>
 
   <!-- Barbeiros -->
@@ -135,16 +144,20 @@
     <div class="servicos-list" id="servicosList"><div class="loading">Carregando…</div></div>
   </section>
 
-  <div style="height:80px"></div>
-</div>
-
-<!-- Footer CTA fixo -->
-<div class="footer-cta">
-  <a href="agendar" id="btnAgendar">Agendar horário →</a>
+  <div style="height:24px"></div>
 </div>
 
 <script>
   const SLUG = '{{ slug }}';
+  document.getElementById('linkCadastro').href = `/cliente/cadastro?b=${SLUG}`;
+
+  function _carregarFonte(nome) {
+    if (!nome || nome === 'Inter') return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?family=${nome.replace(/ /g, '+')}:wght@400;500;600;700;800&display=swap`;
+    document.head.appendChild(link);
+  }
 
   function _rgba(hex, a) {
     const h = (hex || '#BA7517').replace('#', '');
@@ -162,13 +175,18 @@
       document.getElementById('heroNome').textContent = info.nome;
       document.getElementById('pageTitle').textContent = info.nome;
 
-      // Aplica tema dinâmico
+      // Aplica tema dinâmico (Barbearia + BarbeariaCustomizacao mesclados pelo backend)
       const root = document.documentElement.style;
       const cp = info.cor_primaria || '#BA7517';
       root.setProperty('--cor-primaria', cp);
       root.setProperty('--cor-fundo',    info.cor_fundo || '#1a1a1a');
       root.setProperty('--cor-card',     info.cor_card  || '#2a2a2a');
-      if (info.fonte) root.setProperty('--fonte', `'${info.fonte}', sans-serif`);
+      if (info.fonte) { root.setProperty('--fonte', `'${info.fonte}', sans-serif`); _carregarFonte(info.fonte); }
+      if (info.texto_secundario) root.setProperty('--texto-secundario', info.texto_secundario);
+      if (info.texto_terciario)  root.setProperty('--texto-terciario',  info.texto_terciario);
+      if (info.texto_primario)   root.setProperty('--texto-primario',   info.texto_primario);
+      if (info.botao_secundario) root.setProperty('--botao-secundario', info.botao_secundario);
+      if (info.cor_acentuacao)   root.setProperty('--cor-acentuacao',   info.cor_acentuacao);
       // Tons transparentes da cor primária
       [.08,.10,.12,.15,.20,.25,.30,.35,.45].forEach(a => {
         root.setProperty(`--cp-${String(a*100).replace('.','').padStart(2,'0')}`, _rgba(cp, a));

@@ -1,7 +1,8 @@
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import get_jwt_identity
 from app import db
 from app.models import Usuario, Servico, BarbeiroServico, Barbeiro, Produto
-from app.utils import get_barbearia_atual
+from app.utils import get_barbearia_atual, registrar_auditoria
 from app.routes.auth import gestor_required, barbeiro_required
 
 catalogo = Blueprint('catalogo', __name__)
@@ -89,6 +90,8 @@ def criar_servico():
     )
     db.session.add(servico)
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'create', 'servico', servico.id,
+                         f'Criou serviço "{nome}".')
     return jsonify({'mensagem': 'Serviço criado com sucesso.', 'servico': _fmt_servico(servico)}), 201
 
 
@@ -120,6 +123,8 @@ def editar_servico(servico_id):
         servico.preco = preco
 
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'servico', servico.id,
+                         f'Editou serviço "{servico.nome}".')
     return jsonify({'mensagem': 'Serviço atualizado com sucesso.', 'servico': _fmt_servico(servico)})
 
 
@@ -134,6 +139,8 @@ def desativar_servico(servico_id):
         return _erro('Serviço já está inativo.')
     servico.ativo = False
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'delete', 'servico', servico_id,
+                         f'Desativou serviço "{servico.nome}".')
     return jsonify({'mensagem': 'Serviço desativado com sucesso.', 'id': servico_id})
 
 
@@ -229,6 +236,8 @@ def criar_produto():
     )
     db.session.add(produto)
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'create', 'produto', produto.id,
+                         f'Criou produto "{nome}".')
     return jsonify({'mensagem': 'Produto criado com sucesso.', 'produto': _fmt_produto(produto, admin=True)}), 201
 
 
@@ -255,6 +264,8 @@ def editar_produto(produto_id):
         produto.preco = preco
 
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'produto', produto.id,
+                         f'Editou produto "{produto.nome}".')
     return jsonify({'mensagem': 'Produto atualizado com sucesso.', 'produto': _fmt_produto(produto, admin=True)})
 
 
@@ -269,6 +280,8 @@ def desativar_produto(produto_id):
         return _erro('Produto já está inativo.')
     produto.ativo = False
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'delete', 'produto', produto_id,
+                         f'Desativou produto "{produto.nome}".')
     return jsonify({'mensagem': 'Produto desativado com sucesso.', 'id': produto_id})
 
 
@@ -300,6 +313,8 @@ def editar_produto_admin(produto_id):
     if 'ativo' in dados:
         produto.ativo = bool(dados['ativo'])
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'produto', produto.id,
+                         f'Editou produto "{produto.nome}" (admin).')
     return jsonify({'mensagem': 'Produto atualizado.', 'produto': _fmt_produto(produto, admin=True)})
 
 
@@ -325,6 +340,8 @@ def criar_produto_admin():
     )
     db.session.add(produto)
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'create', 'produto', produto.id,
+                         f'Criou produto "{nome}" (admin).')
     return jsonify({'mensagem': 'Produto criado.', 'produto': _fmt_produto(produto, admin=True)}), 201
 
 
@@ -337,6 +354,8 @@ def desativar_produto_admin(produto_id):
     if not produto.ativo: return _erro('Produto já está inativo.')
     produto.ativo = False
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'delete', 'produto', produto_id,
+                         f'Desativou produto "{produto.nome}" (admin).')
     return jsonify({'mensagem': 'Produto desativado.', 'id': produto_id})
 
 
@@ -370,6 +389,8 @@ def ajustar_estoque(produto_id):
         aviso = 'Estoque reabastecido. Produto reativado automaticamente.'
 
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'produto', produto.id,
+                         f'Ajustou estoque de "{produto.nome}" ({"+" if qtd >= 0 else ""}{qtd}).')
     resp = {'mensagem': 'Estoque ajustado com sucesso.', 'produto': _fmt_produto(produto, admin=True)}
     if aviso:
         resp['aviso'] = aviso

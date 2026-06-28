@@ -1,0 +1,128 @@
+{% extends "super/base.html" %}
+{% block title %}Customização{% endblock %}
+{% block page_title %}Customização das Barbearias{% endblock %}
+
+{% block styles %}
+<style>
+.cust-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 16px; }
+.cust-card { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; padding: 16px; }
+.cust-nome { font-size: 14px; font-weight: 700; color: #ddd; margin-bottom: 10px; text-transform: uppercase; }
+.cor-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; color: #999; }
+.cor-swatch { width: 18px; height: 18px; border-radius: 4px; border: 1px solid #333; flex-shrink: 0; }
+.btn-icon { background: none; border: 1px solid #333; color: #888; border-radius: 7px; padding: 6px 12px; cursor: pointer; font-size: 12px; font-family: inherit; margin-top: 10px; }
+.btn-icon:hover { border-color: var(--cor-primaria); color: var(--cor-primaria); }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+.modal-overlay.visible { display: flex; }
+.modal-box { background: #242424; border: 1px solid #333; border-radius: 12px; padding: 24px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.modal-close { background: none; border: none; color: #666; font-size: 22px; cursor: pointer; }
+.modal-footer { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
+.form-group { margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.form-group label { font-size: 12px; color: #888; }
+.form-group input[type=color] { width: 50px; height: 32px; border: none; border-radius: 6px; background: none; cursor: pointer; }
+.form-group input[type=text] { width: 100%; padding: 7px 10px; background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 6px; color: #ddd; font-family: inherit; font-size: 13px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cust-grid" id="custGrid">
+  <div style="color:#555;">Carregando…</div>
+</div>
+
+<div class="modal-overlay" id="modalCust">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="modalTitulo">Editar customização</h3>
+      <button class="modal-close" onclick="fecharModal('modalCust')">✕</button>
+    </div>
+    <div id="camposForm"></div>
+    <div class="form-group">
+      <label>Fonte</label>
+      <select class="form-select" id="fFonte" style="width:100%;padding:7px 10px;background:#1e1e1e;border:1px solid #2d2d2d;border-radius:6px;color:#ddd;font-family:inherit;font-size:13px;">
+        <option>Inter</option>
+        <option>Roboto</option>
+        <option>Poppins</option>
+        <option>Playfair Display</option>
+        <option>Lato</option>
+        <option>Open Sans</option>
+        <option>Montserrat</option>
+        <option>Raleway</option>
+        <option>Ubuntu</option>
+        <option>Fira Sans</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-icon" onclick="fecharModal('modalCust')">Cancelar</button>
+      <button class="btn-icon" onclick="salvar()">Salvar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function abrirModal(id)  { document.getElementById(id).classList.add('visible'); }
+function fecharModal(id) { document.getElementById(id).classList.remove('visible'); }
+
+const CAMPOS = [
+  ['cor_primaria', 'Cor primária'], ['cor_secundaria', 'Cor secundária'], ['cor_acentuacao', 'Cor de acentuação'],
+  ['texto_primario', 'Texto primário'], ['texto_secundario', 'Texto secundário'], ['texto_terciario', 'Texto terciário'],
+  ['botao_primario', 'Botão primário'], ['botao_secundario', 'Botão secundário'],
+];
+
+let cache = [];
+let editando = null;
+
+async function carregar() {
+  try {
+    cache = await api.super.customizacoes.listar();
+    renderizar();
+  } catch (e) {
+    document.getElementById('custGrid').innerHTML = `<div style="color:#f87171;">Erro: ${e.message}</div>`;
+  }
+}
+
+function renderizar() {
+  document.getElementById('custGrid').innerHTML = cache.map(c => `
+    <div class="cust-card">
+      <div class="cust-nome">${c.barbearia_nome}</div>
+      ${CAMPOS.map(([campo, label]) => `
+        <div class="cor-row"><span class="cor-swatch" style="background:${c[campo]}"></span>${label}: ${c[campo]}</div>
+      `).join('')}
+      <div class="cor-row">Fonte: ${c.fonte}</div>
+      <button class="btn-icon" onclick="abrirEdicao(${c.barbearia_id})">Editar</button>
+    </div>
+  `).join('');
+}
+
+function abrirEdicao(barbeariaId) {
+  const c = cache.find(x => x.barbearia_id === barbeariaId);
+  if (!c) return;
+  editando = barbeariaId;
+  document.getElementById('modalTitulo').textContent = `Editar — ${c.barbearia_nome}`;
+  document.getElementById('camposForm').innerHTML = CAMPOS.map(([campo, label]) => `
+    <div class="form-group">
+      <label>${label}</label>
+      <input type="color" id="f_${campo}" value="${c[campo]}">
+    </div>
+  `).join('');
+  document.getElementById('fFonte').value = c.fonte;
+  abrirModal('modalCust');
+}
+
+async function salvar() {
+  if (!editando) return;
+  const payload = { fonte: document.getElementById('fFonte').value.trim() || 'Inter' };
+  CAMPOS.forEach(([campo]) => { payload[campo] = document.getElementById(`f_${campo}`).value; });
+  try {
+    await api.super.customizacoes.editar(editando, payload);
+    toast('Customização salva.', 'success');
+    fecharModal('modalCust');
+    carregar();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+carregar();
+</script>
+{% endblock %}

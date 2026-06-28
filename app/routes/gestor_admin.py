@@ -3,6 +3,7 @@ from werkzeug.security import generate_password_hash
 from collections import defaultdict
 from datetime import datetime, timedelta, time as Time, date
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import func
 from app import db
 from app.models import (
@@ -10,7 +11,7 @@ from app.models import (
     ConfiguracaoAgenda, HorarioBloqueado, Agendamento, AgendamentoServico,
     Atendimento, Produto, ReservaProduto, SolicitacaoSenha, Cliente, SolicitacaoLiberacao,
 )
-from app.utils import get_barbearia_atual, normalizar_telefone
+from app.utils import get_barbearia_atual, normalizar_telefone, registrar_auditoria
 from app.routes.auth import gestor_required, barbeiro_required
 
 gestor_admin = Blueprint('gestor_admin', __name__)
@@ -105,6 +106,8 @@ def criar_barbeiro():
         ))
 
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'create', 'barbeiro', barbeiro.id,
+                         f'Criou barbeiro "{nome}".')
     return jsonify({'mensagem': 'Barbeiro criado.', 'barbeiro': _fmt_barbeiro(barbeiro, usuario)}), 201
 
 
@@ -150,6 +153,8 @@ def editar_barbeiro(barbeiro_id):
                 db.session.add(BarbeiroServico(barbeiro_id=barbeiro_id, servico_id=sid))
 
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'barbeiro', barbeiro.id,
+                         f'Editou barbeiro "{usuario.nome}".')
     return jsonify({'mensagem': 'Barbeiro atualizado.', 'barbeiro': _fmt_barbeiro(barbeiro, usuario)})
 
 
@@ -165,6 +170,8 @@ def desativar_barbeiro(barbeiro_id):
     u = db.session.get(Usuario, barbeiro.usuario_id)
     if u: u.ativo = False
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'delete', 'barbeiro', barbeiro_id,
+                         f'Desativou barbeiro "{u.nome if u else barbeiro_id}".')
     return jsonify({'mensagem': 'Barbeiro desativado.', 'id': barbeiro_id})
 
 
@@ -238,6 +245,8 @@ def configurar_agenda(barbeiro_id):
 
     config.atualizado_em = datetime.utcnow()
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'configuracao_agenda', config.id,
+                         f'Configurou agenda do barbeiro #{barbeiro_id}.')
     return jsonify({
         'mensagem': 'Agenda salva.',
         'configuracao': {
@@ -279,6 +288,8 @@ def bloquear_horario(barbeiro_id):
                          data_hora_inicio=ini, data_hora_fim=fim, motivo=motivo)
     db.session.add(b)
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'create', 'horario_bloqueado', b.id,
+                         f'Bloqueou horário do barbeiro #{barbeiro_id}.')
     return jsonify({
         'mensagem': 'Horário bloqueado.',
         'bloqueio': {'id': b.id, 'data_hora_inicio': ini.isoformat(),
@@ -305,6 +316,8 @@ def cancelar_agendamento_gestor(agendamento_id):
         if prod:
             prod.quantidade_reservada = max(0, (prod.quantidade_reservada or 0) - r.quantidade)
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'delete', 'agendamento', agendamento_id,
+                         'Cancelou agendamento.')
     return jsonify({'mensagem': 'Agendamento cancelado.', 'id': agendamento_id})
 
 
@@ -538,6 +551,8 @@ def agendamento_manual_gestor():
     )
     db.session.add(ag)
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'create', 'agendamento', ag.id,
+                         f'Criou agendamento manual para "{cliente.nome}".')
 
     return jsonify({
         'mensagem': 'Agendamento criado com sucesso.',
@@ -621,6 +636,8 @@ def set_barbearia_status():
     for c in configs:
         c.loja_aberta = aberta
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'barbearia', barbearia_id,
+                         f'Marcou barbearia como {"aberta" if aberta else "fechada"}.')
     return jsonify({'aberta': aberta, 'mensagem': f'Barbearia marcada como {"aberta" if aberta else "fechada"}.'})
 
 
@@ -803,6 +820,108 @@ def get_barbearia_tema():
     })
 
 
+# ── PIX do gestor ──────────────────────────────────────────────────────────────
+
+import re as _re
+
+_RE_EMAIL    = _re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+_RE_TELEFONE = _re.compile(r'^\+?55?\d{10,11}$')
+_RE_CPF      = _re.compile(r'^\d{11}$')
+_RE_CNPJ     = _re.compile(r'^\d{14}$')
+_RE_ALEATORIA = _re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+
+
+def _classificar_chave_pix(chave):
+    chave = (chave or '').strip()
+    digitos = re_sub_digitos(chave)
+    if _RE_EMAIL.match(chave):
+        return 'email'
+    if _RE_ALEATORIA.match(chave):
+        return 'aleatoria'
+    if _RE_CNPJ.match(digitos):
+        return 'cnpj'
+    if _RE_CPF.match(digitos):
+        return 'cpf'
+    if _RE_TELEFONE.match(digitos):
+        return 'telefone'
+    return None
+
+
+def re_sub_digitos(s):
+    return _re.sub(r'\D', '', s or '')
+
+
+# ── GET /admin/config-pix ──────────────────────────────────────────────────────
+
+@gestor_admin.get('/admin/config-pix')
+@gestor_required
+def get_config_pix():
+    barbearia_id = get_barbearia_atual()
+    b = db.session.get(Barbearia, barbearia_id)
+    if not b:
+        return _erro('Barbearia não encontrada.', 404)
+    return jsonify({
+        'chave_pix':        b.chave_pix,
+        'pix_nome_titular': b.pix_nome_titular,
+        'pix_cidade':       b.pix_cidade,
+        'pix_banco':        b.pix_banco,
+    })
+
+
+# ── PUT /admin/config-pix ──────────────────────────────────────────────────────
+
+@gestor_admin.put('/admin/config-pix')
+@gestor_required
+def atualizar_config_pix():
+    barbearia_id = get_barbearia_atual()
+    b = db.session.get(Barbearia, barbearia_id)
+    if not b:
+        return _erro('Barbearia não encontrada.', 404)
+
+    dados = request.get_json(silent=True) or {}
+    chave_pix = (dados.get('chave_pix') or '').strip()
+    nome_titular = (dados.get('nome_titular') or '').strip()
+    cidade = (dados.get('cidade') or '').strip()
+
+    if not chave_pix:
+        return _erro('"chave_pix" é obrigatória.')
+    if not nome_titular:
+        return _erro('"nome_titular" é obrigatório.')
+    if not cidade:
+        return _erro('"cidade" é obrigatória.')
+    if len(nome_titular) > 25:
+        return _erro('"nome_titular" deve ter no máximo 25 caracteres (exigência do padrão PIX).')
+    if len(cidade) > 15:
+        return _erro('"cidade" deve ter no máximo 15 caracteres (exigência do padrão PIX).')
+    if not _classificar_chave_pix(chave_pix):
+        return _erro('Chave PIX inválida. Use e-mail, telefone, CPF, CNPJ ou chave aleatória.')
+
+    b.chave_pix = chave_pix
+    b.pix_nome_titular = nome_titular
+    b.pix_cidade = cidade
+    b.pix_banco = (dados.get('banco') or '').strip() or None
+    db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'barbearia', barbearia_id,
+                         'Configurou a chave PIX da barbearia.')
+    return jsonify({'mensagem': 'PIX configurado com sucesso.'})
+
+
+# ── POST /admin/config-pix/testar ──────────────────────────────────────────────
+
+@gestor_admin.post('/admin/config-pix/testar')
+@gestor_required
+def testar_chave_pix():
+    dados = request.get_json(silent=True) or {}
+    chave = (dados.get('chave_pix') or '').strip()
+    if not chave:
+        return _erro('"chave_pix" é obrigatória.')
+    tipo = _classificar_chave_pix(chave)
+    if not tipo:
+        return jsonify({'valida': False, 'mensagem': 'Formato não reconhecido como e-mail, telefone, CPF, CNPJ ou chave aleatória.'})
+    nomes = {'email': 'E-mail', 'telefone': 'Telefone', 'cpf': 'CPF', 'cnpj': 'CNPJ', 'aleatoria': 'Chave aleatória'}
+    return jsonify({'valida': True, 'tipo': tipo, 'mensagem': f'Formato reconhecido: {nomes[tipo]}.'})
+
+
 # ── GET /admin/agenda/bloqueios/mes ───────────────────────────────────────────
 
 @gestor_admin.get('/admin/agenda/bloqueios/mes')
@@ -973,6 +1092,8 @@ def criar_bloqueio():
             criados += 1
 
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'create', 'horario_bloqueado', None,
+                         f'{criados} bloqueio(s) de horário criado(s).')
     return jsonify({'mensagem': f'{criados} bloqueio(s) criado(s).', 'total': criados}), 201
 
 
@@ -993,6 +1114,8 @@ def remover_bloqueio(bloqueio_id):
         data_hora_fim=fim,
     ).delete()
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'delete', 'horario_bloqueado', bloqueio_id,
+                         f'{n} bloqueio(s) de horário removido(s).')
     return jsonify({'mensagem': f'{n} bloqueio(s) removido(s).', 'total': n})
 
 
@@ -1112,4 +1235,6 @@ def responder_solicitacao_liberacao(sol_id):
         print(f"[LIBERAÇÃO] commit\n")
 
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'solicitacao_liberacao', sol_id,
+                         f'Solicitação de liberação {novo_status}.')
     return jsonify({'mensagem': f'Solicitação {novo_status}.', 'id': sol_id})

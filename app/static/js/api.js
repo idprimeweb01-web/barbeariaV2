@@ -61,6 +61,17 @@ const api = (() => {
     return _tratar(res);
   }
 
+  async function _postMultipart(rota, campos = {}) {
+    const form = new FormData();
+    Object.entries(campos).forEach(([k, v]) => { if (v !== undefined && v !== null) form.append(k, v); });
+    const res = await fetch(`${BASE_URL}${rota}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+      body: form,
+    });
+    return _tratar(res);
+  }
+
   // ── Namespaces ──────────────────────────────────────────────────────────────
 
   const barbeiros = {
@@ -120,6 +131,20 @@ const api = (() => {
       editar:       (id, d)  => put(`/super/gestor/${id}`, d),
       resetarSenha: (id, d)  => put(`/super/gestor/${id}/resetar-senha`, d),
     },
+    features: {
+      listar: (barbeariaId)       => get(`/api/features/barbearia/${barbeariaId}/list`),
+      toggle: (barbeariaId, nome) => put(`/api/features/barbearia/${barbeariaId}/${nome}/toggle`, {}),
+    },
+    auditoria: {
+      logs:     (pagina, filtro, dias) => get(`/api/auditoria/logs?pagina=${pagina || 1}&filtro=${encodeURIComponent(filtro || '')}&dias=${dias || 30}`),
+      exportar: (filtro, dias)         => fetch(`${BASE_URL}/api/auditoria/exportar?filtro=${encodeURIComponent(filtro || '')}&dias=${dias || 30}`, {
+        method: 'POST', headers: _headers(),
+      }).then(r => r.blob()),
+    },
+    customizacoes: {
+      listar: ()           => get('/api/super/customizacoes'),
+      editar: (id, d)       => put(`/api/super/customizacoes/${id}`, d),
+    },
   };
 
   // ── Público (sem JWT) ───────────────────────────────────────
@@ -163,6 +188,8 @@ const api = (() => {
     agendarManual:         (d)   => post('/agenda/agendamento-manual', d),
     cancelar:              (id)  => del(`/agendamentos/${id}`),
     dashboard:             ()    => get('/agenda/meu-dashboard'),
+    meusPlanos:            ()    => get('/agenda/meus-planos'),
+    agendamentosHoje:      ()    => get('/agenda/agendamentos-hoje'),
     perfil:                ()    => get('/agenda/meu-perfil'),
     atualizarPerfil:       (d)   => put('/agenda/meu-perfil', d),
     alterarSenha:          (d)   => put('/auth/alterar-senha', d),
@@ -183,6 +210,55 @@ const api = (() => {
     status:    ()        => get('/admin/barbearia/status'),
     setStatus: (aberta)  => put('/admin/barbearia/status', { aberta }),
     tema:      ()        => get('/admin/barbearia/tema'),
+    configPix:     ()    => get('/admin/config-pix'),
+    salvarPix:     (d)   => put('/admin/config-pix', d),
+    testarChavePix: (chave_pix) => post('/admin/config-pix/testar', { chave_pix }),
+  };
+
+  const features = {
+    pixPendentes: ()        => get('/api/features/pix/pendentes'),
+    pixAprovar:   (id)      => post(`/api/features/pix/${id}/aprovar`, {}),
+    pixRejeitar:  (id, motivo) => post(`/api/features/pix/${id}/rejeitar`, { motivo_rejeicao: motivo }),
+    carregarFeatures: ()    => get('/api/features/cliente/profile'),
+    minhaBarbearia:   ()    => get('/api/features/minha-barbearia'),
+  };
+
+  const planosApi = {
+    listar:             ()      => get('/api/planos/listar'),
+    criar:              (d)     => post('/api/planos/criar', d),
+    editar:             (id, d) => put(`/api/planos/${id}`, d),
+    deletar:            (id)    => del(`/api/planos/${id}`),
+    vincularBarbeiro:   (id, barbeiroId)   => post(`/api/planos/${id}/vincular-barbeiro`, { barbeiro_id: barbeiroId }),
+    desvincularBarbeiro: (id, barbeiroId)  => del(`/api/planos/${id}/desvincular-barbeiro/${barbeiroId}`),
+  };
+
+  const vipApi = {
+    listar:          ()      => get('/api/vip/niveis'),
+    criar:           (d)     => post('/api/vip/niveis', d),
+    editar:          (id, d) => put(`/api/vip/niveis/${id}`, d),
+    deletar:         (id)    => del(`/api/vip/niveis/${id}`),
+    toggleModoBrinde: (id)   => put(`/api/vip/niveis/${id}/modo-brinde`, {}),
+  };
+
+  const cliente = {
+    profile:           () => get('/api/features/cliente/profile'),
+    meuPerfil:         () => get('/api/cliente/profile'),
+    editarPerfil:      (d) => put('/api/cliente/editar', d),
+    alterarSenha:      (d) => put('/api/cliente/alterar-senha', d),
+    deletarConta:      () => del('/api/cliente/deletar'),
+    notificacoes:      (d) => put('/api/cliente/notificacoes', d),
+    planosDisponiveis: () => get('/api/cliente/planos-disponiveis'),
+    solicitarPlano:    (planoId, arquivo, metodoPagamento = 'pix') =>
+      _postMultipart(`/api/cliente/planos/${planoId}/solicitar`, { arquivo, metodo_pagamento: metodoPagamento }),
+    statusSolicitacao: (id) => get(`/api/cliente/solicitacao/${id}/status`),
+    cancelarPlano:     () => del('/api/cliente/meu-plano'),
+    resgatarBrinde:    (vipNivel) => post('/api/cliente/resgatar-brinde', { vip_nivel: vipNivel }),
+    barbeariaPix:         (planoId) => get(`/api/cliente/barbearia-pix${planoId ? '?plano_id=' + planoId : ''}`),
+    tema:                 () => get('/api/cliente/tema'),
+    proximosAgendamentos: () => get('/cliente/proximos-agendamentos'),
+    opcoesAgendar:        () => get('/cliente/agendar/opcoes'),
+    horariosAgendar:      (barbeiroId, data) => get(`/cliente/agendar/horarios?barbeiro_id=${barbeiroId}&data=${data}`),
+    agendar:              (d) => post('/cliente/agendar', d),
   };
 
   const clientes = {
@@ -205,7 +281,8 @@ const api = (() => {
     get, post, put, delete: del,
     setToken, getToken, setUser, getUser, getPerfil, logout,
     barbeiros, servicos, produtos, agenda, senha, metricas, upload, barbeiro,
-    barbearia, clientes,
+    barbearia, clientes, features, cliente,
+    planos: planosApi, vip: vipApi,
     super: superApi, publico,
   };
 })();

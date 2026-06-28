@@ -8,7 +8,7 @@ from app import db
 from app.models import (
     Barbearia, Usuario, Barbeiro, Cliente, Servico, BarbeiroServico,
     ConfiguracaoAgenda, Agendamento, AgendamentoServico,
-    HorarioBloqueado, Produto, ReservaProduto,
+    HorarioBloqueado, Produto, ReservaProduto, BarbeariaCustomizacao,
 )
 from app.utils import normalizar_telefone
 
@@ -223,11 +223,12 @@ def criar_agendamento(slug):
     if not dados:
         return _erro('Corpo da requisição inválido ou ausente.')
 
-    nome          = (dados.get('nome')     or '').strip()
-    telefone_raw  = (dados.get('telefone') or '').strip()
-    email_raw     = (dados.get('email')    or '').strip().lower()
-    barbeiro_id   = dados.get('barbeiro_id')
-    data_hora_str = (dados.get('data_hora') or '').strip()
+    nome             = (dados.get('nome')     or '').strip()
+    telefone_raw     = (dados.get('telefone') or '').strip()
+    email_raw        = (dados.get('email')    or '').strip().lower()
+    barbeiro_id      = dados.get('barbeiro_id')
+    data_hora_str    = (dados.get('data_hora') or '').strip()
+    metodo_pagamento = (dados.get('metodo_pagamento') or '').strip().lower() or None
 
     if not nome:          return _erro('O campo "nome" é obrigatório.')
     if not telefone_raw:  return _erro('O campo "telefone" é obrigatório.')
@@ -235,6 +236,8 @@ def criar_agendamento(slug):
     if tel_erro:          return _erro(tel_erro)
     if not barbeiro_id:   return _erro('O campo "barbeiro_id" é obrigatório.')
     if not data_hora_str: return _erro('O campo "data_hora" é obrigatório (YYYY-MM-DDTHH:MM).')
+    if metodo_pagamento and metodo_pagamento not in ('pix', 'local'):
+        return _erro('"metodo_pagamento" deve ser "pix" ou "local".')
     try:
         data_hora = datetime.strptime(data_hora_str, '%Y-%m-%dT%H:%M')
     except ValueError:
@@ -334,6 +337,7 @@ def criar_agendamento(slug):
         data_hora=data_hora,
         duracao_minutos=duracao_total,
         status='agendado',
+        metodo_pagamento=metodo_pagamento,
     )
     db.session.add(agendamento)
     db.session.flush()
@@ -366,6 +370,21 @@ def criar_agendamento(slug):
         sum(float(pd.preco) * qty for pd, qty in pds_validados),
         2,
     )
+
+    pix_copia_cola = None
+    if metodo_pagamento == 'pix' and barbearia.chave_pix:
+        from app.utils import gerar_pix_copia_cola
+        try:
+            pix_copia_cola = gerar_pix_copia_cola(
+                chave=barbearia.chave_pix,
+                nome_titular=barbearia.pix_nome_titular or barbearia.nome_exibicao or barbearia.nome,
+                cidade=barbearia.pix_cidade or 'BRASIL',
+                valor=total,
+                txid=f'AG{agendamento.id}',
+            )
+        except ValueError:
+            pix_copia_cola = None
+
     return jsonify({
         'mensagem': 'Agendamento criado com sucesso.',
         'agendamento': {
@@ -379,6 +398,9 @@ def criar_agendamento(slug):
             'duracao_minutos': duracao_total,
             'status':          agendamento.status,
             'total':           total,
+            'metodo_pagamento': metodo_pagamento,
+            'chave_pix':       barbearia.chave_pix if metodo_pagamento == 'pix' else None,
+            'pix_copia_cola':  pix_copia_cola,
         },
     }), 201
 
@@ -390,15 +412,23 @@ def barbearia_info(slug):
     b, err = _get_barbearia(slug)
     if err:
         return err
+    cust = BarbeariaCustomizacao.query.filter_by(barbearia_id=b.id).first()
     return jsonify({
-        'id':          b.id,
-        'nome':        b.nome,
-        'slug':        b.slug,
-        'cor_primaria': b.cor_primaria or '#BA7517',
-        'cor_fundo':   b.cor_fundo    or '#1a1a1a',
-        'cor_card':    b.cor_card     or '#2a2a2a',
-        'logo_url':    b.logo_url,
-        'fonte':       b.fonte        or 'Inter',
+        'id':                b.id,
+        'nome':              b.nome,
+        'slug':              b.slug,
+        'cor_primaria':      (cust.cor_primaria if cust else None)   or b.cor_primaria or '#BA7517',
+        'cor_fundo':         (cust.cor_secundaria if cust else None) or b.cor_fundo    or '#1a1a1a',
+        'cor_card':          b.cor_card or '#2a2a2a',
+        'cor_acentuacao':    (cust.cor_acentuacao if cust else None) or '#FFD700',
+        'texto_primario':    (cust.texto_primario if cust else None) or '#FFFFFF',
+        'texto_secundario':  (cust.texto_secundario if cust else None) or '#CCCCCC',
+        'texto_terciario':   (cust.texto_terciario if cust else None) or '#888888',
+        'botao_primario':    (cust.botao_primario if cust else None) or (cust.cor_primaria if cust else None) or b.cor_primaria or '#BA7517',
+        'botao_secundario':  (cust.botao_secundario if cust else None) or '#555555',
+        'logo_url':          b.logo_url,
+        'fonte':             (cust.fonte if cust else None) or b.fonte or 'Inter',
+        'chave_pix':         b.chave_pix,
     })
 
 
@@ -482,11 +512,28 @@ def agendamento_publico(slug, ag_id):
     total = round(total_svs + total_pds, 2)
     sv_principal = svs_fmt[0] if svs_fmt else {'nome': '—', 'preco': 0}
 
+    pix_copia_cola = None
+    if ag.metodo_pagamento == 'pix' and b.chave_pix:
+        from app.utils import gerar_pix_copia_cola
+        try:
+            pix_copia_cola = gerar_pix_copia_cola(
+                chave=b.chave_pix,
+                nome_titular=b.pix_nome_titular or b.nome_exibicao or b.nome,
+                cidade=b.pix_cidade or 'BRASIL',
+                valor=total,
+                txid=f'AG{ag.id}',
+            )
+        except ValueError:
+            pix_copia_cola = None
+
     return jsonify({
         'id':              ag.id,
         'data_hora':       ag.data_hora.isoformat(),
         'duracao_minutos': ag.duracao_minutos,
         'status':          ag.status,
+        'metodo_pagamento': ag.metodo_pagamento,
+        'chave_pix':       b.chave_pix if ag.metodo_pagamento == 'pix' else None,
+        'pix_copia_cola':  pix_copia_cola,
         'barbeiro': {
             'nome': barb_u.nome if barb_u else '—',
             'foto': barb.foto   if barb   else None,

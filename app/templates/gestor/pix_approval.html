@@ -1,0 +1,174 @@
+{% extends "gestor/base.html" %}
+{% block title %}Aprovação PIX{% endblock %}
+{% block page_title %}Solicitações de Plano (PIX){% endblock %}
+
+{% block styles %}
+<style>
+.pix-container { max-width: 900px; }
+.pix-list { display: flex; flex-direction: column; gap: 12px; }
+
+.pix-card {
+  background: #242424;
+  border: 1px solid #2d2d2d;
+  border-radius: 10px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: center;
+}
+.pix-card:hover { border-color: var(--cor-primaria); }
+
+.pix-left { display: flex; gap: 12px; }
+.pix-avatar {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(186,117,23,.12); border: 2px solid rgba(186,117,23,.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700; color: var(--cor-primaria); flex-shrink: 0;
+}
+.pix-info { display: flex; flex-direction: column; gap: 4px; }
+.pix-nome { font-size: 14px; font-weight: 700; color: #ddd; }
+.pix-meta { font-size: 12px; color: #555; }
+.pix-valor { font-size: 16px; font-weight: 800; color: var(--cor-primaria); }
+.pix-comprovante { font-size: 11px; }
+
+.pix-actions { display: flex; gap: 8px; }
+.btn-pix {
+  padding: 8px 14px; border: none; border-radius: 6px;
+  font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit;
+}
+.btn-aprovar  { background: rgba(34,197,94,.15); color: #4ade80; border: 1px solid rgba(34,197,94,.3); }
+.btn-aprovar:hover  { background: rgba(34,197,94,.25); }
+.btn-rejeitar { background: rgba(220,38,38,.15); color: #f87171; border: 1px solid rgba(220,38,38,.3); }
+.btn-rejeitar:hover { background: rgba(220,38,38,.25); }
+.btn-pix:disabled { opacity: .5; cursor: wait; }
+
+.pix-empty { text-align: center; padding: 60px 20px; color: #555; }
+.pix-empty-icon { font-size: 44px; margin-bottom: 12px; }
+
+.modal-textarea {
+  width: 100%; padding: 10px; background: #1e1e1e; border: 1px solid #2d2d2d;
+  border-radius: 6px; color: #ccc; font-family: inherit; font-size: 13px;
+  outline: none; resize: vertical; min-height: 100px; max-height: 200px;
+  box-sizing: border-box; transition: border-color .2s;
+}
+.modal-textarea:focus { border-color: var(--cor-primaria); }
+.char-count { font-size: 11px; color: #555; margin-top: 6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pix-container">
+  <p style="font-size: 12px; color: #555; margin-bottom: 20px;">
+    Aprove ou rejeite solicitações com comprovante PIX. O cliente é notificado automaticamente.
+  </p>
+  <div class="pix-list" id="pixList">
+    <div style="text-align: center; padding: 40px; color: #555;">Carregando solicitações...</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalRejeicao">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Rejeitar Solicitação</h3>
+      <button class="modal-close" onclick="fecharModal('modalRejeicao')">✕</button>
+    </div>
+    <label style="display:block;font-size:12px;color:#555;font-weight:600;margin-bottom:6px;">Motivo da Rejeição *</label>
+    <textarea class="modal-textarea" id="motivoTexto" placeholder="Explique por que está rejeitando..." maxlength="500"></textarea>
+    <div class="char-count"><span id="charCount">0</span>/500</div>
+    <div class="modal-footer">
+      <button class="btn-icon" onclick="fecharModal('modalRejeicao')">Cancelar</button>
+      <button class="btn-icon danger" onclick="confirmarRejeicao()" id="btnConfirmarRejeicao">Rejeitar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let solicitacaoEmEdicao = null;
+
+async function carregarSolicitacoes() {
+  try {
+    const solicitacoes = await api.features.pixPendentes();
+    renderizarSolicitacoes(solicitacoes);
+  } catch (e) {
+    document.getElementById('pixList').innerHTML = `<div class="pix-empty">❌ Erro: ${e.message}</div>`;
+  }
+}
+
+function renderizarSolicitacoes(solicitacoes) {
+  if (!solicitacoes || solicitacoes.length === 0) {
+    document.getElementById('pixList').innerHTML = `
+      <div class="pix-empty">
+        <div class="pix-empty-icon">✓</div>
+        <p style="font-size: 14px; color: #777;">Nenhuma solicitação pendente</p>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('pixList').innerHTML = solicitacoes.map(s => `
+    <div class="pix-card">
+      <div class="pix-left">
+        <div class="pix-avatar">${(s.cliente_nome || '?').charAt(0).toUpperCase()}</div>
+        <div class="pix-info">
+          <div class="pix-nome">${s.cliente_nome} — ${s.plano_nome}</div>
+          <div class="pix-meta">#${s.id} • ${new Date(s.criado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+          <div class="pix-valor">R$ ${parseFloat(s.valor).toFixed(2)}</div>
+          ${s.comprovante_url ? `<a class="pix-comprovante" href="${s.comprovante_url}" target="_blank">Ver comprovante</a>` : `<span class="pix-comprovante" style="color:#fbbf24">💵 Pagamento no local</span>`}
+        </div>
+      </div>
+      <div class="pix-actions">
+        <button class="btn-pix btn-aprovar" onclick="aprovarSolicitacao(${s.id}, this)">✓ Aprovar</button>
+        <button class="btn-pix btn-rejeitar" onclick="abrirModalRejeicao(${s.id})">✕ Rejeitar</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function aprovarSolicitacao(id, btn) {
+  if (!confirm('Aprovar esta solicitação?')) return;
+  btn.disabled = true;
+  try {
+    await api.features.pixAprovar(id);
+    toast('Solicitação aprovada.', 'success');
+    carregarSolicitacoes();
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false;
+  }
+}
+
+function abrirModalRejeicao(id) {
+  solicitacaoEmEdicao = id;
+  document.getElementById('motivoTexto').value = '';
+  document.getElementById('charCount').textContent = '0';
+  abrirModal('modalRejeicao');
+  document.getElementById('motivoTexto').focus();
+}
+
+document.getElementById('motivoTexto').addEventListener('input', (e) => {
+  document.getElementById('charCount').textContent = e.target.value.length;
+});
+
+async function confirmarRejeicao() {
+  const motivo = document.getElementById('motivoTexto').value.trim();
+  if (!motivo) { toast('Digite um motivo para a rejeição.', 'error'); return; }
+
+  const btn = document.getElementById('btnConfirmarRejeicao');
+  btn.disabled = true;
+  try {
+    await api.features.pixRejeitar(solicitacaoEmEdicao, motivo);
+    toast('Solicitação rejeitada.', 'success');
+    fecharModal('modalRejeicao');
+    carregarSolicitacoes();
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+carregarSolicitacoes();
+</script>
+{% endblock %}

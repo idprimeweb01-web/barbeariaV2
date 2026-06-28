@@ -1,8 +1,9 @@
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import func
 from app import db
 from app.models import Usuario, Agendamento, Servico, Barbeiro, Cliente
-from app.utils import normalizar_telefone, get_barbearia_atual
+from app.utils import normalizar_telefone, get_barbearia_atual, registrar_auditoria
 from app.routes.auth import barbeiro_required
 
 clientes = Blueprint('clientes', __name__)
@@ -188,6 +189,8 @@ def criar_cliente():
     )
     db.session.add(cliente)
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'create', 'cliente', cliente.id,
+                         f'Criou cliente "{nome}".')
 
     return jsonify({
         'mensagem': 'Cliente criado com sucesso.',
@@ -223,6 +226,8 @@ def editar_cliente(cliente_id):
         cliente.foto = (dados['foto'] or '').strip() or None
 
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'cliente', cliente.id,
+                         f'Editou cliente "{cliente.nome}".')
     return jsonify({'mensagem': 'Cliente atualizado com sucesso.', 'cliente': _fmt_cliente(cliente)})
 
 
@@ -237,4 +242,6 @@ def deletar_cliente(cliente_id):
         return _erro('Cliente não encontrado.', 404)
     cliente.ativo = False
     db.session.commit()
+    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'delete', 'cliente', cliente_id,
+                         f'Removeu cliente "{cliente.nome}".')
     return jsonify({'mensagem': 'Cliente removido.', 'id': cliente_id})

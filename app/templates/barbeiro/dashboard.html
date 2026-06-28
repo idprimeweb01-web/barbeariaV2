@@ -14,6 +14,18 @@
 .chart-card { background: #242424; border: 1px solid #2d2d2d; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
 .chart-lbl  { font-size: 11px; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 10px; }
 .db-loading { text-align: center; color: #444; padding: 32px; font-size: 13px; }
+
+.planos-mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.plano-mini-card { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; padding: 12px; }
+.plano-mini-nome { font-size: 13px; font-weight: 700; color: var(--cor-primaria); margin-bottom: 4px; }
+.plano-mini-preco { font-size: 12px; color: #888; margin-bottom: 6px; }
+.plano-mini-meta { font-size: 11px; color: #666; line-height: 1.5; }
+
+.ag-hoje-card { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+.ag-hoje-top { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: #ddd; }
+.ag-hoje-meta { font-size: 12px; color: #888; margin-top: 4px; }
+.ag-hoje-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: rgba(186,117,23,.15); color: var(--cor-primaria); }
+.section-lbl { font-size: 11px; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; margin: 16px 0 10px; }
 {% endblock %}
 
 {% block content %}
@@ -23,6 +35,16 @@
   <div class="chart-card">
     <div class="chart-lbl">Faturamento — últimos 7 dias</div>
     <canvas id="dbChart" height="130"></canvas>
+  </div>
+
+  <div id="meusPlanosSecao" style="display:none">
+    <div class="section-lbl">Meus planos (que eu atendo)</div>
+    <div class="planos-mini-grid" id="planosMiniGrid"></div>
+  </div>
+
+  <div id="agendamentosHojeSecao" style="display:none">
+    <div class="section-lbl">Agendamentos de hoje</div>
+    <div id="agendamentosHojeLista"></div>
   </div>
 </div>
 {% endblock %}
@@ -93,7 +115,38 @@
     }
   }
 
+  async function carregarMeusPlanos() {
+    try {
+      const planos = await api.barbeiro.meusPlanos();
+      if (!planos.length) return;
+      document.getElementById('planosMiniGrid').innerHTML = planos.map(p => `
+        <div class="plano-mini-card">
+          <div class="plano-mini-nome">${esc(p.nome)}</div>
+          <div class="plano-mini-preco">R$ ${p.preco_mensal.toFixed(2)}/mês</div>
+          <div class="plano-mini-meta">${p.clientes} cliente(s)<br>${p.servicos.map(esc).join(', ') || '—'}</div>
+        </div>
+      `).join('');
+      document.getElementById('meusPlanosSecao').style.display = '';
+    } catch (e) { /* silencioso */ }
+  }
+
+  async function carregarAgendamentosHoje() {
+    try {
+      const lista = await api.barbeiro.agendamentosHoje();
+      if (!lista.length) return;
+      document.getElementById('agendamentosHojeLista').innerHTML = lista.map(a => `
+        <div class="ag-hoje-card">
+          <div class="ag-hoje-top"><span>${a.hora} — ${esc(a.cliente_nome)}</span>${a.plano_nome ? `<span class="ag-hoje-badge">${esc(a.plano_nome)}</span>` : ''}</div>
+          <div class="ag-hoje-meta">${esc(a.servico)}${a.plano_nome ? ' (incluído)' : ' (avulso)'} · ✓ Confirmado</div>
+        </div>
+      `).join('');
+      document.getElementById('agendamentosHojeSecao').style.display = '';
+    } catch (e) { /* silencioso */ }
+  }
+
   carregar();
+  carregarMeusPlanos();
+  carregarAgendamentosHoje();
   setInterval(carregar, 60000);
 </script>
 {% endblock %}

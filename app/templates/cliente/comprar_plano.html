@@ -1,0 +1,53 @@
+{% extends "cliente/base.html" %}
+{% block title %}Escolha seu Plano{% endblock %}
+
+{% block styles %}
+.aviso-troca { background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.3); color: #fbbf24; border-radius: 8px; padding: 10px 12px; font-size: 12px; margin-bottom: 14px; }
+.plano-full { margin-bottom: 12px; }
+.plano-full-nome { font-size: 15px; font-weight: 800; color: var(--cor-primaria); margin-bottom: 2px; }
+.plano-full-preco { font-size: 18px; font-weight: 800; color: #ddd; margin-bottom: 10px; }
+.plano-full-servico { font-size: 13px; color: #ccc; margin-bottom: 4px; }
+.plano-full-meta { font-size: 11px; color: #666; margin: 8px 0 12px; }
+.btn-block { display: block; width: 100%; text-align: center; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: 700; border: none; cursor: pointer; font-family: inherit; box-sizing: border-box; text-decoration: none; }
+.btn-primario { background: var(--cor-primaria); color: #fff; }
+{% endblock %}
+
+{% block content %}
+<div id="bLoading" class="b-loading">Carregando…</div>
+<div id="avisoTroca" class="aviso-troca" style="display:none">
+  Você tem um plano ativo. Escolher um novo plano substituirá o anterior após aprovação.
+</div>
+<div id="planosLista"></div>
+<div id="planosEmpty" class="b-empty" style="display:none">
+  <p style="font-size:14px;color:#777;">Nenhum plano disponível por aqui ainda.</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function carregar() {
+  try {
+    const perfil = await api.cliente.profile();
+    if (perfil.plano_ativo) document.getElementById('avisoTroca').style.display = '';
+
+    const planos = await api.cliente.planosDisponiveis();
+    if (!planos.length) { document.getElementById('planosEmpty').style.display = ''; return; }
+
+    document.getElementById('planosLista').innerHTML = planos.map(p => `
+      <div class="b-card plano-full">
+        <div class="plano-full-nome">${p.nome}</div>
+        <div class="plano-full-preco">R$ ${p.preco_mensal.toFixed(2)}/mês</div>
+        ${p.servicos.map(s => `<div class="plano-full-servico">${s.limite_mensal == null ? '∞' : s.limite_mensal}x ${s.nome}</div>`).join('') || '<div class="plano-full-servico">Nenhum serviço vinculado.</div>'}
+        <div class="plano-full-meta">${p.clientes_usando} cliente(s) usando</div>
+        <a class="btn-block btn-primario" href="/cliente/checkout-plano?plano_id=${p.id}">Escolher este plano</a>
+      </div>
+    `).join('');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    document.getElementById('bLoading').style.display = 'none';
+  }
+}
+carregar();
+</script>
+{% endblock %}

@@ -7,9 +7,10 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
   <style>
     :root{--cor-primaria:#BA7517;--cor-fundo:#1a1a1a;--cor-card:#2a2a2a;--fonte:'Inter',sans-serif;
+      --cor-acentuacao:#FFD700;--texto-primario:#FFFFFF;--texto-secundario:#CCCCCC;--texto-terciario:#888888;
       --cp-10:rgba(186,117,23,.10);--cp-12:var(--cp-12);--cp-15:var(--cp-15);--cp-30:rgba(186,117,23,.30);}
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:var(--fonte);background:var(--cor-fundo);color:#fff;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;}
+    body{font-family:var(--fonte);background:var(--cor-fundo);color:var(--texto-primario);min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;}
 
     .check-circle{
       width:80px;height:80px;border-radius:50%;
@@ -21,13 +22,13 @@
     @keyframes pop{from{transform:scale(.5);opacity:0;}to{transform:scale(1);opacity:1;}}
 
     h1{font-size:24px;font-weight:800;margin-bottom:8px;text-align:center;}
-    .sub{font-size:14px;color:rgba(255,255,255,.4);text-align:center;margin-bottom:28px;}
+    .sub{font-size:14px;color:var(--texto-secundario);text-align:center;margin-bottom:28px;}
 
     .resumo{background:var(--cor-card);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:20px;width:100%;max-width:400px;margin-bottom:24px;}
     .resumo-row{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06);}
     .resumo-row:last-child{border-bottom:none;padding-bottom:0;}
     .resumo-icon{width:32px;height:32px;border-radius:8px;background:var(--cp-10);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;}
-    .resumo-label{font-size:11px;color:rgba(255,255,255,.35);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;}
+    .resumo-label{font-size:11px;color:var(--texto-terciario);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;}
     .resumo-val{font-size:15px;font-weight:600;}
 
     .barb-row{display:flex;align-items:center;gap:10px;}
@@ -73,7 +74,19 @@
       root.setProperty('--cor-primaria', cp);
       root.setProperty('--cor-fundo',    info.cor_fundo || '#1a1a1a');
       root.setProperty('--cor-card',     info.cor_card  || '#2a2a2a');
-      if (info.fonte) root.setProperty('--fonte', `'${info.fonte}', sans-serif`);
+      if (info.fonte) {
+        root.setProperty('--fonte', `'${info.fonte}', sans-serif`);
+        if (info.fonte !== 'Inter') {
+          const link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = `https://fonts.googleapis.com/css2?family=${info.fonte.replace(/ /g, '+')}:wght@400;500;600;700;800&display=swap`;
+          document.head.appendChild(link);
+        }
+      }
+      if (info.cor_acentuacao)   root.setProperty('--cor-acentuacao',   info.cor_acentuacao);
+      if (info.texto_primario)   root.setProperty('--texto-primario',   info.texto_primario);
+      if (info.texto_secundario) root.setProperty('--texto-secundario', info.texto_secundario);
+      if (info.texto_terciario)  root.setProperty('--texto-terciario',  info.texto_terciario);
       const _r = (h,a)=>{const x=(h||'#BA7517').replace('#','');return `rgba(${parseInt(x.slice(0,2),16)},${parseInt(x.slice(2,4),16)},${parseInt(x.slice(4,6),16)},${a})`;};
       [.10,.12,.15,.30].forEach(a=>root.setProperty(`--cp-${String(a*100).replace('.','').padStart(2,'0')}`,_r(cp,a)));
     } catch{}
@@ -153,6 +166,14 @@
             <div class="resumo-val">${esc(d.barbearia?.nome||'—')}</div>
           </div>
         </div>
+        ${d.metodo_pagamento ? `
+        <div class="resumo-row">
+          <div class="resumo-icon">${d.metodo_pagamento === 'pix' ? '💠' : '💵'}</div>
+          <div>
+            <div class="resumo-label">Pagamento</div>
+            <div class="resumo-val">${d.metodo_pagamento === 'pix' ? 'PIX' : 'No local'}</div>
+          </div>
+        </div>` : ''}
         <div class="resumo-row" style="border-top:1px solid rgba(255,255,255,.1);padding-top:12px;margin-top:4px">
           <div class="resumo-icon" style="background:var(--cp-15)">💰</div>
           <div>
@@ -160,10 +181,25 @@
             <div class="resumo-val" style="font-size:18px;color:var(--cor-primaria)">R$ ${Number(total).toFixed(2)}</div>
           </div>
         </div>
+        ${d.metodo_pagamento === 'pix' && d.pix_copia_cola ? `
+        <div style="margin-top:14px;padding:14px;background:var(--cp-10);border:1px solid var(--cp-30);border-radius:10px;">
+          <div class="resumo-label" style="margin-bottom:6px">Pix Copia e Cola (com valor já incluído)</div>
+          <div id="pixCopiaCola" style="font-size:12px;font-weight:600;word-break:break-all;margin-bottom:10px;">${esc(d.pix_copia_cola)}</div>
+          <button onclick="copiarPix()" style="width:100%;padding:10px;background:var(--cor-primaria);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;font-family:var(--fonte)">Copiar código Pix</button>
+        </div>` : d.metodo_pagamento === 'pix' && d.chave_pix ? `
+        <div style="margin-top:14px;padding:14px;background:var(--cp-10);border:1px solid var(--cp-30);border-radius:10px;">
+          <div class="resumo-label" style="margin-bottom:6px">Chave PIX para pagamento</div>
+          <div style="font-size:14px;font-weight:600;word-break:break-all;">${esc(d.chave_pix)}</div>
+        </div>` : ''}
       `;
     } catch(e) {
       document.getElementById('resumo').innerHTML = `<p class="loading">Erro ao carregar: ${e.message}</p>`;
     }
+  }
+
+  function copiarPix() {
+    const texto = document.getElementById('pixCopiaCola')?.textContent;
+    if (texto) navigator.clipboard?.writeText(texto);
   }
 
   carregar();

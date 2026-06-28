@@ -1,0 +1,216 @@
+{% extends "cliente/base.html" %}
+{% block title %}Pagamento PIX{% endblock %}
+
+{% block styles %}
+.pix-chave-box { display: flex; gap: 8px; align-items: center; background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+.pix-chave-texto { flex: 1; font-size: 12px; color: #ddd; word-break: break-all; }
+.btn-copiar { background: none; border: 1px solid var(--cor-primaria); color: var(--cor-primaria); border-radius: 6px; padding: 6px 12px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; flex-shrink: 0; }
+.resumo-row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 13px; border-bottom: 1px solid #2d2d2d; }
+.resumo-row:last-child { border-bottom: none; }
+.status-box { text-align: center; padding: 14px; border-radius: 8px; font-size: 13px; font-weight: 700; margin-top: 10px; }
+.status-pendente { background: rgba(251,191,36,.1); color: #fbbf24; border: 1px solid rgba(251,191,36,.3); }
+.status-aprovado { background: rgba(34,197,94,.12); color: #4ade80; border: 1px solid rgba(34,197,94,.3); }
+.status-rejeitado { background: rgba(220,38,38,.12); color: #f87171; border: 1px solid rgba(220,38,38,.3); }
+.btn-block { display: block; width: 100%; text-align: center; padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 700; border: none; cursor: pointer; font-family: inherit; box-sizing: border-box; margin-top: 10px; }
+.btn-primario { background: var(--cor-primaria); color: #fff; }
+.btn-primario:disabled { opacity: .5; cursor: not-allowed; }
+.btn-secundario { background: #2a2a2a; color: #ddd; border: 1px solid #3a3a3a; }
+
+/* ── Upload drag & drop ──────────────────────────────────────────── */
+.drop-zone {
+  border: 2px dashed #3a3a3a; border-radius: 12px; padding: 28px 16px;
+  text-align: center; cursor: pointer; transition: all .15s; margin: 10px 0;
+  background: #1e1e1e;
+}
+.drop-zone:hover, .drop-zone.dragover { border-color: var(--cor-primaria); background: rgba(186,117,23,.06); }
+.drop-zone-icon { font-size: 28px; margin-bottom: 8px; }
+.drop-zone-texto { font-size: 13px; color: #ccc; font-weight: 600; }
+.drop-zone-sub { font-size: 11px; color: #666; margin-top: 4px; }
+.drop-zone input[type=file] { display: none; }
+
+.arquivo-preview {
+  display: none; align-items: center; gap: 10px; background: #1e1e1e;
+  border: 1px solid rgba(34,197,94,.3); border-radius: 10px; padding: 12px; margin: 10px 0;
+}
+.arquivo-preview.visible { display: flex; }
+.arquivo-preview-icon { font-size: 22px; color: #4ade80; flex-shrink: 0; }
+.arquivo-preview-nome { flex: 1; font-size: 12px; color: #ddd; word-break: break-all; }
+.btn-remover { background: none; border: 1px solid #3a3a3a; color: #f87171; border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; flex-shrink: 0; }
+
+.confirmacao-check { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #ccc; margin: 14px 0 4px; cursor: pointer; }
+.confirmacao-check input { margin-top: 2px; accent-color: var(--cor-primaria); flex-shrink: 0; }
+{% endblock %}
+
+{% block content %}
+<div id="bLoading" class="b-loading">Carregando…</div>
+<div id="conteudo" style="display:none">
+  <div class="b-card">
+    <div style="font-size:13px;font-weight:700;color:#777;text-transform:uppercase;margin-bottom:6px;">Pague via PIX</div>
+    <div class="pix-chave-box">
+      <span class="pix-chave-texto" id="chavePix">—</span>
+      <button class="btn-copiar" onclick="copiarChave()">Copiar</button>
+    </div>
+    <p id="pixCopiaColaNota" style="font-size:11px;color:#666;display:none;margin-top:-4px;margin-bottom:8px;">
+      ☝️ Este código já inclui o valor — cole no app do seu banco na opção "Pix Copia e Cola".
+    </p>
+    <div class="resumo-row"><span>Plano</span><span id="rPlano">—</span></div>
+    <div class="resumo-row"><span>Valor</span><span id="rValor">—</span></div>
+    <div class="resumo-row"><span>Beneficiário</span><span id="rBeneficiario">—</span></div>
+  </div>
+
+  <div class="b-card" id="uploadBox">
+    <div style="font-size:13px;font-weight:700;color:#777;text-transform:uppercase;margin-bottom:6px;">Comprovante de pagamento</div>
+
+    <label class="drop-zone" id="dropZone" for="inputComprovante">
+      <div class="drop-zone-icon">📁</div>
+      <div class="drop-zone-texto">Clique para fazer upload ou arraste um arquivo aqui</div>
+      <div class="drop-zone-sub">JPG, PNG ou WebP — obrigatório para PIX</div>
+      <input type="file" id="inputComprovante" accept="image/png,image/jpeg,image/webp">
+    </label>
+
+    <div class="arquivo-preview" id="arquivoPreview">
+      <div class="arquivo-preview-icon">✓</div>
+      <div class="arquivo-preview-nome" id="arquivoNome">—</div>
+      <button class="btn-remover" onclick="removerArquivo()">Remover</button>
+    </div>
+
+    <label class="confirmacao-check">
+      <input type="checkbox" id="checkConfirmacao" onchange="atualizarBotaoJaPaguei()">
+      Confirmo que efetuei o pagamento via PIX no valor exato exibido acima.
+    </label>
+
+    <button class="btn-block btn-primario" id="btnJaPaguei" onclick="enviarComprovante()" disabled>Já paguei</button>
+    <button class="btn-block btn-secundario" onclick="window.location.href='/cliente/comprar-plano'">Voltar</button>
+  </div>
+
+  <div class="b-card" id="statusBoxWrap" style="display:none">
+    <div class="status-box status-pendente" id="statusBox">⏳ Aguardando aprovação...</div>
+    <p style="font-size:12px;color:#666;text-align:center;margin-top:10px;">
+      Seu plano será ativado assim que o pagamento for aprovado pela barbearia.
+    </p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const planoId = new URLSearchParams(location.search).get('plano_id');
+let pollTimer = null;
+let arquivoEscolhido = null;
+
+async function carregar() {
+  if (!planoId) { toast('Plano não especificado.', 'error'); window.location.href = '/cliente/comprar-plano'; return; }
+  try {
+    const [planos, pix] = await Promise.all([api.cliente.planosDisponiveis(), api.cliente.barbeariaPix(planoId)]);
+    const p = planos.find(x => String(x.id) === String(planoId));
+    if (!p) { toast('Plano não encontrado.', 'error'); window.location.href = '/cliente/comprar-plano'; return; }
+
+    if (pix.pix_copia_cola) {
+      document.getElementById('chavePix').textContent = pix.pix_copia_cola;
+      document.getElementById('pixCopiaColaNota').style.display = '';
+    } else {
+      document.getElementById('chavePix').textContent = pix.chave_pix || 'Chave PIX não configurada pela barbearia';
+    }
+    document.getElementById('rPlano').textContent = p.nome;
+    document.getElementById('rValor').textContent = `R$ ${p.preco_mensal.toFixed(2)}`;
+    document.getElementById('rBeneficiario').textContent = pix.nome_barbearia || '—';
+    document.getElementById('conteudo').style.display = '';
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    document.getElementById('bLoading').style.display = 'none';
+  }
+}
+
+function copiarChave() {
+  const texto = document.getElementById('chavePix').textContent;
+  navigator.clipboard?.writeText(texto).then(() => toast('Copiado!', 'info'));
+}
+
+/* ── Drag & drop / seleção de arquivo ─────────────────────────────── */
+const dropZone = document.getElementById('dropZone');
+const inputComprovante = document.getElementById('inputComprovante');
+
+inputComprovante.addEventListener('change', () => {
+  if (inputComprovante.files[0]) selecionarArquivo(inputComprovante.files[0]);
+});
+
+['dragover', 'dragenter'].forEach(ev => dropZone.addEventListener(ev, e => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+}));
+['dragleave', 'drop'].forEach(ev => dropZone.addEventListener(ev, e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+}));
+dropZone.addEventListener('drop', e => {
+  const arq = e.dataTransfer.files[0];
+  if (arq) selecionarArquivo(arq);
+});
+
+function selecionarArquivo(arquivo) {
+  const tiposValidos = ['image/png', 'image/jpeg', 'image/webp'];
+  if (!tiposValidos.includes(arquivo.type)) {
+    toast('Envie uma imagem JPG, PNG ou WebP.', 'error');
+    return;
+  }
+  arquivoEscolhido = arquivo;
+  document.getElementById('arquivoNome').textContent = arquivo.name;
+  document.getElementById('arquivoPreview').classList.add('visible');
+  document.getElementById('dropZone').style.display = 'none';
+  atualizarBotaoJaPaguei();
+}
+
+function removerArquivo() {
+  arquivoEscolhido = null;
+  inputComprovante.value = '';
+  document.getElementById('arquivoPreview').classList.remove('visible');
+  document.getElementById('dropZone').style.display = '';
+  atualizarBotaoJaPaguei();
+}
+
+function atualizarBotaoJaPaguei() {
+  const confirmado = document.getElementById('checkConfirmacao').checked;
+  document.getElementById('btnJaPaguei').disabled = !(arquivoEscolhido && confirmado);
+}
+
+/* ── Envio ─────────────────────────────────────────────────────────── */
+async function enviarComprovante() {
+  if (!arquivoEscolhido) { toast('Selecione o comprovante antes de continuar.', 'error'); return; }
+
+  const btn = document.getElementById('btnJaPaguei');
+  btn.disabled = true;
+  try {
+    const r = await api.cliente.solicitarPlano(planoId, arquivoEscolhido, 'pix');
+    toast(r.mensagem || 'Comprovante enviado!', 'success');
+    document.getElementById('uploadBox').style.display = 'none';
+    document.getElementById('statusBoxWrap').style.display = '';
+    iniciarPolling(r.solicitacao_id);
+  } catch (e) {
+    toast(e.message, 'error');
+    atualizarBotaoJaPaguei();
+  }
+}
+
+function iniciarPolling(solicitacaoId) {
+  pollTimer = setInterval(async () => {
+    try {
+      const s = await api.cliente.statusSolicitacao(solicitacaoId);
+      const box = document.getElementById('statusBox');
+      if (s.status === 'aprovado') {
+        clearInterval(pollTimer);
+        box.className = 'status-box status-aprovado';
+        box.textContent = '✓ Pagamento recebido! Seu plano está ativo!';
+        setTimeout(() => window.location.href = '/cliente/dashboard', 2000);
+      } else if (s.status === 'rejeitado') {
+        clearInterval(pollTimer);
+        box.className = 'status-box status-rejeitado';
+        box.textContent = `✕ Solicitação rejeitada${s.motivo ? ': ' + s.motivo : ''}`;
+      }
+    } catch (e) { /* silencioso, tenta de novo no próximo ciclo */ }
+  }, 5000);
+}
+
+carregar();
+</script>
+{% endblock %}

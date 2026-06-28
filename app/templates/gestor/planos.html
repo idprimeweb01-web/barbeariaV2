@@ -1,0 +1,316 @@
+{% extends "gestor/base.html" %}
+{% block title %}Planos{% endblock %}
+{% block page_title %}Planos{% endblock %}
+
+{% block styles %}
+<style>
+.planos-header { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+.btn-primary {
+  background: #2563eb; color: #fff; border: none; border-radius: 8px;
+  padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+  font-family: inherit; transition: background .15s;
+}
+.btn-primary:hover { background: #1d4ed8; }
+
+.modal-box-lg { max-width: 560px; }
+.form-group { margin-bottom: 14px; }
+.form-label { display: block; font-size: 12px; color: #888; font-weight: 600; margin-bottom: 6px; }
+.form-input, .form-textarea {
+  width: 100%; padding: 9px 12px; background: #1e1e1e; border: 1px solid #2d2d2d;
+  border-radius: 6px; color: #ddd; font-family: inherit; font-size: 13px;
+  outline: none; box-sizing: border-box; transition: border-color .2s;
+}
+.form-input:focus, .form-textarea:focus { border-color: var(--cor-primaria); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.servico-limite-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; color: #ccc; }
+.servico-limite-row .nome-servico { flex: 1; display: flex; align-items: center; gap: 8px; }
+.servico-limite-row input[type=checkbox] { accent-color: var(--cor-primaria); width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
+.input-limite { width: 56px; padding: 5px 6px; background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 5px; color: #ddd; font-family: inherit; font-size: 12px; text-align: center; }
+.input-limite:disabled { opacity: .4; }
+.limite-sufixo { font-size: 11px; color: #666; }
+.check-ilimitado { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; cursor: pointer; white-space: nowrap; }
+.check-ilimitado input { accent-color: var(--cor-primaria); cursor: pointer; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="planos-header">
+  <button class="btn-primary" onclick="abrirModalNovo()">+ Novo Plano</button>
+</div>
+
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Nome</th><th>Preço (R$)</th><th>Validade (dias)</th><th>Serviços</th>
+        <th>Clientes</th><th>Status</th><th>Ações</th>
+      </tr>
+    </thead>
+    <tbody id="planosTbody">
+      <tr><td colspan="7" style="text-align:center;color:#555;">Carregando…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Modal Editar/Novo -->
+<div class="modal-overlay" id="modalPlano">
+  <div class="modal-box modal-box-lg">
+    <div class="modal-header">
+      <h3 id="modalPlanoTitulo">Novo Plano</h3>
+      <button class="modal-close" onclick="fecharModal('modalPlano')">✕</button>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Nome do plano</label>
+      <input class="form-input" id="fNome" placeholder="Ex: Plano Mensal Premium">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Preço mensal (R$)</label>
+        <input class="form-input" id="fPreco" type="number" min="0" step="0.01" placeholder="0,00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Expiração (dias)</label>
+        <input class="form-input" id="fValidade" type="number" min="1" placeholder="30">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Descrição (opcional)</label>
+      <textarea class="form-textarea" id="fDescricao" rows="2"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Serviços incluídos</label>
+      <div class="check-list" id="fServicos"></div>
+    </div>
+    <div class="form-group" id="grupoBarbeiros" style="display:none">
+      <label class="form-label">Barbeiros que atendem este plano</label>
+      <div class="check-list" id="fBarbeiros"></div>
+    </div>
+    <div class="form-group">
+      <label class="toggle-label">
+        <input type="checkbox" id="fAtivo" checked>
+        <span class="toggle-track"></span>
+        Plano ativo
+      </label>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn-icon" onclick="fecharModal('modalPlano')">Cancelar</button>
+      <button class="btn-icon" id="btnSalvarPlano" onclick="salvarPlano()">Salvar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let planoEmEdicao = null;
+let servicosDisponiveis = [];
+let barbeirosDisponiveis = [];
+let barbeirosVinculadosOriginal = [];
+
+async function carregarServicos() {
+  try { servicosDisponiveis = await api.servicos.listar(); } catch (e) { servicosDisponiveis = []; }
+}
+
+async function carregarBarbeiros() {
+  try { barbeirosDisponiveis = await api.barbeiros.listar(); } catch (e) { barbeirosDisponiveis = []; }
+}
+
+function renderizarCheckboxBarbeiros(selecionados = []) {
+  const box = document.getElementById('fBarbeiros');
+  if (!barbeirosDisponiveis.length) {
+    box.innerHTML = '<div style="font-size:12px;color:#555;">Nenhum barbeiro cadastrado.</div>';
+    return;
+  }
+  box.innerHTML = barbeirosDisponiveis.map(b => `
+    <label class="check-item">
+      <input type="checkbox" value="${b.id}" ${selecionados.includes(b.id) ? 'checked' : ''}>
+      ${b.nome}
+    </label>
+  `).join('');
+}
+
+function barbeirosSelecionados() {
+  return [...document.querySelectorAll('#fBarbeiros input[type=checkbox]:checked')].map(c => parseInt(c.value));
+}
+
+function renderizarCheckboxServicos(servicosAtuais = []) {
+  // servicosAtuais: [{id, limite_mensal}] já vinculados (limite_mensal null = ilimitado)
+  const box = document.getElementById('fServicos');
+  if (!servicosDisponiveis.length) {
+    box.innerHTML = '<div style="font-size:12px;color:#555;">Nenhum serviço cadastrado.</div>';
+    return;
+  }
+  const mapaAtual = {};
+  servicosAtuais.forEach(s => { mapaAtual[s.id] = s.limite_mensal; });
+
+  box.innerHTML = servicosDisponiveis.map(s => {
+    const vinculado = s.id in mapaAtual;
+    const limite = mapaAtual[s.id];
+    const ilimitado = vinculado && limite == null;
+    const valorInput = ilimitado ? '' : (limite ?? 4);
+    return `
+    <div class="servico-limite-row" data-id="${s.id}">
+      <span class="nome-servico">
+        <input type="checkbox" class="chk-servico" ${vinculado ? 'checked' : ''} onchange="atualizarLinhaServico(${s.id})">
+        ${s.nome}
+      </span>
+      <input type="number" class="input-limite" min="1" value="${valorInput}" ${ilimitado ? 'disabled' : ''} placeholder="4">
+      <span class="limite-sufixo">por mês</span>
+      <label class="check-ilimitado">
+        <input type="checkbox" class="chk-ilimitado" ${ilimitado ? 'checked' : ''} onchange="toggleIlimitado(${s.id})"> ∞ ilimitado
+      </label>
+    </div>`;
+  }).join('');
+}
+
+function toggleIlimitado(servicoId) {
+  const row = document.querySelector(`.servico-limite-row[data-id="${servicoId}"]`);
+  const ilimitado = row.querySelector('.chk-ilimitado').checked;
+  row.querySelector('.input-limite').disabled = ilimitado;
+}
+
+function atualizarLinhaServico(servicoId) {
+  // placeholder de hook futuro — manter a linha visível mesmo desmarcada, sem ação extra por ora
+}
+
+function servicosSelecionados() {
+  return [...document.querySelectorAll('.servico-limite-row')]
+    .filter(row => row.querySelector('.chk-servico').checked)
+    .map(row => {
+      const id = parseInt(row.dataset.id);
+      const ilimitado = row.querySelector('.chk-ilimitado').checked;
+      const limiteVal = parseInt(row.querySelector('.input-limite').value);
+      return { id, limite_mensal: ilimitado ? null : (isNaN(limiteVal) || limiteVal < 1 ? 4 : limiteVal) };
+    });
+}
+
+async function carregarPlanos() {
+  try {
+    const lista = await api.planos.listar();
+    renderizarPlanos(lista);
+  } catch (e) {
+    document.getElementById('planosTbody').innerHTML =
+      `<tr><td colspan="7" style="text-align:center;color:#f87171;">Erro: ${e.message}</td></tr>`;
+  }
+}
+
+function renderizarPlanos(lista) {
+  const tbody = document.getElementById('planosTbody');
+  if (!lista.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#555;">Nenhum plano cadastrado.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = lista.map(p => `
+    <tr>
+      <td>${p.nome}</td>
+      <td>R$ ${p.preco_mensal.toFixed(2)}</td>
+      <td>${p.validade_dias ?? '—'}</td>
+      <td>${p.servicos.map(s => `${s.nome} (${s.limite_mensal == null ? '∞' : s.limite_mensal}x)`).join(', ') || '—'}</td>
+      <td>${p.total_clientes}</td>
+      <td>${p.ativo ? '<span class="badge-green">ATIVO</span>' : '<span class="badge-gray">INATIVO</span>'}</td>
+      <td class="td-actions">
+        <button class="btn-icon" title="Editar" onclick="abrirModalEditar(${p.id})">✏️</button>
+        <button class="btn-icon" title="${p.ativo ? 'Inativar' : 'Ativar'}" onclick="toggleAtivo(${p.id}, ${p.ativo})">${p.ativo ? '🙈' : '👁️'}</button>
+        <button class="btn-icon danger" title="Deletar" onclick="deletarPlano(${p.id})">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+  window._planosCache = lista;
+}
+
+function abrirModalNovo() {
+  planoEmEdicao = null;
+  document.getElementById('modalPlanoTitulo').textContent = 'Novo Plano';
+  document.getElementById('fNome').value = '';
+  document.getElementById('fPreco').value = '';
+  document.getElementById('fValidade').value = '';
+  document.getElementById('fDescricao').value = '';
+  document.getElementById('fAtivo').checked = true;
+  document.getElementById('grupoBarbeiros').style.display = 'none';
+  renderizarCheckboxServicos([]);
+  abrirModal('modalPlano');
+}
+
+function abrirModalEditar(id) {
+  const p = (window._planosCache || []).find(x => x.id === id);
+  if (!p) return;
+  planoEmEdicao = id;
+  document.getElementById('modalPlanoTitulo').textContent = 'Editar Plano';
+  document.getElementById('fNome').value = p.nome;
+  document.getElementById('fPreco').value = p.preco_mensal;
+  document.getElementById('fValidade').value = p.validade_dias ?? '';
+  document.getElementById('fDescricao').value = p.descricao || '';
+  document.getElementById('fAtivo').checked = p.ativo;
+  renderizarCheckboxServicos(p.servicos || []);
+  barbeirosVinculadosOriginal = p.barbeiros_ids || [];
+  renderizarCheckboxBarbeiros(barbeirosVinculadosOriginal);
+  document.getElementById('grupoBarbeiros').style.display = '';
+  abrirModal('modalPlano');
+}
+
+async function salvarPlano() {
+  const nome     = document.getElementById('fNome').value.trim();
+  const preco    = parseFloat(document.getElementById('fPreco').value);
+  const validade = parseInt(document.getElementById('fValidade').value);
+  const descricao = document.getElementById('fDescricao').value.trim();
+  const ativo    = document.getElementById('fAtivo').checked;
+  const servicos = servicosSelecionados();
+
+  if (!nome) { toast('Informe o nome do plano.', 'error'); return; }
+  if (isNaN(preco) || preco < 0) { toast('Informe um preço válido.', 'error'); return; }
+  if (isNaN(validade) || validade < 1) { toast('Informe a validade em dias.', 'error'); return; }
+
+  const payload = { nome, preco_mensal: preco, validade_dias: validade, descricao, ativo, servicos };
+  const btn = document.getElementById('btnSalvarPlano');
+  btn.disabled = true;
+  try {
+    if (planoEmEdicao) {
+      await api.planos.editar(planoEmEdicao, payload);
+      await salvarVinculosBarbeiro(planoEmEdicao);
+    } else {
+      await api.planos.criar(payload);
+    }
+    toast('Plano salvo.', 'success');
+    fecharModal('modalPlano');
+    carregarPlanos();
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function salvarVinculosBarbeiro(planoId) {
+  const selecionados = barbeirosSelecionados();
+  const adicionar  = selecionados.filter(id => !barbeirosVinculadosOriginal.includes(id));
+  const remover    = barbeirosVinculadosOriginal.filter(id => !selecionados.includes(id));
+  for (const id of adicionar) await api.planos.vincularBarbeiro(planoId, id);
+  for (const id of remover)  await api.planos.desvincularBarbeiro(planoId, id);
+}
+
+async function toggleAtivo(id, ativoAtual) {
+  try {
+    await api.planos.editar(id, { ativo: !ativoAtual });
+    toast(ativoAtual ? 'Plano inativado.' : 'Plano ativado.', 'success');
+    carregarPlanos();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deletarPlano(id) {
+  if (!confirm('Deletar este plano permanentemente?')) return;
+  try {
+    await api.planos.deletar(id);
+    toast('Plano deletado.', 'success');
+    carregarPlanos();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+(async function() {
+  await Promise.all([carregarServicos(), carregarBarbeiros()]);
+  await carregarPlanos();
+})();
+</script>
+{% endblock %}

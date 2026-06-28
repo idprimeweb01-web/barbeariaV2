@@ -1,0 +1,424 @@
+================================================================================
+  DÍVIDAS TÉCNICAS E ROADMAP — PLATAFORMA BARBEROS
+  Atualizado em: 2026-06-28
+  Fase concluída: 9 (campos P2 + auditoria de isolamento tenant)
+  Próximo passo: frontend / telas
+================================================================================
+
+
+================================================================================
+  SEÇÃO A — DÍVIDAS TÉCNICAS (resolver antes de ir a produção)
+================================================================================
+
+Estas pendências NÃO bloqueiam o build iterativo, mas DEVEM ser resolvidas no
+sprint de homologação, antes do deploy em produção.
+
+────────────────────────────────────────────────────────────────────────────────
+DT-001 — datetime.utcnow() sem timezone  [PRIORIDADE: CRÍTICA]
+────────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA:
+  O código usa datetime.utcnow() em todos os models e rotas.
+  - Retorna datetime "naive" (sem informação de fuso horário).
+  - Deprecated no Python 3.12+.
+
+RISCO EM PRODUÇÃO:
+  - Servidor Railway roda em UTC.
+  - Clientes e barbearias estão no Brasil (UTC-3).
+  - Slots calculados com offset de 3h.
+  - Cancelamento pode bloquear ou liberar na hora errada.
+  - CRÍTICO no scheduler de lembretes: o job checaria o janelamento
+    de "15 min antes" usando hora UTC, errando por 3h inteiras.
+  - Notificações chegam no horário errado para o cliente.
+
+SOLUÇÃO:
+  1. Substituir datetime.utcnow() por datetime.now(timezone.utc) em todo o
+     código (models, rotas, scheduler).
+  2. Adicionar campo fuso_horario (String, default 'America/Sao_Paulo') ao
+     modelo Barbearia via migration.
+  3. Toda lógica de slot e cancelamento converte para o fuso da barbearia
+     antes de comparar horários.
+  4. Armazenar todos os timestamps no banco em UTC; exibir convertido.
+
+ARQUIVOS AFETADOS:
+  - app/models/__init__.py (todos os default=datetime.utcnow)
+  - app/routes/cliente/agendamento.py (comparação no cancelamento)
+  - app/utils/agenda.py (geração de slots)
+  - app/utils/scheduler.py (janelamento de lembretes — risco mais alto)
+
+QUANDO RESOLVER: sprint dedicado antes do deploy em produção.
+
+────────────────────────────────────────────────────────────────────────────────
+DT-002 — Sem cascade delete em Agendamento → filhos  [PRIORIDADE: MÉDIA]
+────────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA:
+  Deletar um Agendamento diretamente via ORM levanta ForeignKeyViolation
+  porque AgendamentoServico (e AgendamentoSolicitacaoPix, ClientePlanoUso)
+  referenciam o agendamento sem ON DELETE CASCADE.
+
+EVIDÊNCIA:
+  Surgiu durante limpeza de dados de teste na Fase 6 — foi necessário
+  deletar AgendamentoServico manualmente antes de deletar Agendamento.
+
+RISCO EM PRODUÇÃO:
+  Purga de dados LGPD, rotina de limpeza de slots fantasmas ou qualquer
+  operação que delete agendamentos vai falhar ou exigir código manual.
+
+SOLUÇÃO (avaliar as duas opções):
+  Opção A — CASCADE no banco:
+    Adicionar ON DELETE CASCADE nas FKs de agendamento_servicos.agendamento_id
+    e agendamento_solicitacao_pix.agendamento_id via migration Alembic.
+  Opção B — CASCADE no ORM:
+    relationship(..., cascade="all, delete-orphan") nos modelos e usar
+    db.session.delete(ag) em vez de .query.delete() em bulk.
+
+  ClientePlanoUso: verificar se deve ser deletado junto (cancelamento do
+  agendamento deve estornar o uso do plano?) — DECISÃO DE NEGÓCIO PENDENTE.
+
+ARQUIVOS AFETADOS:
+  - app/models/__init__.py (relacionamentos de Agendamento)
+  - migrations/ (nova migration Alembic para Opção A)
+
+QUANDO RESOLVER: junto com DT-001 no sprint pré-produção.
+
+────────────────────────────────────────────────────────────────────────────────
+DT-003 — Banco de dados sujo (dados de teste acumulados)  [PRIORIDADE: ALTA]
+────────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA:
+  O banco acumulou dados brutos das Fases 3-9:
+  - Agendamentos de teste com horários no passado.
+  - Senhas redefinidas manualmente via script Python direto.
+  - Usuários criados fora do fluxo normal da API.
+  - ClientePlanoUso espalhados, uso de plano artificial.
+  - Processos fantasma que já ocuparam a porta 5000.
+
+RISCO:
+  Testes manuais finais terão falsos positivos ou números errados porque
+  o banco não reflete um tenant limpo de produção.
+
+PROCEDIMENTO (executar como passo zero da homologação final):
+  1. flask db downgrade base       → drop de todas as tabelas
+  2. flask db upgrade              → recriar schema limpo
+  3. flask seed-metadata           → popular FeatureMetadata
+  4. flask seed-admin              → criar super_admin
+  5. Via API /api/v1/super/barbearias → criar tenants de teste A, B, C
+     com gestores, barbeiros e serviços via chamadas REST (não scripts)
+  6. Habilitar features via PUT /api/v1/super/barbearias/<id>/features/<nome>
+
+QUANDO RESOLVER: passo zero do sprint de homologação final.
+
+────────────────────────────────────────────────────────────────────────────────
+DT-004 — Dependências não garantidas no requirements.txt  [PRIORIDADE: ALTA]
+────────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA:
+  openpyxl e reportlab foram instalados com pip install durante o build
+  iterativo. Se requirements.txt não os listar, produção (Railway) não
+  instala, e o export de relatórios quebra com ImportError.
+
+VERIFICAR:
+  pip freeze | grep -E "openpyxl|reportlab|APScheduler"
+  Confirmar que requirements.txt contém:
+    APScheduler==3.10.4
+    openpyxl==3.1.5
+    reportlab==4.2.5
+
+QUANDO RESOLVER: antes do primeiro deploy. Verificação de 30 segundos.
+
+────────────────────────────────────────────────────────────────────────────────
+DT-005 — Formatadores com db.session.get sem filtro de tenant  [PRIORIDADE: MÉDIA]
+────────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA:
+  Os formatadores _fmt_ag_gestor (gestor/agendamento.py) e _fmt_assinatura
+  (cliente/planos.py) chamam db.session.get(Cliente, ag.cliente_id) e
+  db.session.get(Barbeiro, ag.barbeiro_id) sem verificar barbearia_id.
+
+ESTADO ATUAL: Seguro.
+  Todos os chamadores filtram o objeto-pai por barbearia_id antes de passá-lo
+  ao formatador. O cliente_id/barbeiro_id já está vinculado ao tenant correto.
+
+RISCO FUTURO:
+  Se esses formatadores forem reutilizados em contexto onde o objeto-pai não
+  foi filtrado (endpoint novo inadvertido, tarefa do scheduler), o
+  db.session.get buscará qualquer registro do banco → vazamento silencioso
+  de dados entre tenants sem erro visível.
+
+SOLUÇÃO:
+  Adicionar defesa interna nos formatadores:
+    cliente = db.session.get(Cliente, ag.cliente_id)
+    if cliente and cliente.barbearia_id != barbearia_id:
+        raise RuntimeError(f"Vazamento tenant: cliente {cliente.id}")
+  Ou encapsular em helper: _get_cliente_do_tenant(id, barbearia_id).
+
+ARQUIVOS AFETADOS:
+  - app/routes/gestor/agendamento.py (_fmt_ag_gestor, linhas 17-18)
+  - app/routes/cliente/planos.py (_fmt_assinatura, linhas 39-43)
+
+QUANDO RESOLVER: antes de qualquer refactor que reutilize os formatadores.
+
+────────────────────────────────────────────────────────────────────────────────
+DT-006 — Senhas fracas de teste não podem ir a produção  [PRIORIDADE: CRÍTICA]
+────────────────────────────────────────────────────────────────────────────────
+
+PROBLEMA:
+  Durante o build, contas foram criadas com senhas como "123456",
+  "password123", "senha123" e similares para agilizar os testes manuais.
+
+RISCO EM PRODUÇÃO:
+  Qualquer conta com senha fraca é um vetor de ataque trivial.
+  Super admin com senha fraca = comprometimento total da plataforma.
+
+SOLUÇÃO:
+  1. No sprint de homologação (DT-003), recriar o banco do zero com seeds
+     que usem senhas fortes geradas aleatoriamente.
+  2. Adicionar validação mínima de senha na API (mínimo 8 caracteres,
+     1 número, 1 letra) — hoje valida apenas comprimento >= 6.
+  3. Rever e atualizar a validação em:
+     - app/routes/auth.py (trocar-senha)
+     - app/routes/super/barbearias.py (gestor_senha)
+     - app/routes/gestor/profissionais.py (senha do barbeiro)
+
+QUANDO RESOLVER: junto com DT-003 no sprint de homologação.
+
+
+================================================================================
+  SEÇÃO B — ROADMAP (campos/portas prontos, lógica a construir)
+================================================================================
+
+Estas features têm schema preparado na Fase 9. A lógica e as telas ainda
+não foram implementadas. Ordenadas por prioridade de construção.
+
+────────────────────────────────────────────────────────────────────────────────
+ROAD-01 — Renovação Assistida de Plano (Tipo A)
+          [CONSTRUIR: 1ª sprint pós-frontend de planos]
+────────────────────────────────────────────────────────────────────────────────
+
+CAMPOS PRONTOS: cliente_plano.auto_renovar (Boolean, default false)
+
+FLUXO PLANEJADO:
+  1. Scheduler detecta plano prestes a vencer (N dias antes, configurável).
+  2. Notificação in-app para cliente ("seu plano vence em X dias") e
+     para gestor ("cliente Y está com plano prestes a vencer").
+  3. Cliente recebe ação rápida "Renovar agora" na notificação.
+  4. Ao confirmar: gera nova ClientePlanoSolicitacao com mesmo plano,
+     barbeiro e valor → PIX gerado → cliente paga → gestor aprova.
+  5. Aprovação: cria novo ClientePlano a partir da data de vencimento
+     do anterior (não do dia da aprovação).
+
+REGRA DE NEGÓCIO CRÍTICA:
+  PIX NÃO PERMITE DÉBITO AUTOMÁTICO.
+  "auto_renovar" significa "lembrar e facilitar", nunca "cobrar sozinho".
+  O campo auto_renovar indica que o cliente autorizou a ser notificado
+  para renovar — não que autoriza débito.
+
+RENOVAÇÃO 100% AUTOMÁTICA (pós-MVP):
+  Só possível via gateway de pagamento (Stripe/PayPal).
+  Campos gateway_status e gateway_metadata em pagamentos já previstos.
+
+ARQUIVOS A TOCAR:
+  - app/utils/scheduler.py (novo job: checar vencimentos)
+  - app/routes/gestor/planos.py (endpoint renovar por id)
+  - app/routes/cliente/planos.py (endpoint "quero renovar")
+  - app/utils/notificacoes.py (tipo 'aviso_vencimento_plano')
+
+────────────────────────────────────────────────────────────────────────────────
+ROAD-02 — Billing dos Estabelecimentos (Super Admin)
+          [CONSTRUIR: junto das telas do Super Admin]
+────────────────────────────────────────────────────────────────────────────────
+
+CAMPOS PRONTOS (em Barbearia):
+  billing_plano           — slug do plano contratado pela barbearia
+  billing_mensalidade_valor — valor mensal em R$
+  billing_vencimento_dia  — dia do mês que vence (1-28)
+  billing_proximo_vencimento — próxima data de vencimento (Date)
+  billing_status          — 'em_dia' | 'atrasado' | 'suspenso'
+
+LÓGICA A CONSTRUIR:
+  - Super Admin define plano e valor para cada barbearia via tela.
+  - Scheduler verifica barbearias com billing_proximo_vencimento ultrapassado
+    e muda billing_status para 'atrasado'.
+  - Barbearias com status 'suspenso' têm acesso bloqueado (retornar 402).
+  - Cobrança é manual via PIX — Super Admin confirma pagamento recebido.
+  - Automação de cobrança recorrente = pós-MVP (gateway necessário).
+
+PONTO DE ATENÇÃO:
+  Barbearias suspensas ainda precisam acessar a plataforma para regularizar —
+  definir qual nível mínimo de acesso permanece ativo durante suspensão.
+
+────────────────────────────────────────────────────────────────────────────────
+ROAD-03 — Notificações por E-mail e Web Push
+          [CONSTRUIR: antes do lançamento público]
+────────────────────────────────────────────────────────────────────────────────
+
+ESTRUTURA PRONTA:
+  app/utils/notificacoes.py tem registry de despachantes:
+    _DESPACHANTES = {
+        'in_app':   _despachar_in_app,   # funcional
+        'email':    _despachar_email,     # stub — TODO
+        'web_push': _despachar_web_push,  # stub — TODO
+    }
+  Adicionar nova implementação = substituir o stub. Zero refatoração.
+
+E-MAIL (SendGrid/Mailgun):
+  - Substituir _despachar_email() por chamada real ao SDK.
+  - Configurar variáveis de ambiente: SENDGRID_API_KEY ou MAILGUN_API_KEY.
+  - Nenhuma mudança no scheduler ou na geração de notificações.
+
+WEB PUSH (Android/Chrome):
+  - Implementar _despachar_web_push() com pywebpush ou FCM HTTP v1 API.
+  - Requer: coletar subscription key do browser (endpoint frontend),
+    novo model WebPushSubscription (user_id, endpoint, p256dh, auth).
+  - Variáveis de ambiente: VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY ou FCM_KEY.
+
+PUSH NATIVO COM VIBRAÇÃO/SOM:
+  Depende de app mobile nativo (React Native, Flutter) ou PWA instalada.
+  Marco posterior ao MVP web. Não construir antes de decidir plataforma mobile.
+
+────────────────────────────────────────────────────────────────────────────────
+ROAD-04 — Multi-segmento (Parte B)
+          [CONSTRUIR: após telas da barbearia estarem prontas]
+────────────────────────────────────────────────────────────────────────────────
+
+PRINCÍPIOS JÁ APLICADOS (Parte A — em vigor desde a Fase 4):
+  - L('key') em todo texto visível (app/labels.py)
+  - Recurso agendável (barbeiro como resource_id, não hardcoded)
+  - Regras como config (ConfiguracaoAgendamento por tenant)
+  - Produto desativável (FeatureBarbearia por tenant)
+
+PARTE B A CONSTRUIR:
+  - Painel do Super Admin para criar/configurar segmentos (ex.: clínica,
+    salão, estúdio de tatuagem).
+  - Por segmento: tipo de agenda (individual, grupo, turno), fluxo
+    configurável de agendamento, campos extras.
+  - Tela de gerenciamento de rótulos (labels.py vira dinâmico por segmento).
+  - Campo `segmento` em Barbearia (já previsto no modelo).
+
+PONTO DE ATENÇÃO:
+  Toda lógica de agenda e relatório já usa L() e resource_id — a migração
+  para multi-segmento não exigirá reescrever fluxos, apenas adicionar
+  a camada de configuração por segmento.
+
+────────────────────────────────────────────────────────────────────────────────
+ROAD-05 — Importação de Dados via Excel
+          [CONSTRUIR: na sprint de onboarding de novos clientes]
+────────────────────────────────────────────────────────────────────────────────
+
+CONTEXTO:
+  Novos clientes da plataforma chegam com base de dados existente
+  (planilha de clientes, histórico de serviços). Import via API é inviável
+  manualmente.
+
+A CONSTRUIR:
+  - Endpoint POST /api/v1/gestor/clientes/importar (multipart/form-data).
+  - Parse de arquivo .xlsx (openpyxl já instalado) com colunas mapeáveis.
+  - Validação linha a linha + relatório de erros.
+  - Deduplicação por telefone (normalizar_telefone já existe).
+  - Importação atômica: tudo ou rollback total.
+
+EXPORT JÁ VIÁVEL:
+  Relatório de agendamentos com export .xlsx já funciona (Fase 8).
+  Export de clientes por barbearia é direto (filter_by barbearia_id).
+
+────────────────────────────────────────────────────────────────────────────────
+ROAD-06 — Gateway de Pagamento (Stripe/PayPal)
+          [CONSTRUIR: pós-MVP, quando houver volume para justificar]
+────────────────────────────────────────────────────────────────────────────────
+
+CAMPOS PRONTOS (em Pagamento):
+  gateway_status    — status devolvido pelo gateway ('paid', 'failed', etc.)
+  gateway_metadata  — JSON raw da resposta do gateway (Text)
+
+A CONSTRUIR:
+  - Integração Stripe Checkout ou PayPal Orders API.
+  - Webhook handler para receber confirmações assíncronas.
+  - Renovação automática de plano via subscription (ROAD-01 Tipo B).
+  - Cobrança automática de billing dos estabelecimentos (ROAD-02 automático).
+  - Variáveis de ambiente necessárias: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET.
+
+PONTO DE ATENÇÃO:
+  Nunca armazenar dados de cartão — usar tokens do gateway.
+  gateway_metadata é somente para auditoria/debug, não para reprocessamento.
+
+────────────────────────────────────────────────────────────────────────────────
+ROAD-07 — Features P2 Dormentes (campos criados na Fase 9, sem lógica)
+          [CONSTRUIR: sob demanda, após telas básicas]
+────────────────────────────────────────────────────────────────────────────────
+
+Todos os campos abaixo existem no banco, mas não têm endpoint, regra de
+negócio, validação nem tela. São "portas abertas" — plugar quando chegar
+a hora.
+
+  CARTEIRA DIGITAL (saldo_creditos em clientes):
+    Campo: clientes.saldo_creditos (Numeric 10,2, default 0)
+    A construir: crédito por cancelamento de plano, uso de saldo no
+    checkout de agendamento avulso, recarga manual pelo gestor.
+
+  FILA DE ESPERA (tabela fila_espera):
+    Campos: cliente_id, barbeiro_preferido_id, servico_id, data_preferida,
+            prioridade, posicao, status, chamado_em
+    A construir: endpoint de entrada na fila, job que notifica quando vaga
+    abrir, tela de gestão de fila para o gestor.
+
+  NOTAS DO CLIENTE (tabela cliente_notas):
+    Campos: cliente_id, autor_usuario_id, tipo, conteudo
+    Tipos: 'observacao' | 'alerta' | 'preferencia'
+    A construir: endpoint CRUD para gestor/barbeiro, exibição no perfil
+    do cliente no painel.
+
+  COMISSÃO DINÂMICA POR SERVIÇO (tabela barbeiro_comissao_servico):
+    Campos: barbeiro_id, servico_id, comissao_tipo, comissao_percentual,
+            comissao_valor_fixo — UniqueConstraint(barbeiro_id, servico_id)
+    A construir: sobrescrever comissão padrão do barbeiro serviço a serviço.
+    Relatório de comissão já filtraria pela tabela.
+
+  TRIAL DE PLANO (planos.trial_dias):
+    A construir: criar ClientePlano com data_fim = hoje + trial_dias,
+    sem exigir pagamento. Expirado o trial, cobra ou bloqueia.
+
+  LIMITE DE ASSINATURAS (planos.max_assinaturas):
+    A construir: checar count(ClientePlano ativo) antes de criar novo.
+    NULL = ilimitado (comportamento atual).
+
+  AUTENTICAÇÃO 2FA (usuarios.duplo_fator_ativo, duplo_fator_segredo):
+    A construir: TOTP via pyotp, QR code no perfil, validação no login.
+    duplo_fator_segredo deve ser CRIPTOGRAFADO em produção (anotar).
+
+  WHATSAPP / QR CODE (usuarios.whatsapp_verificado, barbearias.whatsapp_*):
+    Campos: whatsapp_business_id, whatsapp_phone_number_id, whatsapp_verificado
+    A construir: integração Meta WhatsApp Business API, notificações via
+    canal WhatsApp, vinculação de número via QR code ou token de verificação.
+
+
+================================================================================
+  RESUMO EXECUTIVO
+================================================================================
+
+  DÍVIDAS CRÍTICAS (BLOQUEIA PRODUÇÃO):
+    DT-001 — datetime timezone-aware (scheduler erraria por 3h)
+    DT-006 — senhas fracas não podem chegar em produção
+
+  DÍVIDAS ALTAS (RESOLVER ANTES DA HOMOLOGAÇÃO):
+    DT-003 — recriar banco do zero com seeds limpos
+    DT-004 — confirmar requirements.txt com openpyxl/reportlab/APScheduler
+
+  DÍVIDAS MÉDIAS (RESOLVER ANTES DE ESCALAR):
+    DT-002 — cascade delete em Agendamento
+    DT-005 — formatadores sem filtro de tenant interno
+
+  ROADMAP PRIORITÁRIO (1ª SPRINT PÓS-FRONTEND):
+    ROAD-01 — Renovação assistida de plano
+    ROAD-02 — Billing dos estabelecimentos
+
+  ROADMAP MÉDIO PRAZO:
+    ROAD-03 — E-mail e web push
+    ROAD-05 — Importação Excel
+
+  ROADMAP LONGO PRAZO / PÓS-MVP:
+    ROAD-04 — Multi-segmento (Parte B)
+    ROAD-06 — Gateway de pagamento
+    ROAD-07 — Features P2 dormentes
+
+================================================================================

@@ -1,4 +1,4 @@
-from flask import Blueprint, redirect, url_for, render_template
+from flask import Blueprint, redirect, url_for, render_template, jsonify
 
 main = Blueprint('main', __name__)
 
@@ -8,9 +8,26 @@ def index():
     return redirect(url_for('main.login'))
 
 
+@main.get('/dev/reset-db')
+def dev_reset_db():
+    from scripts.reset_database import reset_all
+    resultado = reset_all()
+    return jsonify(resultado), 200
+
+
 @main.get('/login')
 def login():
     return render_template('auth/login.html')
+
+
+@main.get('/cliente/login')
+def cliente_login_page():
+    return render_template('cliente/login.html')
+
+
+@main.get('/cliente/cadastro')
+def cliente_cadastro_page():
+    return render_template('cliente/cadastro.html')
 
 
 # ── Painel Barbeiro ────────────────────────────────────────────────────────────
@@ -98,6 +115,26 @@ def gestor_relatorios():
     return render_template('gestor/relatorios.html')
 
 
+@main.get('/gestor/configuracoes/pix')
+def gestor_config_pix():
+    return render_template('gestor/config_pix.html')
+
+
+@main.get('/gestor/pix-approval')
+def gestor_pix_approval():
+    return render_template('gestor/pix_approval.html')
+
+
+@main.get('/gestor/planos')
+def gestor_planos():
+    return render_template('gestor/planos.html')
+
+
+@main.get('/gestor/vip')
+def gestor_vip():
+    return render_template('gestor/vip.html')
+
+
 # ── Painel Super Admin ─────────────────────────────────────────────────────────
 
 @main.get('/super/dashboard')
@@ -115,9 +152,24 @@ def super_gestores():
     return render_template('super/gestores.html')
 
 
+@main.get('/super/features')
+def super_features():
+    return render_template('super/features.html')
+
+
 @main.get('/super/relatorios')
 def super_relatorios():
     return render_template('super/relatorios.html')
+
+
+@main.get('/super/auditoria')
+def super_auditoria():
+    return render_template('super/auditoria.html')
+
+
+@main.get('/super/customizacao')
+def super_customizacao():
+    return render_template('super/customizacao.html')
 
 
 # ── Público (cliente final) ────────────────────────────────────────────────────
@@ -132,6 +184,58 @@ def public_agendar(slug):
     return render_template('public/agendar.html', slug=slug)
 
 
+@main.get('/b/<slug>/login')
+def public_login(slug):
+    return redirect(f'/cliente/login?b={slug}')
+
+
 @main.get('/b/<slug>/confirmacao/<int:ag_id>')
 def public_confirmacao(slug, ag_id):
     return render_template('public/confirmacao.html', slug=slug, ag_id=ag_id)
+
+
+# ── Painel Cliente ──────────────────────────────────────────────────────────────
+
+@main.get('/cliente/dashboard')
+def cliente_dashboard():
+    return render_template('cliente/dashboard.html')
+
+
+@main.get('/cliente/meu-plano')
+def cliente_meu_plano():
+    return render_template('cliente/meu_plano.html')
+
+
+@main.get('/cliente/vip')
+def cliente_vip_status():
+    return render_template('cliente/vip_status.html')
+
+
+@main.get('/cliente/perfil')
+def cliente_perfil_page():
+    return render_template('cliente/perfil.html')
+
+
+@main.get('/cliente/agendar')
+def cliente_agendar_page():
+    return render_template('cliente/agendar.html')
+
+
+@main.get('/cliente/comprar-plano')
+def cliente_comprar_plano_page():
+    return render_template('cliente/comprar_plano.html')
+
+
+@main.get('/cliente/checkout-plano')
+def cliente_checkout_plano_page():
+    return render_template('cliente/checkout_plano.html')
+
+
+@main.get('/cliente/checkout-pix')
+def cliente_checkout_pix_page():
+    return render_template('cliente/checkout_pix.html')
+
+
+@main.get('/cliente/customizacao')
+def cliente_customizacao_page():
+    return render_template('cliente/customizacao.html')

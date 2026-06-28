@@ -1,0 +1,95 @@
+{% extends "cliente/base.html" %}
+{% block title %}Checkout{% endblock %}
+
+{% block styles %}
+.resumo-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; border-bottom: 1px solid #2d2d2d; }
+.resumo-row:last-child { border-bottom: none; }
+.pag-opcao {
+  display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 8px;
+  border: 1px solid #2d2d2d; background: #1e1e1e; margin-bottom: 8px; font-size: 13px; color: #ccc;
+}
+.pag-opcao.selecionada { border-color: var(--cor-primaria); background: rgba(186,117,23,.08); }
+.pag-opcao input { accent-color: var(--cor-primaria); }
+.pag-opcao.desativada { opacity: .5; }
+.btn-block { display: block; width: 100%; text-align: center; padding: 11px; border-radius: 8px; font-size: 14px; font-weight: 700; border: none; cursor: pointer; font-family: inherit; box-sizing: border-box; margin-top: 14px; }
+.btn-primario { background: var(--cor-primaria); color: #fff; }
+.termos-note { font-size: 11px; color: #666; text-align: center; margin-top: 10px; }
+{% endblock %}
+
+{% block content %}
+<div id="bLoading" class="b-loading">Carregando…</div>
+<div id="conteudo" style="display:none">
+  <div class="b-card">
+    <div style="font-size:13px;font-weight:700;color:#777;text-transform:uppercase;margin-bottom:10px;">Resumo do plano</div>
+    <div class="resumo-row"><span>Nome</span><span id="rNome">—</span></div>
+    <div class="resumo-row"><span>Preço</span><span id="rPreco">—</span></div>
+    <div class="resumo-row"><span>Serviços</span><span id="rServicos">—</span></div>
+  </div>
+
+  <div class="b-card">
+    <div style="font-size:13px;font-weight:700;color:#777;text-transform:uppercase;margin-bottom:10px;">Forma de pagamento</div>
+    <label class="pag-opcao selecionada" id="opcaoPix">
+      <input type="radio" name="pag" id="radioPix" checked onchange="selecionarMetodo('pix')"> PIX (gera código com valor incluído)
+    </label>
+    <label class="pag-opcao" id="opcaoLocal">
+      <input type="radio" name="pag" id="radioLocal" onchange="selecionarMetodo('local')"> Pagar no local
+    </label>
+    <label class="pag-opcao desativada">
+      <input type="radio" name="pag" disabled> Cartão de Crédito (em breve)
+    </label>
+    <button class="btn-block btn-primario" id="btnContinuar" onclick="continuar()">Continuar</button>
+    <p class="termos-note">Ao continuar, você concorda com os termos de serviço.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const planoId = new URLSearchParams(location.search).get('plano_id');
+let metodoSelecionado = 'pix';
+
+function selecionarMetodo(metodo) {
+  metodoSelecionado = metodo;
+  document.getElementById('opcaoPix').classList.toggle('selecionada', metodo === 'pix');
+  document.getElementById('opcaoLocal').classList.toggle('selecionada', metodo === 'local');
+}
+
+async function carregar() {
+  if (!planoId) { toast('Plano não especificado.', 'error'); window.location.href = '/cliente/comprar-plano'; return; }
+  try {
+    const planos = await api.cliente.planosDisponiveis();
+    const p = planos.find(x => String(x.id) === String(planoId));
+    if (!p) { toast('Plano não encontrado.', 'error'); window.location.href = '/cliente/comprar-plano'; return; }
+
+    document.getElementById('rNome').textContent = p.nome;
+    document.getElementById('rPreco').textContent = `R$ ${p.preco_mensal.toFixed(2)}/mês`;
+    document.getElementById('rServicos').textContent = p.servicos.map(s => `${s.limite_mensal == null ? '∞' : s.limite_mensal}x ${s.nome}`).join(', ') || '—';
+    document.getElementById('conteudo').style.display = '';
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    document.getElementById('bLoading').style.display = 'none';
+  }
+}
+
+async function continuar() {
+  if (metodoSelecionado === 'pix') {
+    window.location.href = `/cliente/checkout-pix?plano_id=${planoId}`;
+    return;
+  }
+  // Pagar no local: cria a solicitacao direto, sem comprovante, e pula o checkout-pix.
+  const btn = document.getElementById('btnContinuar');
+  btn.disabled = true;
+  try {
+    const r = await api.cliente.solicitarPlano(planoId, null, 'local');
+    toast(r.mensagem || 'Solicitação registrada.', 'success');
+    setTimeout(() => window.location.href = '/cliente/dashboard', 1200);
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false;
+  }
+}
+
+carregar();
+</script>
+{% endblock %}

@@ -250,6 +250,8 @@
           window.location.href = '/gestor/dashboard';
         } else if (perfil === 'barbeiro') {
           window.location.href = '/barbeiro/agenda';
+        } else if (perfil === 'cliente') {
+          window.location.href = '/cliente/dashboard';
         } else if (perfil === 'admin') {
           window.location.href = '/admin/dashboard';
         } else {
@@ -269,6 +271,7 @@
       if (token && perfil) {
         if (perfil === 'gestor' || perfil === 'super_admin') window.location.href = '/gestor/dashboard';
         else if (perfil === 'barbeiro') window.location.href = '/barbeiro/agenda';
+        else if (perfil === 'cliente')  window.location.href = '/cliente/dashboard';
         else if (perfil === 'admin')    window.location.href = '/admin/dashboard';
       }
     })();

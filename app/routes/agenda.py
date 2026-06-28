@@ -9,9 +9,11 @@ from app.models import (
     ConfiguracaoAgenda, Agendamento, AgendamentoServico,
     HorarioBloqueado, Produto, ReservaProduto,
     Atendimento, SolicitacaoLiberacao,
+    Plano, PlanoServico, PlanoBarbeiro, ClientePlano, ClientePlanoUso,
 )
-from app.utils import normalizar_telefone, get_barbearia_atual
+from app.utils import normalizar_telefone, get_barbearia_atual, limite_para_fora
 from app.routes.auth import barbeiro_required
+from app.routes.features import cliente_required
 
 agenda = Blueprint('agenda', __name__)
 
@@ -902,3 +904,321 @@ def cancelar_reserva(reserva_id):
     reserva.status = 'cancelado'
     db.session.commit()
     return jsonify({'mensagem': 'Reserva cancelada com sucesso.', 'id': reserva_id})
+
+
+# ── GET /agenda/meus-planos (barbeiro) ──────────────────────────────────────────
+
+@agenda.get('/agenda/meus-planos')
+@barbeiro_required
+def meus_planos_barbeiro():
+    uid          = int(get_jwt_identity())
+    barbearia_id = get_barbearia_atual()
+    barbeiro     = _barbeiro_do_usuario(uid, barbearia_id)
+    if not barbeiro:
+        return _erro('Perfil de barbeiro não encontrado.', 404)
+
+    vinculos = PlanoBarbeiro.query.filter_by(barbeiro_id=barbeiro.id, barbearia_id=barbearia_id).all()
+    resultado = []
+    for v in vinculos:
+        plano = db.session.get(Plano, v.plano_id)
+        if not plano or not plano.ativo:
+            continue
+        vinculos_sv = PlanoServico.query.filter_by(plano_id=plano.id, ativo=True).all()
+        servicos = [s.nome for s in Servico.query.filter(
+            Servico.id.in_([vs.servico_id for vs in vinculos_sv])).all()] if vinculos_sv else []
+        resultado.append({
+            'id': plano.id,
+            'nome': plano.nome,
+            'preco_mensal': float(plano.preco_mensal),
+            'clientes': ClientePlano.query.filter_by(plano_id=plano.id, ativo=True).count(),
+            'servicos': servicos,
+        })
+    return jsonify(resultado)
+
+
+# ── GET /agenda/agendamentos-hoje (barbeiro) ────────────────────────────────────
+
+@agenda.get('/agenda/agendamentos-hoje')
+@barbeiro_required
+def agendamentos_hoje_barbeiro():
+    uid          = int(get_jwt_identity())
+    barbearia_id = get_barbearia_atual()
+    barbeiro     = _barbeiro_do_usuario(uid, barbearia_id)
+    if not barbeiro:
+        return _erro('Perfil de barbeiro não encontrado.', 404)
+
+    hoje    = datetime.utcnow().date()
+    ini_dia = datetime.combine(hoje, Time(0, 0))
+    fim_dia = ini_dia + timedelta(days=1)
+
+    rows = (
+        db.session.query(Agendamento, Cliente, Servico)
+        .join(Cliente, Agendamento.cliente_id == Cliente.id)
+        .join(Servico, Agendamento.servico_id == Servico.id)
+        .filter(
+            Agendamento.barbeiro_id == barbeiro.id,
+            Agendamento.barbearia_id == barbearia_id,
+            Agendamento.status == 'agendado',
+            Agendamento.data_hora >= ini_dia,
+            Agendamento.data_hora < fim_dia,
+        )
+        .order_by(Agendamento.data_hora)
+        .all()
+    )
+
+    resultado = []
+    for ag, cl, sv in rows:
+        cliente_plano = ClientePlano.query.filter_by(cliente_id=cl.id, ativo=True).first()
+        plano_nome = None
+        if cliente_plano and ClientePlanoUso.query.filter_by(
+            cliente_plano_id=cliente_plano.id, servico_id=sv.id, data_uso=ag.data_hora.date(),
+        ).first():
+            plano = db.session.get(Plano, cliente_plano.plano_id)
+            plano_nome = plano.nome if plano else None
+        resultado.append({
+            'id': ag.id,
+            'hora': ag.data_hora.strftime('%H:%M'),
+            'cliente_nome': cl.nome,
+            'servico': sv.nome,
+            'plano_nome': plano_nome,
+            'status': ag.status,
+        })
+    return jsonify(resultado)
+
+
+# ── ROTAS DO CLIENTE (app autenticado) ──────────────────────────────────────────
+
+def _cliente_atual():
+    usuario = db.session.get(Usuario, int(get_jwt_identity()))
+    return usuario.cliente if usuario else None
+
+
+def _plano_ativo_do_cliente(cliente):
+    return ClientePlano.query.filter_by(cliente_id=cliente.id, ativo=True).first()
+
+
+@agenda.get('/cliente/proximos-agendamentos')
+@cliente_required
+def proximos_agendamentos_cliente():
+    cliente = _cliente_atual()
+    if not cliente:
+        return _erro('Cadastro de cliente não encontrado para este usuário.', 404)
+
+    rows = (
+        db.session.query(Agendamento, Barbeiro, Usuario, Servico)
+        .join(Barbeiro, Agendamento.barbeiro_id == Barbeiro.id)
+        .join(Usuario,  Barbeiro.usuario_id == Usuario.id)
+        .join(Servico,  Agendamento.servico_id == Servico.id)
+        .filter(
+            Agendamento.cliente_id == cliente.id,
+            Agendamento.status == 'agendado',
+            Agendamento.data_hora >= datetime.utcnow(),
+        )
+        .order_by(Agendamento.data_hora)
+        .limit(5)
+        .all()
+    )
+    return jsonify([
+        {
+            'id': ag.id,
+            'data_hora': ag.data_hora.isoformat(),
+            'barbeiro_nome': u.nome,
+            'servico_nome': sv.nome,
+            'status': ag.status,
+        }
+        for ag, b, u, sv in rows
+    ])
+
+
+@agenda.get('/cliente/agendar/opcoes')
+@cliente_required
+def opcoes_agendar_cliente():
+    cliente = _cliente_atual()
+    if not cliente:
+        return _erro('Cadastro de cliente não encontrado para este usuário.', 404)
+    barbearia_id = cliente.barbearia_id
+
+    cliente_plano = _plano_ativo_do_cliente(cliente)
+    servicos_plano = []
+    barbeiros_ids_plano = None
+
+    if cliente_plano:
+        vinculos = PlanoServico.query.filter_by(plano_id=cliente_plano.plano_id, ativo=True).all()
+        janela_30d = datetime.utcnow().date() - timedelta(days=30)
+        for v in vinculos:
+            sv = db.session.get(Servico, v.servico_id)
+            if not sv or not sv.ativo:
+                continue
+            ja_usou = ClientePlanoUso.query.filter(
+                ClientePlanoUso.cliente_plano_id == cliente_plano.id,
+                ClientePlanoUso.servico_id == v.servico_id,
+                ClientePlanoUso.usado == True,
+                ClientePlanoUso.data_uso >= janela_30d,
+            ).count()
+            if ja_usou < v.limite_uso_mensal:
+                limite_fmt = limite_para_fora(v.limite_uso_mensal)
+                servicos_plano.append({
+                    'id': sv.id, 'nome': sv.nome,
+                    'limite_mensal': limite_fmt, 'ja_usou': ja_usou,
+                    'disponivel': (v.limite_uso_mensal - ja_usou) if limite_fmt is not None else None,
+                })
+        vinculos_barbeiro = PlanoBarbeiro.query.filter_by(plano_id=cliente_plano.plano_id).all()
+        if vinculos_barbeiro:
+            barbeiros_ids_plano = [v.barbeiro_id for v in vinculos_barbeiro]
+
+    servicos_avulso = [
+        {'id': s.id, 'nome': s.nome, 'preco': float(s.preco), 'duracao_minutos': s.duracao_minutos}
+        for s in Servico.query.filter_by(barbearia_id=barbearia_id, ativo=True).order_by(Servico.nome).all()
+    ]
+
+    barbeiros_q = Barbeiro.query.filter_by(barbearia_id=barbearia_id, ativo=True)
+    if barbeiros_ids_plano:
+        barbeiros_q = barbeiros_q.filter(Barbeiro.id.in_(barbeiros_ids_plano))
+    barbeiros = []
+    for b in barbeiros_q.all():
+        u = db.session.get(Usuario, b.usuario_id)
+        if u and u.ativo:
+            barbeiros.append({'id': b.id, 'nome': u.nome, 'foto': b.foto})
+
+    return jsonify({
+        'tem_plano': cliente_plano is not None,
+        'plano_id': cliente_plano.plano_id if cliente_plano else None,
+        'servicos_plano': servicos_plano,
+        'servicos_avulso': servicos_avulso,
+        'barbeiros': barbeiros,
+    })
+
+
+@agenda.get('/cliente/agendar/horarios')
+@cliente_required
+def horarios_cliente():
+    cliente = _cliente_atual()
+    if not cliente:
+        return _erro('Cadastro de cliente não encontrado para este usuário.', 404)
+
+    barbeiro_id = request.args.get('barbeiro_id', type=int)
+    data_str = request.args.get('data', '').strip()
+    if not barbeiro_id:
+        return _erro('"barbeiro_id" é obrigatório.')
+    if not data_str:
+        return _erro('"data" é obrigatório (YYYY-MM-DD).')
+    try:
+        data_dt = datetime.strptime(data_str, '%Y-%m-%d').date()
+    except ValueError:
+        return _erro('Formato de data inválido. Use YYYY-MM-DD.')
+
+    barbeiro = Barbeiro.query.filter_by(id=barbeiro_id, barbearia_id=cliente.barbearia_id, ativo=True).first()
+    if not barbeiro:
+        return _erro('Barbeiro não encontrado.', 404)
+    config = ConfiguracaoAgenda.query.filter_by(barbeiro_id=barbeiro_id, barbearia_id=cliente.barbearia_id).first()
+    if not config:
+        return _erro('O barbeiro ainda não configurou sua agenda.')
+
+    agendamentos = _agendamentos_do_dia(barbeiro_id, data_dt, cliente.barbearia_id)
+    bloqueios = _bloqueios_do_dia(barbeiro_id, data_dt, cliente.barbearia_id)
+    slots = _slots_livres(config, data_dt, agendamentos, bloqueios)
+    return jsonify({'slots': slots, 'data': data_str})
+
+
+@agenda.post('/cliente/agendar')
+@cliente_required
+def criar_agendamento_cliente():
+    cliente = _cliente_atual()
+    if not cliente:
+        return _erro('Cadastro de cliente não encontrado para este usuário.', 404)
+    barbearia_id = cliente.barbearia_id
+
+    dados = request.get_json(silent=True)
+    if not dados:
+        return _erro('Corpo da requisição inválido ou ausente.')
+
+    servico_id    = dados.get('servico_id')
+    barbeiro_id   = dados.get('barbeiro_id')
+    data_str      = (dados.get('data') or '').strip()
+    hora_str      = (dados.get('hora') or '').strip()
+    usar_plano    = bool(dados.get('usar_plano', False))
+
+    if not servico_id:  return _erro('"servico_id" é obrigatório.')
+    if not barbeiro_id: return _erro('"barbeiro_id" é obrigatório.')
+    if not data_str or not hora_str: return _erro('"data" e "hora" são obrigatórios.')
+    try:
+        data_hora = datetime.strptime(f'{data_str} {hora_str}', '%Y-%m-%d %H:%M')
+    except ValueError:
+        return _erro('Formato de data/hora inválido.')
+
+    servico = Servico.query.filter_by(id=servico_id, barbearia_id=barbearia_id, ativo=True).first()
+    if not servico:
+        return _erro('Serviço não encontrado.', 404)
+    barbeiro = Barbeiro.query.filter_by(id=barbeiro_id, barbearia_id=barbearia_id, ativo=True).first()
+    if not barbeiro:
+        return _erro('Barbeiro não encontrado.', 404)
+    if not BarbeiroServico.query.filter_by(barbeiro_id=barbeiro_id, servico_id=servico_id).first():
+        return _erro('Este barbeiro não atende este serviço.')
+
+    cliente_plano = _plano_ativo_do_cliente(cliente)
+    vinculo_plano = None
+    if usar_plano:
+        if not cliente_plano:
+            return _erro('Você não possui um plano ativo.')
+        vinculo_plano = PlanoServico.query.filter_by(
+            plano_id=cliente_plano.plano_id, servico_id=servico_id, ativo=True,
+        ).first()
+        if not vinculo_plano:
+            return _erro('Este serviço não está incluído no seu plano.')
+        janela_30d = datetime.utcnow().date() - timedelta(days=30)
+        ja_usou = ClientePlanoUso.query.filter(
+            ClientePlanoUso.cliente_plano_id == cliente_plano.id,
+            ClientePlanoUso.servico_id == servico_id,
+            ClientePlanoUso.usado == True,
+            ClientePlanoUso.data_uso >= janela_30d,
+        ).count()
+        if ja_usou >= vinculo_plano.limite_uso_mensal:
+            return _erro('Você já utilizou a cota deste serviço no seu plano este mês.', 409)
+
+        vinculos_barbeiro = PlanoBarbeiro.query.filter_by(plano_id=cliente_plano.plano_id).all()
+        if vinculos_barbeiro and barbeiro_id not in [v.barbeiro_id for v in vinculos_barbeiro]:
+            return _erro('Este barbeiro não atende clientes deste plano.')
+
+    config = ConfiguracaoAgenda.query.filter_by(barbeiro_id=barbeiro_id, barbearia_id=barbearia_id).first()
+    if not config:
+        return _erro('O barbeiro ainda não configurou sua agenda.')
+    data_dt = data_hora.date()
+    slots = _slots_livres(
+        config, data_dt,
+        _agendamentos_do_dia(barbeiro_id, data_dt, barbearia_id),
+        _bloqueios_do_dia(barbeiro_id, data_dt, barbearia_id),
+    )
+    if hora_str not in slots:
+        return _erro(f'O horário {hora_str} não está disponível.')
+
+    agendamento = Agendamento(
+        barbearia_id=barbearia_id,
+        cliente_id=cliente.id,
+        barbeiro_id=barbeiro_id,
+        servico_id=servico_id,
+        data_hora=data_hora,
+        duracao_minutos=servico.duracao_minutos,
+        status='agendado',
+    )
+    db.session.add(agendamento)
+    db.session.flush()
+    db.session.add(AgendamentoServico(
+        agendamento_id=agendamento.id, servico_id=servico_id,
+        quantidade=1, preco_unitario=servico.preco,
+    ))
+
+    if vinculo_plano:
+        hoje = datetime.utcnow().date()
+        db.session.add(ClientePlanoUso(
+            cliente_plano_id=cliente_plano.id, servico_id=servico_id,
+            data_uso=hoje, semana_do_mes=min(((hoje.day - 1) // 7) + 1, 5), usado=True,
+        ))
+
+    db.session.commit()
+
+    return jsonify({
+        'mensagem': f'Agendamento confirmado! Barbeiro: {db.session.get(Usuario, barbeiro.usuario_id).nome}',
+        'agendamento_id': agendamento.id,
+        'status': agendamento.status,
+        'incluido_no_plano': vinculo_plano is not None,
+    }), 201

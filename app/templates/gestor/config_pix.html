@@ -1,0 +1,128 @@
+{% extends "gestor/base.html" %}
+{% block title %}Configurar PIX{% endblock %}
+{% block page_title %}Configurações — PIX{% endblock %}
+
+{% block styles %}
+<style>
+.pix-container { max-width: 560px; }
+.form-group { margin-bottom: 16px; }
+.form-label { display: block; font-size: 12px; color: #888; font-weight: 600; margin-bottom: 6px; }
+.form-hint { font-size: 11px; color: #555; margin-top: 5px; }
+.form-input, .form-select {
+  width: 100%; padding: 10px 12px; background: #1e1e1e; border: 1px solid #2d2d2d;
+  border-radius: 6px; color: #ddd; font-family: inherit; font-size: 13px;
+  outline: none; box-sizing: border-box; transition: border-color .2s;
+}
+.form-input:focus, .form-select:focus { border-color: var(--cor-primaria); }
+.form-row { display: flex; gap: 10px; align-items: flex-start; }
+.btn-testar {
+  background: none; border: 1px solid #333; color: #888; border-radius: 6px;
+  padding: 10px 16px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit;
+  white-space: nowrap; flex-shrink: 0;
+}
+.btn-testar:hover { border-color: var(--cor-primaria); color: var(--cor-primaria); }
+.teste-resultado { font-size: 12px; margin-top: 8px; padding: 8px 10px; border-radius: 6px; display: none; }
+.teste-resultado.ok { background: rgba(34,197,94,.1); color: #4ade80; border: 1px solid rgba(34,197,94,.3); display: block; }
+.teste-resultado.erro { background: rgba(220,38,38,.1); color: #f87171; border: 1px solid rgba(220,38,38,.3); display: block; }
+.form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pix-container">
+  <div class="b-card" style="background:#242424;border:1px solid #2d2d2d;border-radius:10px;padding:24px;">
+    <div class="form-group">
+      <label class="form-label">Chave PIX (E-mail, CPF, CNPJ, Telefone ou Aleatória)</label>
+      <div class="form-row">
+        <input class="form-input" id="fChave" placeholder="Ex: seu@email.com ou (11) 99999-9999">
+        <button class="btn-testar" onclick="testarChave()">Testar chave PIX</button>
+      </div>
+      <div class="teste-resultado" id="testeResultado"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Nome do Titular (aparece para o cliente, máx. 25 caracteres)</label>
+      <input class="form-input" id="fTitular" maxlength="25" placeholder="Ex: Barber Shop CenoBarber">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Cidade (máx. 15 caracteres — exigência do padrão PIX)</label>
+      <input class="form-input" id="fCidade" maxlength="15" placeholder="Ex: Cerejeiras">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Banco (opcional)</label>
+      <select class="form-select" id="fBanco">
+        <option value="">Não informado</option>
+        <option>Banco do Brasil</option>
+        <option>Itaú</option>
+        <option>Caixa Econômica Federal</option>
+        <option>Bradesco</option>
+        <option>Santander</option>
+        <option>Nubank</option>
+        <option>Inter</option>
+        <option>Sicoob</option>
+        <option>BTG Pactual</option>
+        <option>Outro</option>
+      </select>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn-icon" onclick="window.location.href='/gestor/dashboard'">Cancelar</button>
+      <button class="btn-icon" id="btnSalvar" onclick="salvar()">Salvar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function carregar() {
+  try {
+    const c = await api.barbearia.configPix();
+    document.getElementById('fChave').value = c.chave_pix || '';
+    document.getElementById('fTitular').value = c.pix_nome_titular || '';
+    document.getElementById('fCidade').value = c.pix_cidade || '';
+    document.getElementById('fBanco').value = c.pix_banco || '';
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function testarChave() {
+  const chave = document.getElementById('fChave').value.trim();
+  const box = document.getElementById('testeResultado');
+  if (!chave) { toast('Informe a chave PIX antes de testar.', 'error'); return; }
+  try {
+    const r = await api.barbearia.testarChavePix(chave);
+    box.className = 'teste-resultado ' + (r.valida ? 'ok' : 'erro');
+    box.textContent = (r.valida ? '✓ ' : '✕ ') + r.mensagem;
+  } catch (e) {
+    box.className = 'teste-resultado erro';
+    box.textContent = e.message;
+  }
+}
+
+async function salvar() {
+  const chave_pix = document.getElementById('fChave').value.trim();
+  const nome_titular = document.getElementById('fTitular').value.trim();
+  const cidade = document.getElementById('fCidade').value.trim();
+  const banco = document.getElementById('fBanco').value;
+
+  if (!chave_pix) { toast('Informe a chave PIX.', 'error'); return; }
+  if (!nome_titular) { toast('Informe o nome do titular.', 'error'); return; }
+  if (!cidade) { toast('Informe a cidade.', 'error'); return; }
+
+  const btn = document.getElementById('btnSalvar');
+  btn.disabled = true;
+  try {
+    await api.barbearia.salvarPix({ chave_pix, nome_titular, cidade, banco });
+    toast('PIX configurado com sucesso.', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+carregar();
+</script>
+{% endblock %}
