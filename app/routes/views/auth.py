@@ -141,7 +141,7 @@ def sair():
     return resp
 
 
-# ── Áreas placeholder ─────────────────────────────────────────────────────────
+# ── Áreas placeholder (gestor/barbeiro) ──────────────────────────────────────
 
 @views_bp.get('/gestor/')
 @views_bp.get('/gestor')
@@ -149,17 +149,6 @@ def sair():
 def area_gestor():
     return render_template('staff/placeholder.html',
         area='do Gestor',
-        nome=session.get('nome', ''),
-        perfil=session.get('perfil', ''),
-    )
-
-
-@views_bp.get('/super/')
-@views_bp.get('/super')
-@session_required('super_admin')
-def area_super():
-    return render_template('staff/placeholder.html',
-        area='do Administrador',
         nome=session.get('nome', ''),
         perfil=session.get('perfil', ''),
     )
@@ -174,3 +163,58 @@ def area_barbeiro():
         nome=session.get('nome', ''),
         perfil=session.get('perfil', ''),
     )
+
+
+# ── Área Super Admin ──────────────────────────────────────────────────────────
+
+def _super_ctx():
+    return {'sa_nome': session.get('nome', 'Super Admin')}
+
+
+@views_bp.get('/super')
+@views_bp.get('/super/')
+@session_required('super_admin')
+def area_super():
+    return redirect('/super/dashboard')
+
+
+@views_bp.get('/super/dashboard')
+@session_required('super_admin')
+def super_dashboard():
+    return render_template('super/dashboard.html', **_super_ctx())
+
+
+@views_bp.get('/super/barbearias')
+@session_required('super_admin')
+def super_barbearias():
+    return render_template('super/barbearias.html', **_super_ctx())
+
+
+@views_bp.get('/super/gestores')
+@session_required('super_admin')
+def super_gestores():
+    return render_template('super/em_construcao.html', secao='Gestores', **_super_ctx())
+
+
+@views_bp.get('/super/relatorios')
+@session_required('super_admin')
+def super_relatorios():
+    return render_template('super/em_construcao.html', secao='Relatórios', **_super_ctx())
+
+
+@views_bp.get('/super/features')
+@session_required('super_admin')
+def super_features():
+    return render_template('super/em_construcao.html', secao='Features', **_super_ctx())
+
+
+@views_bp.get('/super/auditoria')
+@session_required('super_admin')
+def super_auditoria():
+    return render_template('super/em_construcao.html', secao='Auditoria', **_super_ctx())
+
+
+@views_bp.get('/super/customizacao')
+@session_required('super_admin')
+def super_customizacao():
+    return render_template('super/customizacao.html', **_super_ctx())

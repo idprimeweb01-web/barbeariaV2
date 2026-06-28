@@ -1,219 +1,361 @@
 {% extends "super/base.html" %}
-{% block title %}Barbearias{% endblock %}
-{% block page_title %}Barbearias{% endblock %}
+{% block title %}Estabelecimentos{% endblock %}
+{% block page_title %}Estabelecimentos{% endblock %}
 
 {% block content %}
 <div class="section-header">
-  <span class="section-title">Barbearias</span>
-  <button class="btn btn-primary" style="width:auto;padding:9px 18px;font-size:14px" onclick="novoModal()">+ Barbearia</button>
+  <span class="section-title">Estabelecimentos</span>
+  <button class="btn btn-primary" style="width:auto;padding:9px 20px;font-size:14px" onclick="abrirNovo()">
+    + Novo Estabelecimento
+  </button>
 </div>
 
 <div class="table-wrap">
   <table class="data-table">
-    <thead><tr><th>Logo</th><th>Nome</th><th>Slug</th><th>Gestor</th><th>Tema</th><th>Status</th><th>Ações</th></tr></thead>
-    <tbody id="tbody"><tr><td colspan="7" style="text-align:center;color:#444;padding:32px">Carregando…</td></tr></tbody>
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Slug</th>
+        <th>Status</th>
+        <th>Criado em</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody id="tbody">
+      <tr><td colspan="5" class="empty-state">Carregando…</td></tr>
+    </tbody>
   </table>
 </div>
 
-<!-- Modal -->
-<div class="modal-overlay" id="modal" onclick="if(event.target===this)fecharModal('modal')">
+<!-- ── Modal: Novo Estabelecimento ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="modalNovo" onclick="if(event.target===this)fecharModal('modalNovo')">
   <div class="modal-box">
     <div class="modal-header">
-      <h3 id="modalTitulo">Nova Barbearia</h3>
-      <button class="modal-close" onclick="fecharModal('modal')">×</button>
+      <h3>Novo Estabelecimento</h3>
+      <button class="modal-close" onclick="fecharModal('modalNovo')">×</button>
     </div>
-    <form id="form" onsubmit="salvar(event)">
-      <div class="field"><label>Nome *</label><input type="text" id="fNome" required oninput="atualizarPreview()"></div>
-      <div class="field">
-        <label>Slug * <small style="color:#555">(somente letras minúsculas, números e -)</small></label>
-        <input type="text" id="fSlug" pattern="[a-z0-9-]+" required oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')">
-      </div>
-      <div class="field">
-        <label>Nome para exibição <small style="color:#555">(aparece no painel — deixe vazio para usar o Nome)</small></label>
-        <input type="text" id="fNomeExib" placeholder="Ex: Cebo Barbearia" oninput="atualizarPreview()">
-      </div>
-      <div class="field"><label>Logo</label><div id="wLogo"></div></div>
-      <div class="field">
-        <label>URL de Agendamento <small style="color:#555">(caminho público para o cliente agendar)</small></label>
-        <input type="text" id="fUrlAg" placeholder="/b/{slug}/">
-      </div>
-      <div class="field">
-        <label>Fonte</label>
-        <select id="fFonte" onchange="atualizarPreview()" style="width:100%;padding:8px 12px;background:#1e1e1e;border:1.5px solid #333;border-radius:8px;color:#fff;font-family:inherit;font-size:13px;outline:none;cursor:pointer">
-          <option value="Inter">Inter (padrão)</option>
-          <option value="Arial">Arial</option>
-          <option value="Georgia">Georgia</option>
-          <option value="Roboto">Roboto</option>
-          <option value="Courier New">Courier New</option>
-          <option value="Verdana">Verdana</option>
-          <option value="Raleway">Raleway</option>
-        </select>
-      </div>
-      <fieldset style="border:1px solid #2d2d2d;border-radius:8px;padding:12px 16px;margin-bottom:16px">
-        <legend style="font-size:12px;color:#666;padding:0 6px">Tema de Cores</legend>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">
-          <div class="field" style="margin:0">
-            <label style="font-size:12px">Cor primária</label>
-            <input type="color" id="fCorP" value="#BA7517" oninput="atualizarPreview()" style="width:100%;height:36px;padding:2px;border:1px solid #333;border-radius:6px;background:#1e1e1e;cursor:pointer">
-          </div>
-          <div class="field" style="margin:0">
-            <label style="font-size:12px">Fundo</label>
-            <input type="color" id="fCorF" value="#1a1a1a" oninput="atualizarPreview()" style="width:100%;height:36px;padding:2px;border:1px solid #333;border-radius:6px;background:#1e1e1e;cursor:pointer">
-          </div>
-          <div class="field" style="margin:0">
-            <label style="font-size:12px">Card</label>
-            <input type="color" id="fCorC" value="#2a2a2a" oninput="atualizarPreview()" style="width:100%;height:36px;padding:2px;border:1px solid #333;border-radius:6px;background:#1e1e1e;cursor:pointer">
-          </div>
+
+    <!-- Formulário de criação -->
+    <div id="formArea">
+      <form id="formNovo" onsubmit="criar(event)">
+        <div class="field">
+          <label for="fNome">Nome *</label>
+          <input type="text" id="fNome" required placeholder="Ex: Barbearia do Carlos"
+                 oninput="autoSlug()">
         </div>
-        <!-- Pré-visualização -->
-        <div style="font-size:10px;color:#555;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Pré-visualização</div>
-        <div style="display:flex;border-radius:8px;overflow:hidden;border:1px solid #333">
-          <div id="pvSidebar" style="background:#1f1f1f;padding:10px 12px;min-width:110px">
-            <div id="pvBrand" style="font-size:13px;font-weight:700;color:#BA7517;margin-bottom:8px">BarberOS</div>
-            <div id="pvNavItem" style="font-size:11px;padding:6px 8px;border-radius:5px;border-left:2px solid #BA7517;color:#BA7517;background:rgba(186,117,23,.1)">Dashboard</div>
-          </div>
-          <div id="pvMain" style="flex:1;background:#1a1a1a;padding:10px">
-            <div id="pvCard" style="background:#2a2a2a;border-radius:7px;padding:10px">
-              <div style="font-size:9px;color:#555;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">FATURAMENTO</div>
-              <div id="pvValue" style="font-size:18px;font-weight:800;color:#BA7517">R$ 1.234</div>
-            </div>
-          </div>
+        <div class="field">
+          <label for="fSlug">Slug *
+            <small style="color:#555;font-weight:400"> (letras minúsculas, números e -)</small>
+          </label>
+          <input type="text" id="fSlug" required pattern="[a-z0-9-]+"
+                 placeholder="ex: barbearia-carlos"
+                 oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');_slugManual=true">
         </div>
-      </fieldset>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modal')">Cancelar</button>
-        <button type="submit" class="btn btn-primary" id="btnSalvar" style="width:auto;padding:9px 24px">Salvar</button>
+        <div class="field">
+          <label for="fNomeExib">Nome de exibição
+            <small style="color:#555;font-weight:400"> (deixe vazio para usar o Nome)</small>
+          </label>
+          <input type="text" id="fNomeExib" placeholder="Ex: Carlos Barber Shop">
+        </div>
+
+        <div class="field-group-title">Dados do Gestor</div>
+
+        <div class="field">
+          <label for="fGNome">Nome do gestor *</label>
+          <input type="text" id="fGNome" required placeholder="Ex: Carlos Silva">
+        </div>
+        <div class="field">
+          <label for="fGEmail">E-mail do gestor *</label>
+          <input type="email" id="fGEmail" required placeholder="carlos@email.com" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="fGTel">Telefone do gestor *</label>
+          <input type="tel" id="fGTel" required placeholder="(11) 99999-9999">
+        </div>
+        <div class="field">
+          <label for="fGSenha">Senha inicial do gestor *
+            <small style="color:#555;font-weight:400"> (mín. 6 caracteres)</small>
+          </label>
+          <input type="password" id="fGSenha" required minlength="6"
+                 placeholder="Senha provisória" autocomplete="new-password">
+        </div>
+
+        <div id="erroNovo" class="alert alert-error" style="display:none"></div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" style="width:auto;padding:9px 18px"
+                  onclick="fecharModal('modalNovo')">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btnCriar" style="width:auto;padding:9px 24px">
+            <span id="btnCriarTxt">Criar Estabelecimento</span>
+            <span class="spinner" id="btnCriarSpin" style="display:none"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Tela de sucesso (após criar) -->
+    <div id="successArea" style="display:none">
+      <div class="success-box">
+        <div class="success-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+               stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <h3 style="font-size:16px;font-weight:700;margin-bottom:6px">Estabelecimento criado!</h3>
+        <p style="font-size:13px;color:#666">O gestor já pode acessar o sistema.</p>
+
+        <div class="success-info" id="successInfo"></div>
+
+        <button class="btn btn-ghost" style="width:auto;padding:10px 24px;margin-top:4px"
+                onclick="fecharModal('modalNovo');carregar()">
+          Fechar
+        </button>
       </div>
-    </form>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Detalhes ──────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="modalDetalhe" onclick="if(event.target===this)fecharModal('modalDetalhe')">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-header">
+      <h3>Detalhes</h3>
+      <button class="modal-close" onclick="fecharModal('modalDetalhe')">×</button>
+    </div>
+    <div id="detalheConteudo" style="color:#555;font-size:14px">Carregando…</div>
+    <div class="modal-footer" id="detalheBotoes" style="justify-content:space-between;flex-wrap:wrap;gap:10px"></div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  let _todos = [], _editId = null;
+let _lista = [];
+let _slugManual = false;
 
-  async function carregar() {
-    try { _todos = await api.super.barbearias.listar(); }
-    catch(e) { _todos = []; toast(e.message,'error'); }
-    renderTabela();
+// ── Slug automático ────────────────────────────────────────────────────────
+function autoSlug() {
+  if (_slugManual) return;
+  const nome = document.getElementById('fNome').value.trim();
+  const slug = nome
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  document.getElementById('fSlug').value = slug;
+}
+
+// ── Abrir modal de criação ─────────────────────────────────────────────────
+function abrirNovo() {
+  _slugManual = false;
+  document.getElementById('formNovo').reset();
+  document.getElementById('erroNovo').style.display = 'none';
+  document.getElementById('formArea').style.display = '';
+  document.getElementById('successArea').style.display = 'none';
+  document.getElementById('btnCriar').disabled = false;
+  document.getElementById('btnCriarTxt').style.display = '';
+  document.getElementById('btnCriarSpin').style.display = 'none';
+  abrirModal('modalNovo');
+  setTimeout(() => document.getElementById('fNome').focus(), 80);
+}
+
+// ── Criar estabelecimento ──────────────────────────────────────────────────
+async function criar(e) {
+  e.preventDefault();
+  const erroEl = document.getElementById('erroNovo');
+  erroEl.style.display = 'none';
+
+  const btn = document.getElementById('btnCriar');
+  btn.disabled = true;
+  document.getElementById('btnCriarTxt').style.display = 'none';
+  document.getElementById('btnCriarSpin').style.display = '';
+
+  const dados = {
+    nome:             document.getElementById('fNome').value.trim(),
+    slug:             document.getElementById('fSlug').value.trim(),
+    nome_exibicao:    document.getElementById('fNomeExib').value.trim() || null,
+    gestor_nome:      document.getElementById('fGNome').value.trim(),
+    gestor_email:     document.getElementById('fGEmail').value.trim().toLowerCase(),
+    gestor_telefone:  document.getElementById('fGTel').value.trim(),
+    gestor_senha:     document.getElementById('fGSenha').value,
+  };
+
+  try {
+    const res = await Bos.post('/super/barbearias', dados);
+
+    // Tela de sucesso
+    document.getElementById('formArea').style.display = 'none';
+    document.getElementById('successArea').style.display = '';
+
+    const b = res.barbearia || {};
+    const g = res.gestor || {};
+    const linkPublico = b.url_agendamento || `/b/${b.slug}/`;
+
+    document.getElementById('successInfo').innerHTML = `
+      <p><strong>Estabelecimento:</strong> ${esc(b.nome || dados.nome)}</p>
+      <p><strong>Slug:</strong> ${esc(b.slug || dados.slug)}</p>
+      <p><strong>Gestor:</strong> ${esc(g.nome || dados.gestor_nome)} — ${esc(g.email || dados.gestor_email)}</p>
+      <p style="margin-top:10px;padding-top:10px;border-top:1px solid #2a2a2a">
+        <strong>Link de acesso da equipe:</strong>
+        <a href="/entrar" target="_blank" class="success-link" style="margin-top:4px;display:inline-flex">
+          ${window.location.origin}/entrar
+        </a>
+      </p>
+      <p>
+        <strong>Link público:</strong>
+        <a href="${esc(linkPublico)}" target="_blank" class="success-link" style="margin-top:4px;display:inline-flex">
+          ${window.location.origin}${esc(linkPublico)}
+        </a>
+      </p>
+    `;
+
+  } catch(err) {
+    erroEl.textContent = err.message || 'Erro ao criar estabelecimento.';
+    erroEl.style.display = 'flex';
+    btn.disabled = false;
+    document.getElementById('btnCriarTxt').style.display = '';
+    document.getElementById('btnCriarSpin').style.display = 'none';
   }
+}
 
-  function renderTabela() {
-    const tb = document.getElementById('tbody');
-    if (!_todos.length) { tb.innerHTML='<tr><td colspan="7"><div class="empty-state">Nenhuma barbearia.</div></td></tr>'; return; }
-    tb.innerHTML = _todos.map(b => `<tr>
-      <td>${b.tema?.logo_url ? `<div class="foto-avatar"><img src="${b.tema.logo_url}" alt="${esc(b.nome)}"></div>` : `<div class="foto-avatar">${esc(b.nome.charAt(0))}</div>`}</td>
-      <td style="font-weight:600">${esc(b.nome)}</td>
-      <td><code style="font-size:12px;color:#BA7517;background:rgba(186,117,23,.1);padding:2px 7px;border-radius:4px">${esc(b.slug)}</code></td>
-      <td style="color:#777">${esc(b.gestor?.nome || '—')}</td>
-      <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${esc(b.tema?.cor_primaria||'#BA7517')};vertical-align:middle;margin-right:4px"></span>${esc(b.tema?.cor_primaria||'—')}</td>
-      <td>${b.ativo ? '<span class="badge-green">Ativa</span>' : '<span class="badge-gray">Inativa</span>'}</td>
-      <td><div class="td-actions">
-        <button class="btn-icon" onclick="editarModal(${b.id})">Editar</button>
-        <a href="/b/${b.slug}/" target="_blank" class="btn-icon" style="text-decoration:none">Ver</a>
-      </div></td>
-    </tr>`).join('');
+// ── Carregar lista ─────────────────────────────────────────────────────────
+async function carregar() {
+  try {
+    _lista = await Bos.get('/super/barbearias');
+  } catch(e) {
+    _lista = [];
+    toast('Erro ao carregar: ' + e.message, 'error');
   }
+  renderTabela();
+}
 
-  function novoModal() {
-    _editId=null;
-    document.getElementById('modalTitulo').textContent='Nova Barbearia';
-    document.getElementById('form').reset();
-    document.getElementById('fCorP').value='#BA7517';
-    document.getElementById('fCorF').value='#1a1a1a';
-    document.getElementById('fCorC').value='#2a2a2a';
-    document.getElementById('fFonte').value='Inter';
-    uploadWidget.init('wLogo', { forma: 'quadrado', urlAtual: null });
-    atualizarPreview();
-    abrirModal('modal');
+function renderTabela() {
+  const tb = document.getElementById('tbody');
+  if (!_lista.length) {
+    tb.innerHTML = '<tr><td colspan="5"><div class="empty-state">Nenhum estabelecimento cadastrado.</div></td></tr>';
+    return;
   }
+  tb.innerHTML = _lista.map(b => {
+    const dt = b.criado_em ? new Date(b.criado_em).toLocaleDateString('pt-BR') : '—';
+    return `<tr>
+      <td style="font-weight:600">${esc(b.nome_exibicao || b.nome)}</td>
+      <td>
+        <code style="font-size:12px;color:var(--cor-primaria);background:rgba(186,117,23,.1);padding:2px 7px;border-radius:4px">
+          ${esc(b.slug)}
+        </code>
+      </td>
+      <td>${b.ativo
+        ? '<span class="badge-green">Ativa</span>'
+        : '<span class="badge-gray">Inativa</span>'}</td>
+      <td style="color:#555;font-size:13px">${dt}</td>
+      <td>
+        <div class="td-actions">
+          <button class="btn-icon" onclick="verDetalhes(${b.id})">Detalhes</button>
+          <a href="/b/${esc(b.slug)}/" target="_blank" class="btn-icon">Ver site</a>
+          ${b.ativo
+            ? `<button class="btn-icon danger" onclick="confirmarDesativar(${b.id})">Desativar</button>`
+            : `<button class="btn-icon" onclick="ativar(${b.id})" style="border-color:#16a34a;color:#4ade80">Ativar</button>`
+          }
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
 
-  function editarModal(id) {
-    const b=_todos.find(x=>x.id===id); if(!b) return;
-    _editId=id;
-    document.getElementById('modalTitulo').textContent='Editar Barbearia';
-    document.getElementById('fNome').value     = b.nome;
-    document.getElementById('fSlug').value     = b.slug;
-    document.getElementById('fNomeExib').value = b.tema?.nome_exibicao === b.nome ? '' : (b.tema?.nome_exibicao || '');
-    document.getElementById('fUrlAg').value    = b.url_agendamento || `/b/${b.slug}/`;
-    document.getElementById('fCorP').value     = b.tema?.cor_primaria || '#BA7517';
-    document.getElementById('fCorF').value     = b.tema?.cor_fundo    || '#1a1a1a';
-    document.getElementById('fCorC').value     = b.tema?.cor_card     || '#2a2a2a';
-    document.getElementById('fFonte').value    = b.tema?.fonte        || 'Inter';
-    uploadWidget.init('wLogo', {
-      forma: 'quadrado',
-      urlAtual: b.tema?.logo_url || null,
-      onUpload: async f => {
-        const r = await api.upload.barbearia(id, f);
-        toast('Logo atualizada!', 'info');
-        return r.url;
-      },
-    });
-    atualizarPreview();
-    abrirModal('modal');
+// ── Detalhes ────────────────────────────────────────────────────────────────
+async function verDetalhes(id) {
+  document.getElementById('detalheConteudo').innerHTML = '<div style="color:#555;padding:20px 0;text-align:center">Carregando…</div>';
+  document.getElementById('detalheBotoes').innerHTML = '';
+  abrirModal('modalDetalhe');
+
+  try {
+    const d = await Bos.get(`/super/barbearias/${id}`);
+    const g = d.gestor;
+    const dt = d.criado_em ? new Date(d.criado_em).toLocaleDateString('pt-BR') : '—';
+    const linkPublico = d.url_agendamento || `/b/${d.slug}/`;
+
+    document.getElementById('detalheConteudo').innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Nome</div>
+          <div style="font-size:15px;font-weight:700">${esc(d.nome_exibicao || d.nome)}</div>
+          ${d.nome_exibicao && d.nome_exibicao !== d.nome
+            ? `<div style="font-size:12px;color:#555;margin-top:2px">${esc(d.nome)}</div>` : ''}
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div>
+            <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Slug</div>
+            <code style="font-size:13px;color:var(--cor-primaria);background:rgba(186,117,23,.1);padding:2px 8px;border-radius:4px">${esc(d.slug)}</code>
+          </div>
+          <div>
+            <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Status</div>
+            ${d.ativo ? '<span class="badge-green">Ativa</span>' : '<span class="badge-gray">Inativa</span>'}
+          </div>
+        </div>
+        ${g ? `
+        <div style="background:#181818;border:1px solid #2a2a2a;border-radius:8px;padding:12px 14px">
+          <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Gestor</div>
+          <div style="font-weight:600">${esc(g.nome)}</div>
+          <div style="font-size:13px;color:#666;margin-top:2px">${esc(g.email)}</div>
+        </div>` : '<div style="color:#444;font-size:13px">Nenhum gestor vinculado.</div>'}
+        <div>
+          <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Link Público</div>
+          <a href="${esc(linkPublico)}" target="_blank" class="success-link">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            /b/${esc(d.slug)}/
+          </a>
+        </div>
+        <div style="font-size:12px;color:#444">Criado em ${dt}</div>
+      </div>
+    `;
+
+    document.getElementById('detalheBotoes').innerHTML = d.ativo
+      ? `<button class="btn btn-ghost" style="width:auto;padding:9px 18px;font-size:13px;border-color:#dc2626;color:#f87171"
+             onclick="confirmarDesativar(${d.id})">
+           Desativar Estabelecimento
+         </button>`
+      : `<button class="btn btn-ghost" style="width:auto;padding:9px 18px;font-size:13px;border-color:#16a34a;color:#4ade80"
+             onclick="ativar(${d.id})">
+           Reativar Estabelecimento
+         </button>`;
+
+  } catch(e) {
+    document.getElementById('detalheConteudo').textContent = 'Erro ao carregar: ' + e.message;
   }
+}
 
-  function atualizarPreview() {
-    const cp   = document.getElementById('fCorP').value;
-    const cf   = document.getElementById('fCorF').value;
-    const cc   = document.getElementById('fCorC').value;
-    const nome = document.getElementById('fNomeExib').value.trim() || document.getElementById('fNome').value.trim() || 'BarberOS';
-    const fonte = document.getElementById('fFonte').value || 'Inter';
-    const f = "'" + fonte + "', sans-serif";
-    document.getElementById('pvMain').style.background    = cf;
-    document.getElementById('pvCard').style.background    = cc;
-    document.getElementById('pvBrand').style.color        = cp;
-    document.getElementById('pvBrand').style.fontFamily   = f;
-    document.getElementById('pvBrand').textContent        = nome;
-    document.getElementById('pvNavItem').style.color      = cp;
-    document.getElementById('pvNavItem').style.borderLeftColor = cp;
-    document.getElementById('pvNavItem').style.background = cp + '22';
-    document.getElementById('pvValue').style.color        = cp;
-    document.getElementById('pvValue').style.fontFamily   = f;
+// ── Desativar ───────────────────────────────────────────────────────────────
+function confirmarDesativar(id) {
+  const b = _lista.find(x => x.id === id);
+  const nome = b ? (b.nome_exibicao || b.nome) : 'este estabelecimento';
+  if (!confirm(`Desativar "${nome}"?\n\nTodos os usuários deste estabelecimento também serão desativados.`)) return;
+  desativar(id);
+}
+
+async function desativar(id) {
+  fecharModal('modalDetalhe');
+  try {
+    await Bos.post(`/super/barbearias/${id}/desativar`, {});
+    toast('Estabelecimento desativado.', 'info');
+    await carregar();
+  } catch(e) {
+    toast(e.message, 'error');
   }
+}
 
-  async function salvar(e) {
-    e.preventDefault();
-    const btn=document.getElementById('btnSalvar');
-    btn.disabled=true; btn.textContent='Salvando…';
-    const dados={
-      nome: document.getElementById('fNome').value.trim(),
-      slug: document.getElementById('fSlug').value.trim(),
-      url_agendamento: document.getElementById('fUrlAg').value.trim() || null,
-      tema:{
-        nome_exibicao: document.getElementById('fNomeExib').value.trim() || null,
-        logo_url:     uploadWidget.getUrl('wLogo') || null,
-        cor_primaria: document.getElementById('fCorP').value,
-        cor_fundo:    document.getElementById('fCorF').value,
-        cor_card:     document.getElementById('fCorC').value,
-        fonte:        document.getElementById('fFonte').value,
-      },
-    };
-    try {
-      let resultado;
-      if(_editId) resultado = await api.super.barbearias.editar(_editId, dados);
-      else        resultado = await api.super.barbearias.criar(dados);
-
-      // Upload de logo pendente (criação)
-      const logoFile = uploadWidget.getFile('wLogo');
-      if (logoFile) {
-        const bid = _editId || resultado.barbearia?.id;
-        if (bid) {
-          try {
-            const r = await api.upload.barbearia(bid, logoFile);
-            uploadWidget.setUrl('wLogo', r.url);
-          } catch(e) { toast('Erro no upload da logo: ' + e.message, 'error'); }
-        }
-      }
-
-      fecharModal('modal');
-      toast(_editId?'Barbearia atualizada!':'Barbearia criada!');
-      await carregar();
-    } catch(err){ toast(err.message,'error'); }
-    finally{ btn.disabled=false; btn.textContent='Salvar'; }
+// ── Ativar ──────────────────────────────────────────────────────────────────
+async function ativar(id) {
+  fecharModal('modalDetalhe');
+  try {
+    await Bos.post(`/super/barbearias/${id}/ativar`, {});
+    toast('Estabelecimento reativado.', 'success');
+    await carregar();
+  } catch(e) {
+    toast(e.message, 'error');
   }
+}
 
-  carregar();
+carregar();
 </script>
 {% endblock %}

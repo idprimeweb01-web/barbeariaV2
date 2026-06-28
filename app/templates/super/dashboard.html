@@ -1,82 +1,105 @@
 {% extends "super/base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block page_title %}Dashboard Global{% endblock %}
-{% block styles %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>{% endblock %}
 
 {% block content %}
-<div id="loading" style="color:#555;font-size:14px">Carregando…</div>
+<div id="loadingState" style="color:#555;font-size:14px;padding:40px 0">Carregando…</div>
 
 <div id="conteudo" style="display:none">
+
+  <!-- Métricas principais -->
   <div class="metrics-grid">
     <div class="metric-card">
-      <div class="metric-label">Barbearias</div>
-      <div class="metric-value" id="mBarb">—</div>
+      <div class="metric-label">Estabelecimentos Ativos</div>
+      <div class="metric-value" id="mAtivos">—</div>
+      <div class="metric-sub" id="mInativos"></div>
     </div>
     <div class="metric-card">
-      <div class="metric-label">Usuários</div>
-      <div class="metric-value" id="mUsers">—</div>
+      <div class="metric-label">Usuários na Plataforma</div>
+      <div class="metric-value" id="mUsuarios">—</div>
+      <div class="metric-sub" id="mUsuariosSub"></div>
     </div>
     <div class="metric-card">
-      <div class="metric-label">Faturamento Total</div>
-      <div class="metric-value" id="mFat" style="font-size:20px">—</div>
+      <div class="metric-label">Agendamentos no Mês</div>
+      <div class="metric-value" id="mAgs">—</div>
+      <div class="metric-sub" id="mAgsSub"></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Receita no Mês</div>
+      <div class="metric-value" id="mReceita" style="font-size:20px">—</div>
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
-    <div class="chart-wrap">
-      <div class="chart-title">Faturamento — últimos 7 dias</div>
-      <canvas id="chartGlobal" height="140"></canvas>
-    </div>
-    <div>
-      <div class="chart-title" style="margin-bottom:12px">Últimas barbearias</div>
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead><tr><th>Nome</th><th>Slug</th><th>Status</th></tr></thead>
-          <tbody id="tbUltimas"></tbody>
-        </table>
-      </div>
-    </div>
+  <!-- Ranking por estabelecimento -->
+  <div class="section-header" style="margin-top:8px">
+    <span class="section-title" style="font-size:15px;font-weight:600;color:#777">Ranking do Mês</span>
+    <a href="/super/barbearias" style="font-size:13px;color:var(--cor-primaria)">Ver todos →</a>
   </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Estabelecimento</th>
+          <th>Agendamentos</th>
+          <th>Receita</th>
+        </tr>
+      </thead>
+      <tbody id="tbRanking">
+        <tr><td colspan="4" class="empty-state">Carregando…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  async function carregar() {
-    try {
-      const d = await api.super.dashboard();
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('mBarb').textContent  = d.total_barbearias;
-      document.getElementById('mUsers').textContent = d.total_usuarios;
-      document.getElementById('mFat').textContent   = `R$ ${(d.total_faturamento||0).toFixed(2)}`;
+async function carregar() {
+  try {
+    const d = await Bos.get('/super/dashboard');
 
-      // Chart
-      const ctx = document.getElementById('chartGlobal').getContext('2d');
-      new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels:   d.receita_7dias.map(r => r.data.slice(5).replace('-','/')),
-          datasets: [{ label:'R$', data: d.receita_7dias.map(r => r.receita),
-            backgroundColor:'rgba(186,117,23,.35)', borderColor:'#BA7517', borderWidth:2, borderRadius:6 }],
-        },
-        options: { responsive:true, plugins:{legend:{display:false}},
-          scales:{ x:{grid:{color:'#2a2a2a'},ticks:{color:'#555'}}, y:{grid:{color:'#2a2a2a'},ticks:{color:'#555',callback:v=>`R$${v}`},beginAtZero:true} } },
-      });
+    const barbearias = d['barbearias'] || {};
+    const usuarios   = d['usuarios']   || {};
+    const mes        = d['mes']        || {};
+    const ranking    = d['por_barbearia'] || [];
 
-      // Table
-      const tb = document.getElementById('tbUltimas');
-      tb.innerHTML = d.ultimas_barbearias.map(b => `
+    document.getElementById('mAtivos').textContent    = barbearias.ativas ?? '—';
+    document.getElementById('mInativos').textContent  = `${barbearias.inativas ?? 0} inativo(s)`;
+    document.getElementById('mUsuarios').textContent  = (
+      (usuarios.clientes || 0) + (usuarios.barbeiros || 0) + (usuarios.gestores || 0)
+    );
+    document.getElementById('mUsuariosSub').textContent = (
+      `${usuarios.clientes || 0} clientes · ${usuarios.barbeiros || 0} barbeiros`
+    );
+    document.getElementById('mAgs').textContent = mes.total_agendamentos ?? '—';
+    document.getElementById('mAgsSub').textContent = (
+      `${mes.concluidos || 0} concluídos · ${mes.cancelados || 0} cancelados`
+    );
+    document.getElementById('mReceita').textContent = fmt_brl(mes.receita_total);
+
+    const tb = document.getElementById('tbRanking');
+    if (!ranking.length) {
+      tb.innerHTML = '<tr><td colspan="4"><div class="empty-state">Sem agendamentos neste mês.</div></td></tr>';
+    } else {
+      tb.innerHTML = ranking.map((r, i) => `
         <tr>
-          <td style="font-weight:600">${esc(b.nome)}</td>
-          <td style="color:#666">${esc(b.slug)}</td>
-          <td>${b.ativo ? '<span class="badge-green">Ativa</span>' : '<span class="badge-gray">Inativa</span>'}</td>
-        </tr>`).join('');
-
-      document.getElementById('conteudo').style.display = '';
-    } catch(e) {
-      document.getElementById('loading').textContent = 'Erro: ' + e.message;
+          <td style="color:#444;font-weight:700">${i + 1}</td>
+          <td style="font-weight:600">${esc(r.barbearia || '—')}</td>
+          <td>${r.agendamentos ?? 0}</td>
+          <td style="color:var(--cor-primaria);font-weight:600">${fmt_brl(r.receita)}</td>
+        </tr>`
+      ).join('');
     }
+
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('conteudo').style.display = '';
+  } catch(e) {
+    document.getElementById('loadingState').textContent = 'Erro ao carregar: ' + e.message;
   }
-  carregar();
+}
+carregar();
 </script>
 {% endblock %}

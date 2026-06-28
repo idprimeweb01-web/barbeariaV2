@@ -47,7 +47,7 @@
       font-size: 14px; font-weight: 800; color: var(--cor-primaria); flex-shrink: 0;
     }
     .sidebar-user-info { flex: 1; min-width: 0; }
-    .sidebar-user-name { font-size: 12px; font-weight: 600; color: #ccc; }
+    .sidebar-user-name { font-size: 12px; font-weight: 600; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sidebar-user-role { font-size: 11px; color: #555; }
     .btn-logout {
       background: none; border: none; color: #444; cursor: pointer;
@@ -72,46 +72,51 @@
     .hdr-logout:hover { color: #dc2626; }
     .app-content { flex: 1; padding: 24px; }
 
-    /* Tables, cards, modals — same as gestor */
     .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .section-title  { font-size: 18px; font-weight: 700; }
     .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 14px; margin-bottom: 24px; }
     .metric-card { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; }
     .metric-label { font-size: 12px; color: #666; font-weight: 500; text-transform: uppercase; letter-spacing: .4px; }
     .metric-value { font-size: 30px; font-weight: 700; color: var(--cor-primaria); line-height: 1; }
+    .metric-sub { font-size: 12px; color: #444; }
     .table-wrap { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; overflow: hidden; }
     .data-table { width: 100%; border-collapse: collapse; }
     .data-table th { padding: 11px 16px; text-align: left; font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: .5px; background: #181818; border-bottom: 1px solid #2a2a2a; }
     .data-table td { padding: 12px 16px; font-size: 14px; border-bottom: 1px solid #202020; vertical-align: middle; }
     .data-table tbody tr:last-child td { border-bottom: none; }
     .data-table tbody tr:hover { background: rgba(255,255,255,.015); }
-    .td-actions { display: flex; gap: 6px; }
+    .td-actions { display: flex; gap: 6px; flex-wrap: wrap; }
     .badge-green  { background: rgba(34,197,94,.12); color: #4ade80; border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; }
     .badge-gray   { background: rgba(255,255,255,.07); color: #666; border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; }
     .badge-gold   { background: rgba(186,117,23,.15); color: var(--cor-primaria); border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; }
-    .btn-icon { background: none; border: 1px solid #2a2a2a; color: #777; border-radius: 7px; padding: 5px 10px; cursor: pointer; font-size: 12px; font-family: inherit; transition: all .15s; }
+    .btn-icon { background: none; border: 1px solid #2a2a2a; color: #777; border-radius: 7px; padding: 5px 10px; cursor: pointer; font-size: 12px; font-family: inherit; transition: all .15s; text-decoration: none; display: inline-flex; align-items: center; }
     .btn-icon:hover { border-color: var(--cor-primaria); color: var(--cor-primaria); }
     .btn-icon.danger:hover { border-color: #dc2626; color: #dc2626; }
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
     .modal-overlay.visible { display: flex; }
-    .modal-box { background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 12px; padding: 24px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+    .modal-box { background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 12px; padding: 24px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
     .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .modal-header h3 { font-size: 15px; font-weight: 700; }
-    .modal-close { background: none; border: none; color: #555; font-size: 22px; cursor: pointer; padding: 0; }
+    .modal-close { background: none; border: none; color: #555; font-size: 22px; cursor: pointer; padding: 0; line-height: 1; }
     .modal-close:hover { color: #fff; }
     .modal-footer { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
-    .chart-wrap { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; padding: 20px; }
-    .chart-title { font-size: 14px; font-weight: 600; color: #777; margin-bottom: 14px; }
+    .field-group-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #555; margin: 20px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #2a2a2a; }
     #toasts { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; }
     .toast { padding: 12px 16px; border-radius: 8px; font-size: 14px; font-weight: 500; min-width: 220px; box-shadow: 0 4px 16px rgba(0,0,0,.4); animation: tIn .2s ease; }
     .toast.t-success { background: #14532d; border: 1px solid #16a34a; color: #bbf7d0; }
     .toast.t-error   { background: #7f1d1d; border: 1px solid #dc2626; color: #fecaca; }
+    .toast.t-info    { background: #1e3a5f; border: 1px solid #3b82f6; color: #bfdbfe; }
     @keyframes tIn  { from { transform: translateX(110%); opacity:0; } to { transform: translateX(0); opacity:1; } }
     @keyframes tOut { to   { transform: translateX(110%); opacity:0; } }
     .toast.out { animation: tOut .2s ease forwards; }
-    .foto-avatar { width: 34px; height: 34px; border-radius: 50%; background: #2a2a2a; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--cor-primaria); overflow: hidden; flex-shrink: 0; }
-    .foto-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
     .empty-state { text-align: center; padding: 48px 20px; color: #444; font-size: 14px; }
+    .success-box { text-align: center; padding: 24px 16px; }
+    .success-icon { width: 56px; height: 56px; border-radius: 50%; background: rgba(34,197,94,.1); border: 1.5px solid rgba(34,197,94,.3); display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+    .success-info { background: #181818; border: 1px solid #2a2a2a; border-radius: 8px; padding: 14px 16px; margin: 16px 0; text-align: left; }
+    .success-info p { font-size: 13px; color: #777; margin-bottom: 4px; }
+    .success-info p:last-child { margin-bottom: 0; }
+    .success-info strong { color: #ccc; font-weight: 600; }
+    .success-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--cor-primaria); word-break: break-all; }
     @media (max-width: 768px) {
       .sidebar { transform: translateX(-100%); }
       .sidebar.open { transform: none; box-shadow: 4px 0 24px rgba(0,0,0,.6); }
@@ -145,29 +150,35 @@
       </a>
       <a href="/super/barbearias" class="nav-link" data-path="/super/barbearias">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        Barbearias
+        Estabelecimentos
       </a>
       <a href="/super/gestores" class="nav-link" data-path="/super/gestores">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Gestores
       </a>
-      <a href="/super/relatorios" class="nav-link" data-path="/super/relatorios">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        Relatórios
-      </a>
       <a href="/super/features" class="nav-link" data-path="/super/features">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         Features
-      </a>
-      <a href="/super/auditoria" class="nav-link" data-path="/super/auditoria">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-        Auditoria
       </a>
       <a href="/super/customizacao" class="nav-link" data-path="/super/customizacao">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.247-.28-.43-.69-.43-1.125a1.64 1.64 0 0 1 1.668-1.668h1.96c3.011 0 5.591-2.58 5.591-5.591C22 6.477 17.523 2 12 2z"/></svg>
         Customização
       </a>
+      <a href="/super/auditoria" class="nav-link" data-path="/super/auditoria">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Auditoria
+      </a>
     </nav>
+    <div class="sidebar-footer">
+      <div class="sa-avatar">{{ sa_nome[0] | upper if sa_nome else 'S' }}</div>
+      <div class="sidebar-user-info">
+        <div class="sidebar-user-name">{{ sa_nome }}</div>
+        <div class="sidebar-user-role">Super Admin</div>
+      </div>
+      <button class="btn-logout" onclick="Bos.logout()" title="Sair">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </div>
   </aside>
 
   <div class="app-main">
@@ -176,8 +187,8 @@
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
       <span class="page-title">{% block page_title %}{% endblock %}</span>
-      <span class="hdr-username" id="saName"></span>
-      <button class="hdr-logout" onclick="api.logout()" title="Sair">
+      <span class="hdr-username">{{ sa_nome }}</span>
+      <button class="hdr-logout" onclick="Bos.logout()" title="Sair">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>
     </header>
@@ -188,19 +199,15 @@
 </div>
 
 <div id="toasts"></div>
-<script src="/static/js/api.js"></script>
-<script src="/static/js/upload-widget.js"></script>
+<script src="/static/js/bos.js"></script>
 <script>
-  (function() {
-    const u = api.getUser();
-    if (!u || !api.getToken()) { window.location.href = '/login'; return; }
-    if (u.perfil !== 'super_admin') { window.location.href = '/login'; return; }
-    document.getElementById('saName').textContent = u.nome || 'Super Admin';
-  })();
   document.querySelectorAll('.nav-link[data-path]').forEach(a => {
-    if (window.location.pathname === a.dataset.path) a.classList.add('active');
+    if (window.location.pathname === a.dataset.path || window.location.pathname.startsWith(a.dataset.path + '/')) {
+      a.classList.add('active');
+    }
     a.addEventListener('click', () => { if (window.innerWidth <= 768) closeSidebar(); });
   });
+
   function toast(msg, tipo = 'success') {
     const d = document.createElement('div');
     d.className = `toast t-${tipo}`; d.textContent = msg;
@@ -208,6 +215,7 @@
     setTimeout(() => d.classList.add('out'), 2600);
     setTimeout(() => d.remove(), 2900);
   }
+
   function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('open');
     document.getElementById('sidebarOverlay').classList.toggle('visible');
@@ -216,12 +224,23 @@
     document.getElementById('sidebar').classList.remove('open');
     document.getElementById('sidebarOverlay').classList.remove('visible');
   }
+
   function abrirModal(id)  { document.getElementById(id).classList.add('visible'); }
   function fecharModal(id) { document.getElementById(id).classList.remove('visible'); }
+
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.visible').forEach(m => m.classList.remove('visible'));
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.visible').forEach(m => m.classList.remove('visible'));
+    }
   });
-  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function fmt_brl(v) {
+    return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
 </script>
 {% block scripts %}{% endblock %}
 </body>

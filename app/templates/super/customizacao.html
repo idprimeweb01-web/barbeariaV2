@@ -1,126 +1,326 @@
 {% extends "super/base.html" %}
-{% block title %}Customização{% endblock %}
-{% block page_title %}Customização das Barbearias{% endblock %}
+{% block title %}Customização Visual{% endblock %}
+{% block page_title %}Customização Visual{% endblock %}
 
 {% block styles %}
 <style>
-.cust-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 16px; }
-.cust-card { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; padding: 16px; }
-.cust-nome { font-size: 14px; font-weight: 700; color: #ddd; margin-bottom: 10px; text-transform: uppercase; }
-.cor-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; color: #999; }
-.cor-swatch { width: 18px; height: 18px; border-radius: 4px; border: 1px solid #333; flex-shrink: 0; }
-.btn-icon { background: none; border: 1px solid #333; color: #888; border-radius: 7px; padding: 6px 12px; cursor: pointer; font-size: 12px; font-family: inherit; margin-top: 10px; }
-.btn-icon:hover { border-color: var(--cor-primaria); color: var(--cor-primaria); }
+  .custom-grid {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  .barb-list { display: flex; flex-direction: column; gap: 6px; }
+  .barb-item {
+    padding: 10px 14px; background: #1e1e1e; border: 1px solid #2a2a2a;
+    border-radius: 8px; cursor: pointer; transition: all .15s;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .barb-item:hover { border-color: #444; }
+  .barb-item.selected { border-color: var(--cor-primaria); background: rgba(186,117,23,.06); }
+  .barb-item-avatar {
+    width: 34px; height: 34px; border-radius: 7px; flex-shrink: 0;
+    background: rgba(186,117,23,.1); border: 1px solid rgba(186,117,23,.2);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 13px; color: var(--cor-primaria); overflow: hidden;
+  }
+  .barb-item-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 7px; }
+  .barb-item-info { flex: 1; min-width: 0; }
+  .barb-item-nome { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .barb-item-slug { font-size: 11px; color: #555; }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
-.modal-overlay.visible { display: flex; }
-.modal-box { background: #242424; border: 1px solid #333; border-radius: 12px; padding: 24px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
-.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.modal-close { background: none; border: none; color: #666; font-size: 22px; cursor: pointer; }
-.modal-footer { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
-.form-group { margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.form-group label { font-size: 12px; color: #888; }
-.form-group input[type=color] { width: 50px; height: 32px; border: none; border-radius: 6px; background: none; cursor: pointer; }
-.form-group input[type=text] { width: 100%; padding: 7px 10px; background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 6px; color: #ddd; font-family: inherit; font-size: 13px; }
+  .custom-panel { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; padding: 24px; }
+  .custom-panel-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px; color: #444; gap: 10px; }
+
+  .upload-zones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 24px; }
+  .upload-zone {
+    border: 1.5px dashed #333; border-radius: 10px; padding: 14px 10px;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    cursor: pointer; transition: border-color .15s; position: relative;
+    min-height: 140px; justify-content: center; text-align: center;
+  }
+  .upload-zone:hover { border-color: var(--cor-primaria); }
+  .upload-zone.has-img { border-style: solid; border-color: #2a2a2a; }
+  .upload-zone input[type="file"] { display: none; }
+  .zone-preview { width: 100%; aspect-ratio: 1; border-radius: 6px; object-fit: cover; display: none; }
+  .upload-zone.has-img .zone-preview   { display: block; }
+  .upload-zone.has-img .zone-ph        { display: none; }
+  .zone-ph { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .zone-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #555; }
+  .zone-sub   { font-size: 10px; color: #444; }
+  .zone-spin  { position: absolute; inset: 0; background: rgba(0,0,0,.55); border-radius: 10px;
+                display: none; align-items: center; justify-content: center; }
+  .zone-spin.on { display: flex; }
+  .zone-chg { font-size: 10px; color: var(--cor-primaria); background: none; border: none;
+              cursor: pointer; font-family: inherit; padding: 0; display: none; margin-top: 4px; }
+  .upload-zone.has-img .zone-chg { display: block; }
+
+  .cor-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .cor-box { width: 36px; height: 36px; border-radius: 8px; border: 1px solid #333; flex-shrink: 0; transition: background .1s; }
+  input[type="color"] { width: 80px; height: 36px; padding: 2px; border: 1.5px solid #333; border-radius: 8px; background: #1a1a1a; cursor: pointer; }
+
+  @media (max-width: 768px) {
+    .custom-grid   { grid-template-columns: 1fr; }
+    .upload-zones  { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 480px) {
+    .upload-zones  { grid-template-columns: 1fr; }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="cust-grid" id="custGrid">
-  <div style="color:#555;">Carregando…</div>
-</div>
+<div id="loadingState" style="color:#555;padding:20px 0;font-size:14px">Carregando…</div>
 
-<div class="modal-overlay" id="modalCust">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h3 id="modalTitulo">Editar customização</h3>
-      <button class="modal-close" onclick="fecharModal('modalCust')">✕</button>
+<div id="mainContent" style="display:none">
+  <div class="custom-grid">
+
+    <!-- Coluna esquerda: lista de estabelecimentos -->
+    <div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#555;margin-bottom:10px">
+        Estabelecimento
+      </div>
+      <div class="barb-list" id="barbList"></div>
     </div>
-    <div id="camposForm"></div>
-    <div class="form-group">
-      <label>Fonte</label>
-      <select class="form-select" id="fFonte" style="width:100%;padding:7px 10px;background:#1e1e1e;border:1px solid #2d2d2d;border-radius:6px;color:#ddd;font-family:inherit;font-size:13px;">
-        <option>Inter</option>
-        <option>Roboto</option>
-        <option>Poppins</option>
-        <option>Playfair Display</option>
-        <option>Lato</option>
-        <option>Open Sans</option>
-        <option>Montserrat</option>
-        <option>Raleway</option>
-        <option>Ubuntu</option>
-        <option>Fira Sans</option>
-      </select>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-icon" onclick="fecharModal('modalCust')">Cancelar</button>
-      <button class="btn-icon" onclick="salvar()">Salvar</button>
-    </div>
-  </div>
+
+    <!-- Coluna direita: painel de customização -->
+    <div class="custom-panel" id="panel">
+
+      <div class="custom-panel-empty" id="panelEmpty">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.5">
+          <circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/>
+          <circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/>
+          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688
+                   0-.437-.18-.835-.437-1.125-.247-.28-.43-.69-.43-1.125a1.64 1.64 0 0 1
+                   1.668-1.668h1.96c3.011 0 5.591-2.58 5.591-5.591C22 6.477 17.523 2 12 2z"/>
+        </svg>
+        <span style="font-size:14px">Selecione um estabelecimento</span>
+      </div>
+
+      <div id="panelContent" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+          <h3 id="panelNome" style="font-size:15px;font-weight:700"></h3>
+          <a id="panelLink" href="#" target="_blank" class="btn-icon" style="font-size:12px">Ver site</a>
+        </div>
+
+        <!-- ── Imagens ── -->
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#555;margin-bottom:12px">
+          Imagens
+        </div>
+        <div class="upload-zones">
+
+          <div class="upload-zone" id="zLogo" onclick="triggerUpload('logo')">
+            <input type="file" id="inputLogo" accept="image/jpeg,image/png,image/webp"
+                   onchange="fazerUpload('logo',this)">
+            <div class="zone-spin" id="spinLogo">
+              <div class="spinner" style="border-top-color:var(--cor-primaria)"></div>
+            </div>
+            <img class="zone-preview" id="prevLogo" alt="Logo">
+            <div class="zone-ph">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+              </svg>
+              <div class="zone-label">Logo</div>
+              <div class="zone-sub">Topo das telas</div>
+            </div>
+            <button class="zone-chg" onclick="event.stopPropagation();triggerUpload('logo')">Trocar</button>
+          </div>
+
+          <div class="upload-zone" id="zCapa" onclick="triggerUpload('capa')">
+            <input type="file" id="inputCapa" accept="image/jpeg,image/png,image/webp"
+                   onchange="fazerUpload('capa',this)">
+            <div class="zone-spin" id="spinCapa">
+              <div class="spinner" style="border-top-color:var(--cor-primaria)"></div>
+            </div>
+            <img class="zone-preview" id="prevCapa" alt="Capa">
+            <div class="zone-ph">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+              </svg>
+              <div class="zone-label">Capa</div>
+              <div class="zone-sub">Página pública</div>
+            </div>
+            <button class="zone-chg" onclick="event.stopPropagation();triggerUpload('capa')">Trocar</button>
+          </div>
+
+          <div class="upload-zone" id="zBoas" onclick="triggerUpload('boas_vindas')">
+            <input type="file" id="inputBoas" accept="image/jpeg,image/png,image/webp"
+                   onchange="fazerUpload('boas_vindas',this)">
+            <div class="zone-spin" id="spinBoas">
+              <div class="spinner" style="border-top-color:var(--cor-primaria)"></div>
+            </div>
+            <img class="zone-preview" id="prevBoas" alt="Boas-vindas">
+            <div class="zone-ph">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+              </svg>
+              <div class="zone-label">Boas-vindas</div>
+              <div class="zone-sub">Login do cliente</div>
+            </div>
+            <button class="zone-chg" onclick="event.stopPropagation();triggerUpload('boas_vindas')">Trocar</button>
+          </div>
+
+        </div>
+
+        <!-- ── Cor principal ── -->
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+                    color:#555;margin-bottom:12px;padding-top:20px;border-top:1px solid #2a2a2a">
+          Cor Principal
+        </div>
+        <div class="cor-row">
+          <div class="cor-box" id="corBox"></div>
+          <input type="color" id="corPicker" value="#BA7517" oninput="atualizarCor()">
+          <span style="font-size:13px;color:#555;font-family:monospace" id="corHex">#BA7517</span>
+          <button class="btn btn-primary" style="width:auto;padding:9px 18px;font-size:13px" onclick="salvarCor()">
+            <span id="btnCorTxt">Salvar cor</span>
+            <span class="spinner" id="btnCorSpin" style="display:none"></span>
+          </button>
+        </div>
+
+      </div><!-- /panelContent -->
+    </div><!-- /custom-panel -->
+
+  </div><!-- /custom-grid -->
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-function abrirModal(id)  { document.getElementById(id).classList.add('visible'); }
-function fecharModal(id) { document.getElementById(id).classList.remove('visible'); }
+let _barbearias = [];
+let _selectedId  = null;
 
-const CAMPOS = [
-  ['cor_primaria', 'Cor primária'], ['cor_secundaria', 'Cor secundária'], ['cor_acentuacao', 'Cor de acentuação'],
-  ['texto_primario', 'Texto primário'], ['texto_secundario', 'Texto secundário'], ['texto_terciario', 'Texto terciário'],
-  ['botao_primario', 'Botão primário'], ['botao_secundario', 'Botão secundário'],
-];
-
-let cache = [];
-let editando = null;
+const _ZONAS = {
+  logo:        { z: 'zLogo',  p: 'prevLogo', s: 'spinLogo', i: 'inputLogo' },
+  capa:        { z: 'zCapa',  p: 'prevCapa', s: 'spinCapa', i: 'inputCapa' },
+  boas_vindas: { z: 'zBoas',  p: 'prevBoas', s: 'spinBoas', i: 'inputBoas' },
+};
 
 async function carregar() {
   try {
-    cache = await api.super.customizacoes.listar();
-    renderizar();
-  } catch (e) {
-    document.getElementById('custGrid').innerHTML = `<div style="color:#f87171;">Erro: ${e.message}</div>`;
+    _barbearias = await Bos.get('/super/barbearias');
+  } catch(e) {
+    document.getElementById('loadingState').textContent = 'Erro: ' + e.message;
+    return;
+  }
+  document.getElementById('loadingState').style.display = 'none';
+  document.getElementById('mainContent').style.display  = '';
+  renderLista();
+}
+
+function renderLista() {
+  const el = document.getElementById('barbList');
+  if (!_barbearias.length) {
+    el.innerHTML = '<p style="color:#555;font-size:13px">Nenhum estabelecimento.</p>';
+    return;
+  }
+  el.innerHTML = _barbearias.map(b => `
+    <div class="barb-item" id="item_${b.id}" onclick="selecionarBarb(${b.id})">
+      <div class="barb-item-avatar" id="av_${b.id}">
+        ${esc((b.nome_exibicao || b.nome)[0])}
+      </div>
+      <div class="barb-item-info">
+        <div class="barb-item-nome">${esc(b.nome_exibicao || b.nome)}</div>
+        <div class="barb-item-slug">${esc(b.slug)}</div>
+      </div>
+    </div>`).join('');
+}
+
+async function selecionarBarb(id) {
+  document.querySelectorAll('.barb-item').forEach(el => el.classList.remove('selected'));
+  const itemEl = document.getElementById('item_' + id);
+  if (itemEl) itemEl.classList.add('selected');
+  _selectedId = id;
+
+  document.getElementById('panelEmpty').style.display   = 'none';
+  document.getElementById('panelContent').style.display = '';
+
+  try {
+    const d = await Bos.get(`/super/barbearias/${id}`);
+    const nome = d.nome_exibicao || d.nome;
+
+    document.getElementById('panelNome').textContent = nome;
+    document.getElementById('panelLink').href = d.url_agendamento || `/b/${d.slug}/`;
+
+    const c = d.customizacao || {};
+    setImagem('logo',        c.logo_url);
+    setImagem('capa',        c.imagem_capa_url);
+    setImagem('boas_vindas', c.imagem_boas_vindas_url);
+
+    const cor = c.cor_primaria || '#BA7517';
+    document.getElementById('corPicker').value = cor;
+    document.getElementById('corHex').textContent  = cor;
+    document.getElementById('corBox').style.background = cor;
+
+    if (c.logo_url) {
+      const avEl = document.getElementById('av_' + id);
+      if (avEl) avEl.innerHTML = `<img src="${esc(c.logo_url)}" alt="">`;
+    }
+  } catch(e) {
+    toast('Erro ao carregar: ' + e.message, 'error');
   }
 }
 
-function renderizar() {
-  document.getElementById('custGrid').innerHTML = cache.map(c => `
-    <div class="cust-card">
-      <div class="cust-nome">${c.barbearia_nome}</div>
-      ${CAMPOS.map(([campo, label]) => `
-        <div class="cor-row"><span class="cor-swatch" style="background:${c[campo]}"></span>${label}: ${c[campo]}</div>
-      `).join('')}
-      <div class="cor-row">Fonte: ${c.fonte}</div>
-      <button class="btn-icon" onclick="abrirEdicao(${c.barbearia_id})">Editar</button>
-    </div>
-  `).join('');
+function setImagem(tipo, url) {
+  const m = _ZONAS[tipo];
+  const z = document.getElementById(m.z);
+  const p = document.getElementById(m.p);
+  if (url) { p.src = url; z.classList.add('has-img'); }
+  else      { p.src = '';  z.classList.remove('has-img'); }
 }
 
-function abrirEdicao(barbeariaId) {
-  const c = cache.find(x => x.barbearia_id === barbeariaId);
-  if (!c) return;
-  editando = barbeariaId;
-  document.getElementById('modalTitulo').textContent = `Editar — ${c.barbearia_nome}`;
-  document.getElementById('camposForm').innerHTML = CAMPOS.map(([campo, label]) => `
-    <div class="form-group">
-      <label>${label}</label>
-      <input type="color" id="f_${campo}" value="${c[campo]}">
-    </div>
-  `).join('');
-  document.getElementById('fFonte').value = c.fonte;
-  abrirModal('modalCust');
+function triggerUpload(tipo) {
+  document.getElementById(_ZONAS[tipo].i).click();
 }
 
-async function salvar() {
-  if (!editando) return;
-  const payload = { fonte: document.getElementById('fFonte').value.trim() || 'Inter' };
-  CAMPOS.forEach(([campo]) => { payload[campo] = document.getElementById(`f_${campo}`).value; });
+async function fazerUpload(tipo, inputEl) {
+  if (!inputEl.files.length || !_selectedId) return;
+  const m = _ZONAS[tipo];
+  const spinEl = document.getElementById(m.s);
+  spinEl.classList.add('on');
+
+  const fd = new FormData();
+  fd.append('arquivo', inputEl.files[0]);
+  fd.append('tipo', tipo);
+
   try {
-    await api.super.customizacoes.editar(editando, payload);
-    toast('Customização salva.', 'success');
-    fecharModal('modalCust');
-    carregar();
-  } catch (e) { toast(e.message, 'error'); }
+    const res = await Bos.upload(`/super/barbearias/${_selectedId}/customizacao/imagens`, fd);
+    setImagem(tipo, res.url);
+    if (tipo === 'logo') {
+      const avEl = document.getElementById('av_' + _selectedId);
+      if (avEl) avEl.innerHTML = `<img src="${esc(res.url)}" alt="">`;
+    }
+    toast('Imagem salva!');
+  } catch(e) {
+    toast('Erro no upload: ' + e.message, 'error');
+  } finally {
+    spinEl.classList.remove('on');
+    inputEl.value = '';
+  }
+}
+
+function atualizarCor() {
+  const cor = document.getElementById('corPicker').value;
+  document.getElementById('corHex').textContent = cor;
+  document.getElementById('corBox').style.background = cor;
+}
+
+async function salvarCor() {
+  if (!_selectedId) return;
+  const cor = document.getElementById('corPicker').value;
+  document.getElementById('btnCorTxt').style.display  = 'none';
+  document.getElementById('btnCorSpin').style.display = '';
+  try {
+    await Bos.put(`/super/barbearias/${_selectedId}/customizacao`, { cor_primaria: cor });
+    toast('Cor salva!');
+  } catch(e) {
+    toast('Erro: ' + e.message, 'error');
+  } finally {
+    document.getElementById('btnCorTxt').style.display  = '';
+    document.getElementById('btnCorSpin').style.display = 'none';
+  }
 }
 
 carregar();

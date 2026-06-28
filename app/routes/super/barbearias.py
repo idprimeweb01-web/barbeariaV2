@@ -1,3 +1,6 @@
+import os
+import cloudinary
+import cloudinary.uploader
 from flask import Blueprint, request, g, jsonify
 from werkzeug.security import generate_password_hash
 from app.extensions import db
@@ -8,6 +11,22 @@ from app.models import (
 from app.exceptions import APIError
 from app.decorators.auth import super_required
 from app.utils import normalizar_telefone
+
+_TIPOS_IMAGEM = {'image/jpeg', 'image/jpg', 'image/png', 'image/webp'}
+_MAX_BYTES     = 5 * 1024 * 1024  # 5 MB
+
+_TIPOS_UPLOAD = {
+    'logo':        'logo_url',
+    'capa':        'imagem_capa_url',
+    'boas_vindas': 'imagem_boas_vindas_url',
+}
+
+def _cfg_cloudinary():
+    cloudinary.config(
+        cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
+        api_key=os.environ.get('CLOUDINARY_API_KEY'),
+        api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
+    )
 
 super_bp = Blueprint('super', __name__, url_prefix='/api/v1/super')
 
@@ -38,7 +57,12 @@ def _fmt_barbearia(b):
 def _fmt_customizacao(c):
     if not c:
         return None
-    return {f: getattr(c, f) for f in _COR_FIELDS + ['fonte']}
+    return {
+        **{f: getattr(c, f) for f in _COR_FIELDS + ['fonte']},
+        'logo_url':               c.logo_url,
+        'imagem_capa_url':        c.imagem_capa_url,
+        'imagem_boas_vindas_url': c.imagem_boas_vindas_url,
+    }
 
 
 def _features_map(barbearia_id):
@@ -290,7 +314,8 @@ def editar_customizacao(barbearia_id):
 
     c = BarbeariaCustomizacao.query.filter_by(barbearia_id=barbearia_id).first()
     if not c:
-        raise APIError('Customização não encontrada.', 404)
+        c = BarbeariaCustomizacao(barbearia_id=barbearia_id)
+        db.session.add(c)
 
     dados = request.get_json(silent=True) or {}
 
@@ -306,6 +331,61 @@ def editar_customizacao(barbearia_id):
 
     db.session.commit()
     return jsonify({'mensagem': 'Customização atualizada.', 'customizacao': _fmt_customizacao(c)}), 200
+
+
+# ── POST /api/v1/super/barbearias/<id>/customizacao/imagens ─────────────────────
+# Multipart: campo "arquivo" (imagem) + campo "tipo" = logo | capa | boas_vindas
+
+@super_bp.post('/barbearias/<int:barbearia_id>/customizacao/imagens')
+@super_required
+def upload_imagem_customizacao(barbearia_id):
+    b = _get_barbearia_or_404(barbearia_id)
+
+    tipo = (request.form.get('tipo') or '').strip()
+    if tipo not in _TIPOS_UPLOAD:
+        raise APIError(f'"tipo" deve ser: {", ".join(_TIPOS_UPLOAD)}.')
+
+    if 'arquivo' not in request.files:
+        raise APIError('Campo "arquivo" é obrigatório.')
+    arq = request.files['arquivo']
+    if not arq.filename:
+        raise APIError('Nenhum arquivo enviado.')
+    if arq.mimetype not in _TIPOS_IMAGEM:
+        raise APIError('Tipo não permitido. Use JPG, PNG ou WebP.')
+    arq.seek(0, 2)
+    if arq.tell() > _MAX_BYTES:
+        raise APIError('Arquivo muito grande. Máximo 5 MB.')
+    arq.seek(0)
+
+    _cfg_cloudinary()
+    public_id = f'barbearia_{barbearia_id}_{tipo}'
+    try:
+        resultado = cloudinary.uploader.upload(
+            arq.stream,
+            folder='barberos/customizacao',
+            public_id=public_id,
+            overwrite=True,
+            unique_filename=False,
+            invalidate=True,
+            resource_type='image',
+        )
+    except Exception as exc:
+        raise APIError(f'Cloudinary: {exc}', 502)
+
+    url = resultado.get('secure_url')
+    if not url:
+        raise APIError('Cloudinary não retornou a URL da imagem.', 502)
+
+    c = BarbeariaCustomizacao.query.filter_by(barbearia_id=barbearia_id).first()
+    if not c:
+        c = BarbeariaCustomizacao(barbearia_id=barbearia_id)
+        db.session.add(c)
+
+    campo = _TIPOS_UPLOAD[tipo]
+    setattr(c, campo, url)
+    db.session.commit()
+
+    return jsonify({'mensagem': 'Imagem atualizada.', 'tipo': tipo, 'url': url}), 200
 
 
 # ── Trigger manual do scheduler (apenas super, apenas em dev) ─────────────────
