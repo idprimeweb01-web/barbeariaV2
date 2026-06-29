@@ -1,0 +1,46 @@
+============================================================
+  TESTE GESTOR — 29/06/2026 07:41:28
+============================================================
+
+[ 1 ] Verificando servidor…
+  [OK]  GET /entrar (servidor UP)
+
+[ 2 ] Login como super_admin…
+  [OK]  Login super_admin — redirect: /super/
+
+[ 3 ] Criando barbearia de teste…
+  [AVISO] Slug 'teste-auto' já existe. Reutilizando…
+  [OK]  Barbearia existente — id=2
+
+[ 4 ] Login como gestor…
+  [OK]  Login gestor — redirect: /gestor/
+
+[ 5 ] Rotas de tela (GET HTML) — espera HTTP 200:
+  [OK]  Dashboard (/gestor/dashboard)
+  [OK]  Agenda (/gestor/agenda)
+  [OK]  Funcionários (/gestor/barbeiros)
+  [OK]  Serviços (/gestor/servicos)
+  [OK]  Produtos (/gestor/produtos)
+  [OK]  Planos (/gestor/planos)
+  [OK]  Relatórios (/gestor/relatorios)
+  [OK]  Clientes (/gestor/clientes)
+
+[ 6 ] Endpoints de API (GET JSON) — espera HTTP 200 + JSON:
+  [OK]  API Dashboard — dict(['assinantes_ativos', 'estoque_critico', 'hoje'])
+  [OK]  API Agendamentos — lista
+  [OK]  API Barbeiros — lista
+  [OK]  API Serviços — lista
+  [OK]  API Produtos — lista
+  [OK]  API Planos — lista
+  [OK]  API Relatórios — dict(['barbearia', 'colunas_ativas', 'colunas_disponiveis'])
+  [OK]  API Clientes — dict(['chart_novos', 'clientes', 'insights'])
+
+============================================================
+  RESULTADO FINAL
+============================================================
+  Telas  : 8/8 [OK] 
+  APIs   : 8/8  [OK] 
+  Total  : 16/16
+
+  [OK]  TUDO OK — LEVA 1 operacional!
+============================================================

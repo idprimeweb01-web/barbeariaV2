@@ -80,6 +80,54 @@
                  placeholder="Senha provisória" autocomplete="new-password">
         </div>
 
+        <details style="margin-top:4px">
+          <summary style="cursor:pointer;font-size:13px;color:#777;font-weight:500;padding:10px 0;list-style:none;display:flex;align-items:center;gap:6px;border-top:1px solid #1e1e1e">
+            <span style="font-size:10px">▸</span> Endereço e Contato (opcional)
+          </summary>
+          <div style="padding-top:4px">
+            <div style="display:grid;grid-template-columns:3fr 1fr;gap:10px">
+              <div class="field">
+                <label for="fRua">Rua / Avenida</label>
+                <input type="text" id="fRua" placeholder="Ex: Rua das Flores">
+              </div>
+              <div class="field">
+                <label for="fNumero">Número</label>
+                <input type="text" id="fNumero" placeholder="123">
+              </div>
+            </div>
+            <div class="field">
+              <label for="fComplemento">Complemento</label>
+              <input type="text" id="fComplemento" placeholder="Sala 2, Loja A…">
+            </div>
+            <div class="field">
+              <label for="fBairro">Bairro</label>
+              <input type="text" id="fBairro" placeholder="Centro">
+            </div>
+            <div style="display:grid;grid-template-columns:3fr 1fr;gap:10px">
+              <div class="field">
+                <label for="fCidade">Cidade</label>
+                <input type="text" id="fCidade" placeholder="São Paulo">
+              </div>
+              <div class="field">
+                <label for="fEstado">UF</label>
+                <input type="text" id="fEstado" maxlength="2" placeholder="SP" style="text-transform:uppercase">
+              </div>
+            </div>
+            <div class="field">
+              <label for="fCep">CEP</label>
+              <input type="text" id="fCep" placeholder="00000-000" maxlength="9">
+            </div>
+            <div class="field">
+              <label for="fTelContato">Telefone / WhatsApp de contato</label>
+              <input type="tel" id="fTelContato" placeholder="(11) 99999-9999">
+            </div>
+            <div class="field">
+              <label for="fInstagram">Instagram</label>
+              <input type="text" id="fInstagram" placeholder="@barbearia ou link completo">
+            </div>
+          </div>
+        </details>
+
         <div id="erroNovo" class="alert alert-error" style="display:none"></div>
 
         <div class="modal-footer">
@@ -125,6 +173,89 @@
     </div>
     <div id="detalheConteudo" style="color:#555;font-size:14px">Carregando…</div>
     <div class="modal-footer" id="detalheBotoes" style="justify-content:space-between;flex-wrap:wrap;gap:10px"></div>
+  </div>
+</div>
+
+<!-- ── Modal: Editar Estabelecimento ────────────────────────────────────────── -->
+<div class="modal-overlay" id="modalEditar" onclick="if(event.target===this)fecharModal('modalEditar')">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Editar Estabelecimento</h3>
+      <button class="modal-close" onclick="fecharModal('modalEditar')">×</button>
+    </div>
+    <form id="formEditar" onsubmit="salvarEditar(event)">
+      <div class="field-group-title">Dados Básicos</div>
+      <div class="field">
+        <label for="eNome">Nome *</label>
+        <input type="text" id="eNome" required placeholder="Nome interno">
+      </div>
+      <div class="field">
+        <label for="eNomeExib">Nome de exibição</label>
+        <input type="text" id="eNomeExib" placeholder="Nome público (opcional)">
+      </div>
+      <div class="field">
+        <label for="eSlug">Slug *</label>
+        <input type="text" id="eSlug" required pattern="[a-z0-9-]+"
+               oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')">
+      </div>
+      <div class="field">
+        <label for="eUrl">URL de agendamento personalizada</label>
+        <input type="text" id="eUrl" placeholder="https://…">
+      </div>
+
+      <div class="field-group-title">Endereço e Contato</div>
+      <div style="display:grid;grid-template-columns:3fr 1fr;gap:10px">
+        <div class="field">
+          <label for="eRua">Rua / Avenida</label>
+          <input type="text" id="eRua" placeholder="Rua das Flores">
+        </div>
+        <div class="field">
+          <label for="eNumero">Número</label>
+          <input type="text" id="eNumero" placeholder="123">
+        </div>
+      </div>
+      <div class="field">
+        <label for="eComplemento">Complemento</label>
+        <input type="text" id="eComplemento" placeholder="Sala 2…">
+      </div>
+      <div class="field">
+        <label for="eBairro">Bairro</label>
+        <input type="text" id="eBairro" placeholder="Centro">
+      </div>
+      <div style="display:grid;grid-template-columns:3fr 1fr;gap:10px">
+        <div class="field">
+          <label for="eCidade">Cidade</label>
+          <input type="text" id="eCidade" placeholder="São Paulo">
+        </div>
+        <div class="field">
+          <label for="eEstado">UF</label>
+          <input type="text" id="eEstado" maxlength="2" placeholder="SP" style="text-transform:uppercase">
+        </div>
+      </div>
+      <div class="field">
+        <label for="eCep">CEP</label>
+        <input type="text" id="eCep" placeholder="00000-000" maxlength="9">
+      </div>
+      <div class="field">
+        <label for="eTelContato">Telefone / WhatsApp de contato</label>
+        <input type="tel" id="eTelContato" placeholder="(11) 99999-9999">
+      </div>
+      <div class="field">
+        <label for="eInstagram">Instagram</label>
+        <input type="text" id="eInstagram" placeholder="@barbearia ou link completo">
+      </div>
+
+      <div id="erroEditar" class="alert alert-error" style="display:none"></div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" style="width:auto;padding:9px 18px"
+                onclick="fecharModal('modalEditar')">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="btnSalvar" style="width:auto;padding:9px 24px">
+          <span id="btnSalvarTxt">Salvar</span>
+          <span class="spinner" id="btnSalvarSpin" style="display:none"></span>
+        </button>
+      </div>
+    </form>
   </div>
 </div>
 {% endblock %}
@@ -179,6 +310,15 @@ async function criar(e) {
     gestor_email:     document.getElementById('fGEmail').value.trim().toLowerCase(),
     gestor_telefone:  document.getElementById('fGTel').value.trim(),
     gestor_senha:     document.getElementById('fGSenha').value,
+    rua:              document.getElementById('fRua').value.trim() || null,
+    numero:           document.getElementById('fNumero').value.trim() || null,
+    complemento:      document.getElementById('fComplemento').value.trim() || null,
+    bairro:           document.getElementById('fBairro').value.trim() || null,
+    cidade:           document.getElementById('fCidade').value.trim() || null,
+    estado:           document.getElementById('fEstado').value.trim().toUpperCase() || null,
+    cep:              document.getElementById('fCep').value.trim() || null,
+    telefone_contato: document.getElementById('fTelContato').value.trim() || null,
+    instagram:        document.getElementById('fInstagram').value.trim() || null,
   };
 
   try {
@@ -252,6 +392,7 @@ function renderTabela() {
       <td>
         <div class="td-actions">
           <button class="btn-icon" onclick="verDetalhes(${b.id})">Detalhes</button>
+          <button class="btn-icon" onclick="abrirEditar(${b.id})">Editar</button>
           <a href="/b/${esc(b.slug)}/" target="_blank" class="btn-icon">Ver site</a>
           ${b.ativo
             ? `<button class="btn-icon danger" onclick="confirmarDesativar(${b.id})">Desativar</button>`
@@ -310,15 +451,21 @@ async function verDetalhes(id) {
       </div>
     `;
 
-    document.getElementById('detalheBotoes').innerHTML = d.ativo
-      ? `<button class="btn btn-ghost" style="width:auto;padding:9px 18px;font-size:13px;border-color:#dc2626;color:#f87171"
-             onclick="confirmarDesativar(${d.id})">
-           Desativar Estabelecimento
-         </button>`
-      : `<button class="btn btn-ghost" style="width:auto;padding:9px 18px;font-size:13px;border-color:#16a34a;color:#4ade80"
-             onclick="ativar(${d.id})">
-           Reativar Estabelecimento
-         </button>`;
+    document.getElementById('detalheBotoes').innerHTML = `
+      <button class="btn btn-ghost" style="width:auto;padding:9px 18px;font-size:13px"
+              onclick="fecharModal('modalDetalhe');abrirEditar(${d.id})">
+        Editar
+      </button>
+      ${d.ativo
+        ? `<button class="btn btn-ghost" style="width:auto;padding:9px 18px;font-size:13px;border-color:#dc2626;color:#f87171"
+               onclick="confirmarDesativar(${d.id})">
+             Desativar
+           </button>`
+        : `<button class="btn btn-ghost" style="width:auto;padding:9px 18px;font-size:13px;border-color:#16a34a;color:#4ade80"
+               onclick="ativar(${d.id})">
+             Reativar
+           </button>`}
+    `;
 
   } catch(e) {
     document.getElementById('detalheConteudo').textContent = 'Erro ao carregar: ' + e.message;
@@ -353,6 +500,82 @@ async function ativar(id) {
     await carregar();
   } catch(e) {
     toast(e.message, 'error');
+  }
+}
+
+// ── Editar estabelecimento ─────────────────────────────────────────────────
+let _editandoId = null;
+
+async function abrirEditar(id) {
+  _editandoId = id;
+  document.getElementById('erroEditar').style.display = 'none';
+  document.getElementById('formEditar').reset();
+  document.getElementById('btnSalvar').disabled = false;
+  document.getElementById('btnSalvarTxt').style.display = '';
+  document.getElementById('btnSalvarSpin').style.display = 'none';
+  abrirModal('modalEditar');
+
+  try {
+    const d = await Bos.get(`/super/barbearias/${id}`);
+    const v = (k) => d[k] || '';
+    document.getElementById('eNome').value       = v('nome');
+    document.getElementById('eNomeExib').value   = v('nome_exibicao');
+    document.getElementById('eSlug').value        = v('slug');
+    document.getElementById('eUrl').value         = v('url_agendamento');
+    document.getElementById('eRua').value         = v('rua');
+    document.getElementById('eNumero').value      = v('numero');
+    document.getElementById('eComplemento').value = v('complemento');
+    document.getElementById('eBairro').value      = v('bairro');
+    document.getElementById('eCidade').value      = v('cidade');
+    document.getElementById('eEstado').value      = v('estado');
+    document.getElementById('eCep').value         = v('cep');
+    document.getElementById('eTelContato').value  = v('telefone_contato');
+    document.getElementById('eInstagram').value   = v('instagram');
+  } catch(e) {
+    document.getElementById('erroEditar').textContent = 'Erro ao carregar: ' + e.message;
+    document.getElementById('erroEditar').style.display = 'flex';
+  }
+}
+
+async function salvarEditar(e) {
+  e.preventDefault();
+  const erroEl = document.getElementById('erroEditar');
+  erroEl.style.display = 'none';
+
+  const btn = document.getElementById('btnSalvar');
+  btn.disabled = true;
+  document.getElementById('btnSalvarTxt').style.display = 'none';
+  document.getElementById('btnSalvarSpin').style.display = '';
+
+  const t = (id) => document.getElementById(id).value.trim();
+
+  const dados = {
+    nome:             t('eNome'),
+    nome_exibicao:    t('eNomeExib') || null,
+    slug:             t('eSlug'),
+    url_agendamento:  t('eUrl') || null,
+    rua:              t('eRua') || null,
+    numero:           t('eNumero') || null,
+    complemento:      t('eComplemento') || null,
+    bairro:           t('eBairro') || null,
+    cidade:           t('eCidade') || null,
+    estado:           t('eEstado').toUpperCase() || null,
+    cep:              t('eCep') || null,
+    telefone_contato: t('eTelContato') || null,
+    instagram:        t('eInstagram') || null,
+  };
+
+  try {
+    await Bos.patch(`/super/barbearias/${_editandoId}`, dados);
+    toast('Estabelecimento atualizado.', 'success');
+    fecharModal('modalEditar');
+    await carregar();
+  } catch(err) {
+    erroEl.textContent = err.message || 'Erro ao salvar.';
+    erroEl.style.display = 'flex';
+    btn.disabled = false;
+    document.getElementById('btnSalvarTxt').style.display = '';
+    document.getElementById('btnSalvarSpin').style.display = 'none';
   }
 }
 
