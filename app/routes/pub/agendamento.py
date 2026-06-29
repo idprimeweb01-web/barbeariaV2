@@ -286,18 +286,64 @@ def _criar_agendamento_core(
     return ag, servicos_info, pix_info
 
 
+# ── GET /pub/<slug>/servicos ──────────────────────────────────────────────────
+
+@pub_bp.get('/<slug>/servicos')
+def listar_servicos_publico(slug):
+    b = _get_barbearia_ou_404(slug)
+    servicos = (
+        db.session.query(Servico)
+        .join(BarbeiroServico, BarbeiroServico.servico_id == Servico.id)
+        .join(Barbeiro, Barbeiro.id == BarbeiroServico.barbeiro_id)
+        .filter(
+            Barbeiro.barbearia_id == b.id,
+            Barbeiro.ativo == True,
+            Servico.ativo == True,
+        )
+        .order_by(Servico.nome)
+        .distinct()
+        .all()
+    )
+    return jsonify([
+        {
+            'id':              s.id,
+            'nome':            s.nome,
+            'descricao':       s.descricao,
+            'duracao_minutos': s.duracao_minutos,
+            'preco':           float(s.preco),
+        }
+        for s in servicos
+    ]), 200
+
+
 # ── GET /pub/<slug>/barbeiros ─────────────────────────────────────────────────
 
 @pub_bp.get('/<slug>/barbeiros')
 def listar_barbeiros_publico(slug):
     b = _get_barbearia_ou_404(slug)
-    barbeiros = (
+    q = (
         Barbeiro.query
         .filter_by(barbearia_id=b.id, ativo=True)
         .join(Usuario)
         .order_by(Usuario.nome)
-        .all()
     )
+
+    # Optional filter: only barbers who offer ALL requested services
+    servico_ids_str = request.args.get('servico_ids', '')
+    if servico_ids_str:
+        try:
+            servico_ids = [int(x) for x in servico_ids_str.split(',') if x.strip()]
+            for sid in servico_ids:
+                q = q.filter(
+                    Barbeiro.id.in_(
+                        db.session.query(BarbeiroServico.barbeiro_id)
+                        .filter_by(servico_id=sid)
+                    )
+                )
+        except ValueError:
+            pass
+
+    barbeiros = q.all()
     return jsonify([
         {
             'id':   br.id,

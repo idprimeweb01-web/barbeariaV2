@@ -2,7 +2,7 @@ from datetime import timedelta
 from functools import wraps
 from flask import (
     Blueprint, request, session, redirect, url_for,
-    render_template, jsonify, make_response,
+    render_template, jsonify, make_response, abort,
 )
 from flask_jwt_extended import (
     create_access_token, create_refresh_token,
@@ -329,3 +329,26 @@ def super_auditoria():
 @session_required('super_admin')
 def super_customizacao():
     return render_template('super/customizacao.html', **_super_ctx())
+
+
+# ── Área pública de agendamento ───────────────────────────────────────────────
+
+@views_bp.get('/b/<slug>')
+@views_bp.get('/b/<slug>/')
+def pub_booking(slug):
+    from app.models import Barbearia, BarbeariaCustomizacao, ConfiguracaoAgendamento
+    b = Barbearia.query.filter_by(slug=slug, ativo=True).first()
+    if not b:
+        abort(404)
+    custom  = BarbeariaCustomizacao.query.filter_by(barbearia_id=b.id).first()
+    config  = ConfiguracaoAgendamento.query.filter_by(barbearia_id=b.id).first()
+    cor     = (custom.cor_primaria if custom else None) or '#f39c12'
+    ant_max = (config.antecedencia_maxima_dias if config else None) or 60
+    bk_nome = b.nome_exibicao or b.nome
+    return render_template(
+        'pub/booking.html',
+        slug=slug,
+        bk_nome=bk_nome,
+        cor_primaria=cor,
+        antecedencia_maxima_dias=ant_max,
+    )

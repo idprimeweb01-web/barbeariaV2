@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>{{ bk_nome }} — Agendar</title>
+  <style>
+    :root {
+      --cor: {{ cor_primaria }};
+      --bg: #f5f7fa;
+      --card: #ffffff;
+      --border: #e5e7eb;
+      --text: #111827;
+      --muted: #6b7280;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── Header ─────────────────────────────────────────── */
+    .header { background: #fff; border-bottom: 1px solid var(--border); padding: 0 16px; height: 54px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 100; }
+    .brand { font-size: 16px; font-weight: 700; color: var(--text); }
+    .brand-tag { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--bg); border: 1px solid var(--border); padding: 2px 8px; border-radius: 6px; margin-left: auto; white-space: nowrap; }
+
+    /* ── Progress ───────────────────────────────────────── */
+    .progress { background: #fff; border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; justify-content: center; }
+    .p-dot { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border); background: #fff; color: var(--muted); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all .2s; }
+    .p-dot.done { background: var(--cor); border-color: var(--cor); color: #fff; }
+    .p-dot.active { border-color: var(--cor); color: var(--cor); background: #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--cor) 15%, transparent); }
+    .p-line { flex: 1; height: 2px; background: var(--border); max-width: 44px; transition: background .2s; }
+    .p-line.done { background: var(--cor); }
+
+    /* ── Content ────────────────────────────────────────── */
+    .content { max-width: 480px; margin: 0 auto; padding: 20px 16px 80px; }
+    .s-panel { display: none; }
+    .s-panel.active { display: block; }
+
+    /* ── Card ───────────────────────────────────────────── */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 12px; }
+    .card-title { font-size: 19px; font-weight: 700; margin-bottom: 4px; }
+    .card-sub { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+
+    /* ── Form ───────────────────────────────────────────── */
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .5px; }
+    .field input, .field select { width: 100%; padding: 12px 14px; border: 1.5px solid var(--border); border-radius: 9px; font-size: 15px; font-family: inherit; color: var(--text); background: #fff; outline: none; transition: border .15s; }
+    .field input:focus, .field select:focus { border-color: var(--cor); }
+
+    /* ── Buttons ────────────────────────────────────────── */
+    .btn-primary { width: 100%; padding: 14px; background: var(--cor); border: none; border-radius: 10px; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; transition: opacity .15s; }
+    .btn-primary:hover { opacity: .88; }
+    .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-ghost { padding: 12px 20px; background: none; border: 1.5px solid var(--border); border-radius: 10px; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+
+    /* ── Service / Barber select cards ─────────────────── */
+    .sel-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+    .sel-item { background: #fff; border: 2px solid var(--border); border-radius: 10px; padding: 14px; cursor: pointer; transition: border-color .15s; display: flex; align-items: flex-start; gap: 12px; }
+    .sel-item.selected { border-color: var(--cor); box-shadow: 0 0 0 1px var(--cor); }
+    .sel-check { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border); flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: transparent; transition: all .15s; }
+    .sel-item.selected .sel-check { background: var(--cor); border-color: var(--cor); color: #fff; }
+    .sel-name { font-weight: 600; font-size: 15px; margin-bottom: 3px; }
+    .sel-meta { font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+    /* ── Barber avatar ──────────────────────────────────── */
+    .bar-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; color: var(--muted); overflow: hidden; }
+    .bar-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+    /* ── Slot grid ──────────────────────────────────────── */
+    .slot-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 4px; }
+    .slot-btn { padding: 10px 4px; border: 1.5px solid var(--border); border-radius: 8px; background: #fff; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; font-family: inherit; transition: all .15s; }
+    .slot-btn:hover { border-color: var(--cor); color: var(--cor); }
+    .slot-btn.selected { background: var(--cor); border-color: var(--cor); color: #fff; }
+
+    /* ── Summary rows ───────────────────────────────────── */
+    .sum-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 14px; gap: 8px; }
+    .sum-row:last-child { border-bottom: none; }
+    .sum-label { color: var(--muted); flex-shrink: 0; }
+    .sum-val { font-weight: 600; text-align: right; }
+
+    /* ── Payment method ─────────────────────────────────── */
+    .method-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    .method-btn { padding: 14px 10px; border: 2px solid var(--border); border-radius: 10px; background: #fff; cursor: pointer; font-family: inherit; text-align: center; transition: all .15s; }
+    .method-btn.selected { border-color: var(--cor); box-shadow: 0 0 0 1px var(--cor); }
+    .method-btn .m-icon { font-size: 24px; margin-bottom: 5px; }
+    .method-btn .m-label { font-size: 13px; font-weight: 600; display: block; color: var(--text); }
+    .method-btn .m-sub { font-size: 11px; color: var(--muted); display: block; margin-top: 2px; }
+
+    /* ── Success ────────────────────────────────────────── */
+    .success-icon { text-align: center; font-size: 60px; margin-bottom: 14px; }
+    .success-title { font-size: 22px; font-weight: 800; text-align: center; margin-bottom: 6px; }
+    .success-sub { font-size: 14px; color: var(--muted); text-align: center; margin-bottom: 22px; line-height: 1.5; }
+
+    .pix-box { background: #fef9e7; border: 1px solid #f39c12; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+    .pix-box-title { font-size: 13px; font-weight: 700; color: #9a6200; margin-bottom: 6px; }
+    .pix-box-body { font-size: 12px; color: #7a4f00; line-height: 1.5; }
+    .pix-code { background: #f3f4f6; border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-family: monospace; font-size: 11px; word-break: break-all; color: #374151; margin-bottom: 10px; max-height: 120px; overflow-y: auto; }
+    .btn-copy { width: 100%; padding: 12px; background: #111827; border: none; border-radius: 9px; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; margin-bottom: 10px; }
+    .btn-copy:active { opacity: .8; }
+
+    /* ── Helpers ────────────────────────────────────────── */
+    .loading { text-align: center; padding: 32px; color: var(--muted); font-size: 14px; }
+    .empty { text-align: center; padding: 32px 16px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+    .sv-resumo { font-size: 13px; color: var(--muted); margin-bottom: 12px; min-height: 18px; }
+    .field-label-sm { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; margin-top: 16px; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+    .label-sm { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 8px; }
+
+    /* ── Toast ──────────────────────────────────────────── */
+    #toasts { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 9999; width: calc(100% - 32px); max-width: 400px; pointer-events: none; }
+    .toast { padding: 12px 16px; border-radius: 10px; font-size: 14px; font-weight: 500; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,.12); animation: tIn .2s ease; pointer-events: auto; }
+    .toast.t-success { background: #dcfce7; border: 1px solid #16a34a; color: #166534; }
+    .toast.t-error   { background: #fee2e2; border: 1px solid #dc2626; color: #991b1b; }
+    .toast.t-info    { background: #fef9c3; border: 1px solid #d97706; color: #92400e; }
+    @keyframes tIn  { from { transform: translateY(-16px); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes tOut { to   { transform: translateY(-16px); opacity: 0; } }
+    .toast.out { animation: tOut .2s ease forwards; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────── -->
+<header class="header">
+  <span class="brand">{{ bk_nome }}</span>
+  <span class="brand-tag">Agendamento</span>
+</header>
+
+<!-- ── Progress ────────────────────────────────────────────────────── -->
+<div class="progress">
+  <div class="p-dot active" id="pd1">1</div>
+  <div class="p-line" id="pl1"></div>
+  <div class="p-dot" id="pd2">2</div>
+  <div class="p-line" id="pl2"></div>
+  <div class="p-dot" id="pd3">3</div>
+  <div class="p-line" id="pl3"></div>
+  <div class="p-dot" id="pd4">4</div>
+  <div class="p-line" id="pl4"></div>
+  <div class="p-dot" id="pd5">5</div>
+</div>
+
+<div class="content">
+
+  <!-- ── Step 1: Identificação ───────────────────────────────────── -->
+  <div id="s1" class="s-panel active">
+    <div class="card">
+      <div class="card-title">Olá! 👋</div>
+      <div class="card-sub">Informe seus dados para começar o agendamento.</div>
+      <div class="field">
+        <label>Telefone *</label>
+        <input type="tel" id="inpTel" placeholder="(11) 99999-9999" inputmode="numeric" autocomplete="tel">
+      </div>
+      <div class="field">
+        <label>Seu nome *</label>
+        <input type="text" id="inpNome" placeholder="Como podemos te chamar?" autocomplete="given-name">
+      </div>
+      <div class="field">
+        <label>E-mail <span style="font-weight:400">(opcional)</span></label>
+        <input type="email" id="inpEmail" placeholder="seu@email.com" autocomplete="email">
+      </div>
+      <button class="btn-primary" onclick="s1Proximo()">Próximo →</button>
+    </div>
+  </div>
+
+  <!-- ── Step 2: Serviços ────────────────────────────────────────── -->
+  <div id="s2" class="s-panel">
+    <div class="card">
+      <div class="card-title">Serviços</div>
+      <div class="card-sub">Escolha um ou mais serviços.</div>
+      <div id="svLista" class="sel-list"><div class="loading">Carregando serviços…</div></div>
+      <div class="sv-resumo" id="svResumo"></div>
+      <button class="btn-primary" onclick="s2Proximo()">Próximo →</button>
+    </div>
+  </div>
+
+  <!-- ── Step 3: Barbeiro ─────────────────────────────────────────── -->
+  <div id="s3" class="s-panel">
+    <div class="card">
+      <div class="card-title">Profissional</div>
+      <div class="card-sub">Escolha quem vai te atender.</div>
+      <div id="barLista" class="sel-list"><div class="loading">Carregando profissionais…</div></div>
+      <button class="btn-primary" onclick="s3Proximo()">Próximo →</button>
+    </div>
+  </div>
+
+  <!-- ── Step 4: Data & Hora ─────────────────────────────────────── -->
+  <div id="s4" class="s-panel">
+    <div class="card">
+      <div class="card-title">Data & Horário</div>
+      <div class="card-sub">Escolha quando você quer ser atendido.</div>
+      <div class="field">
+        <label>Data</label>
+        <input type="date" id="inpData" onchange="carregarSlots()">
+      </div>
+      <div id="slotsWrap" style="display:none">
+        <div class="label-sm">Horários disponíveis</div>
+        <div id="slotGrid" class="slot-grid"></div>
+      </div>
+      <div id="slotsEmpty" style="display:none" class="empty">
+        Sem horários disponíveis para essa data.<br>
+        <span style="color:var(--cor)">Tente outro dia.</span>
+      </div>
+      <div id="slotsLoading" style="display:none" class="loading">Buscando horários…</div>
+      <button class="btn-primary" style="margin-top:16px" onclick="s4Proximo()">Próximo →</button>
+    </div>
+  </div>
+
+  <!-- ── Step 5: Confirmação ─────────────────────────────────────── -->
+  <div id="s5" class="s-panel">
+    <div class="card">
+      <div class="card-title">Confirmar</div>
+      <div class="card-sub">Revise os detalhes antes de confirmar.</div>
+      <div id="sumario"></div>
+      <hr class="divider">
+      <div class="label-sm" style="margin-bottom:10px">Forma de pagamento</div>
+      <div class="method-grid">
+        <button class="method-btn selected" id="mLocal" onclick="setMetodo('local')">
+          <div class="m-icon">💵</div>
+          <span class="m-label">Pagar no local</span>
+          <span class="m-sub">Na hora do atendimento</span>
+        </button>
+        <button class="method-btn" id="mPix" onclick="setMetodo('pix')">
+          <div class="m-icon">📱</div>
+          <span class="m-label">PIX</span>
+          <span class="m-sub">Código gerado agora</span>
+        </button>
+      </div>
+      <button class="btn-primary" id="btnS5" onclick="confirmar()">Confirmar agendamento</button>
+    </div>
+  </div>
+
+  <!-- ── Sucesso ─────────────────────────────────────────────────── -->
+  <div id="s6" class="s-panel">
+    <div class="card">
+      <div class="success-icon">🎉</div>
+      <div class="success-title">Agendamento confirmado!</div>
+      <div class="success-sub" id="sucSub"></div>
+
+      <!-- PIX (condicional) -->
+      <div id="pixSection" style="display:none">
+        <div class="pix-box">
+          <div class="pix-box-title">⚡ Pague via PIX — Copia e Cola</div>
+          <div class="pix-box-body">Abra o app do seu banco → Pix → Copia e Cola → cole o código abaixo. O agendamento é confirmado após o pagamento.</div>
+        </div>
+        <div class="pix-code" id="pixCode"></div>
+        <button class="btn-copy" onclick="copiarPix()">📋 Copiar código PIX</button>
+      </div>
+
+      <button class="btn-primary" onclick="reiniciar()">Fazer novo agendamento</button>
+    </div>
+  </div>
+
+</div><!-- /content -->
+
+<div id="toasts"></div>
+
+<script>
+const SLUG    = {{ slug|tojson }};
+const BK_NOME = {{ bk_nome|tojson }};
+const ANT_MAX = {{ antecedencia_maxima_dias }};
+const LS_TEL  = 'bk_tel_'  + SLUG;
+const LS_NOME = 'bk_nome_' + SLUG;
+const LS_ID   = 'bk_id_'   + SLUG;
+
+let _state = {
+  step: 1,
+  telefone: '', nome: '', email: '',
+  servicos: [],
+  barbeiro: null,
+  data: '', slot: '',
+  metodo: 'local',
+};
+
+let _servicosData = {};
+let _barbeiroData = {};
+
+// ── API ──────────────────────────────────────────────────────────────
+function apiFetch(path, opts = {}) {
+  return fetch('/api/v1/pub/' + SLUG + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  }).then(async r => {
+    let d;
+    try { d = await r.json(); } catch { d = {}; }
+    if (!r.ok) throw new Error(d.erro || d.error || ('Erro ' + r.status));
+    return d;
+  });
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────
+function toast(msg, tipo = 'success') {
+  const d = document.createElement('div');
+  d.className = 'toast t-' + tipo;
+  d.textContent = msg;
+  document.getElementById('toasts').appendChild(d);
+  setTimeout(() => d.classList.add('out'), 3200);
+  setTimeout(() => d.remove(), 3500);
+}
+
+// ── Escape HTML ───────────────────────────────────────────────────────
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Format R$ ─────────────────────────────────────────────────────────
+function fmtR(v) {
+  return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+}
+
+// ── Navigation ────────────────────────────────────────────────────────
+function goStep(n) {
+  document.querySelectorAll('.s-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('s' + n).classList.add('active');
+  _state.step = n;
+  updateProgress();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function updateProgress() {
+  const n = _state.step; // 1–6 (6 = success, show all done)
+  for (let i = 1; i <= 5; i++) {
+    const dot  = document.getElementById('pd' + i);
+    const line = i < 5 ? document.getElementById('pl' + i) : null;
+    dot.classList.remove('done', 'active');
+    if (n > 5 || i < n)      dot.classList.add('done');
+    else if (i === n && n <= 5) dot.classList.add('active');
+    if (line) line.classList.toggle('done', n > 5 || i < n);
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const t = localStorage.getItem(LS_TEL);
+  const n = localStorage.getItem(LS_NOME);
+  if (t) document.getElementById('inpTel').value = t;
+  if (n) document.getElementById('inpNome').value = n;
+
+  const today  = new Date().toISOString().split('T')[0];
+  const maxD   = new Date();
+  maxD.setDate(maxD.getDate() + ANT_MAX);
+  const inpD   = document.getElementById('inpData');
+  inpD.min     = today;
+  inpD.max     = maxD.toISOString().split('T')[0];
+  inpD.value   = today;
+
+  updateProgress();
+});
+
+// ── Step 1 ────────────────────────────────────────────────────────────
+function s1Proximo() {
+  const tel   = document.getElementById('inpTel').value.trim();
+  const nome  = document.getElementById('inpNome').value.trim();
+  const email = document.getElementById('inpEmail').value.trim();
+  if (!tel)  { toast('Informe seu telefone.', 'error'); return; }
+  if (!nome) { toast('Informe seu nome.', 'error'); return; }
+  _state.telefone = tel;
+  _state.nome     = nome;
+  _state.email    = email;
+  enterStep2();
+}
+
+// ── Step 2: Serviços ──────────────────────────────────────────────────
+async function enterStep2() {
+  goStep(2);
+  const el = document.getElementById('svLista');
+  el.innerHTML = '<div class="loading">Carregando serviços…</div>';
+  try {
+    const servicos = await apiFetch('/servicos');
+    _servicosData = {};
+    servicos.forEach(s => { _servicosData[s.id] = s; });
+
+    if (!servicos.length) {
+      el.innerHTML = '<div class="empty">Nenhum serviço disponível no momento.</div>';
+      return;
+    }
+    el.innerHTML = servicos.map(s => `
+      <div class="sel-item" id="sv${s.id}" onclick="toggleServico(${s.id})">
+        <div class="sel-check">✓</div>
+        <div>
+          <div class="sel-name">${esc(s.nome)}</div>
+          <div class="sel-meta">${s.duracao_minutos} min · ${fmtR(s.preco)}</div>
+          ${s.descricao ? `<div class="sel-meta" style="margin-top:2px">${esc(s.descricao)}</div>` : ''}
+        </div>
+      </div>
+    `).join('');
+
+    // Restore previous selection
+    _state.servicos.forEach(s => {
+      document.getElementById('sv' + s.id)?.classList.add('selected');
+    });
+    atualizarResumoSv();
+  } catch(e) {
+    el.innerHTML = `<div class="empty" style="color:#dc2626">${esc(e.message)}</div>`;
+  }
+}
+
+function toggleServico(id) {
+  const s   = _servicosData[id];
+  if (!s) return;
+  const idx = _state.servicos.findIndex(x => x.id === id);
+  const el  = document.getElementById('sv' + id);
+  if (idx >= 0) {
+    _state.servicos.splice(idx, 1);
+    el.classList.remove('selected');
+  } else {
+    _state.servicos.push(s);
+    el.classList.add('selected');
+  }
+  atualizarResumoSv();
+}
+
+function atualizarResumoSv() {
+  const total = _state.servicos.reduce((a, s) => a + s.preco, 0);
+  const dur   = _state.servicos.reduce((a, s) => a + s.duracao_minutos, 0);
+  const el    = document.getElementById('svResumo');
+  el.textContent = _state.servicos.length
+    ? `${_state.servicos.length} serviço(s) · ${dur} min · ${fmtR(total)}`
+    : '';
+}
+
+function s2Proximo() {
+  if (!_state.servicos.length) { toast('Selecione ao menos um serviço.', 'error'); return; }
+  enterStep3();
+}
+
+// ── Step 3: Barbeiro ──────────────────────────────────────────────────
+async function enterStep3() {
+  goStep(3);
+  const el = document.getElementById('barLista');
+  el.innerHTML = '<div class="loading">Carregando profissionais…</div>';
+  const svIds = _state.servicos.map(s => s.id).join(',');
+  try {
+    const barbs = await apiFetch('/barbeiros?servico_ids=' + svIds);
+    _barbeiroData = {};
+    barbs.forEach(b => { _barbeiroData[b.id] = b; });
+
+    if (!barbs.length) {
+      el.innerHTML = '<div class="empty">Nenhum profissional disponível para os serviços selecionados.</div>';
+      return;
+    }
+    el.innerHTML = barbs.map(b => `
+      <div class="sel-item" id="bar${b.id}" onclick="selecionarBarbeiro(${b.id})">
+        <div class="bar-avatar">
+          ${b.foto ? `<img src="${esc(b.foto)}" alt="${esc(b.nome)}">` : esc((b.nome || '?')[0])}
+        </div>
+        <div>
+          <div class="sel-name">${esc(b.nome)}</div>
+          ${b.bio ? `<div class="sel-meta">${esc(b.bio)}</div>` : ''}
+        </div>
+      </div>
+    `).join('');
+
+    // Restore previous selection if still valid
+    if (_state.barbeiro && _barbeiroData[_state.barbeiro.id]) {
+      document.getElementById('bar' + _state.barbeiro.id)?.classList.add('selected');
+    } else {
+      _state.barbeiro = null;
+    }
+  } catch(e) {
+    el.innerHTML = `<div class="empty" style="color:#dc2626">${esc(e.message)}</div>`;
+  }
+}
+
+function selecionarBarbeiro(id) {
+  const b = _barbeiroData[id];
+  if (!b) return;
+  document.querySelectorAll('#barLista .sel-item').forEach(el => el.classList.remove('selected'));
+  document.getElementById('bar' + id)?.classList.add('selected');
+  _state.barbeiro = b;
+}
+
+function s3Proximo() {
+  if (!_state.barbeiro) { toast('Selecione um profissional.', 'error'); return; }
+  enterStep4();
+}
+
+// ── Step 4: Data & Hora ───────────────────────────────────────────────
+function enterStep4() {
+  goStep(4);
+  const data = document.getElementById('inpData').value;
+  if (data) carregarSlots();
+}
+
+async function carregarSlots() {
+  const data = document.getElementById('inpData').value;
+  if (!data || !_state.barbeiro) return;
+
+  const duracao = _state.servicos.reduce((a, s) => a + s.duracao_minutos, 0);
+  _state.slot = '';
+
+  const wrap    = document.getElementById('slotsWrap');
+  const empty   = document.getElementById('slotsEmpty');
+  const loading = document.getElementById('slotsLoading');
+  const grid    = document.getElementById('slotGrid');
+
+  wrap.style.display    = 'none';
+  empty.style.display   = 'none';
+  loading.style.display = '';
+
+  try {
+    const r     = await apiFetch(`/barbeiros/${_state.barbeiro.id}/slots?data=${data}&duracao=${duracao}`);
+    const slots = r.slots || [];
+    loading.style.display = 'none';
+
+    if (!slots.length) {
+      empty.style.display = '';
+      return;
+    }
+    grid.innerHTML = slots.map(s => `
+      <button class="slot-btn" id="slot_${s}" onclick="selecionarSlot('${s}')">${s}</button>
+    `).join('');
+    wrap.style.display = '';
+  } catch(e) {
+    loading.style.display = 'none';
+    grid.innerHTML = `<div class="empty" style="color:#dc2626">${esc(e.message)}</div>`;
+    wrap.style.display = '';
+  }
+}
+
+function selecionarSlot(h) {
+  document.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('slot_' + h)?.classList.add('selected');
+  _state.slot = h;
+}
+
+function s4Proximo() {
+  const data = document.getElementById('inpData').value;
+  if (!data)        { toast('Escolha uma data.', 'error'); return; }
+  if (!_state.slot) { toast('Escolha um horário.', 'error'); return; }
+  _state.data = data;
+  enterStep5();
+}
+
+// ── Step 5: Confirmação ───────────────────────────────────────────────
+function enterStep5() {
+  goStep(5);
+
+  const total  = _state.servicos.reduce((a, s) => a + s.preco, 0);
+  const dur    = _state.servicos.reduce((a, s) => a + s.duracao_minutos, 0);
+  const [ano, mes, dia] = _state.data.split('-');
+  const dataFmt = `${dia}/${mes}/${ano}`;
+
+  document.getElementById('sumario').innerHTML = `
+    <div class="sum-row">
+      <span class="sum-label">Serviços</span>
+      <span class="sum-val">${esc(_state.servicos.map(s => s.nome).join(', '))}</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-label">Profissional</span>
+      <span class="sum-val">${esc(_state.barbeiro.nome)}</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-label">Data & hora</span>
+      <span class="sum-val">${esc(dataFmt)} às ${esc(_state.slot)}</span>
+    </div>
+    <div class="sum-row">
+      <span class="sum-label">Duração</span>
+      <span class="sum-val">${dur} min</span>
+    </div>
+    <div class="sum-row" style="font-weight:700">
+      <span class="sum-label">Total</span>
+      <span class="sum-val" style="color:var(--cor)">${fmtR(total)}</span>
+    </div>
+  `;
+
+  // Reset to local payment by default
+  setMetodo('local');
+}
+
+function setMetodo(m) {
+  _state.metodo = m;
+  document.getElementById('mLocal').classList.toggle('selected', m === 'local');
+  document.getElementById('mPix').classList.toggle('selected', m === 'pix');
+}
+
+async function confirmar() {
+  const btn = document.getElementById('btnS5');
+  btn.disabled    = true;
+  btn.textContent = 'Confirmando…';
+
+  const dataHora = `${_state.data}T${_state.slot}:00`;
+  const payload  = {
+    telefone:           _state.telefone,
+    nome:               _state.nome,
+    barbeiro_id:        _state.barbeiro.id,
+    data_hora:          dataHora,
+    servicos:           _state.servicos.map(s => ({ servico_id: s.id })),
+    metodo_pagamento:   _state.metodo,
+  };
+  if (_state.email) payload.email = _state.email;
+
+  try {
+    const r = await apiFetch('/agendar', { method: 'POST', body: JSON.stringify(payload) });
+
+    // Persist for next visit
+    localStorage.setItem(LS_TEL, _state.telefone);
+    localStorage.setItem(LS_NOME, _state.nome);
+    if (r.cliente?.id) localStorage.setItem(LS_ID, String(r.cliente.id));
+
+    enterSuccess(r);
+  } catch(e) {
+    toast(e.message, 'error');
+    btn.disabled    = false;
+    btn.textContent = 'Confirmar agendamento';
+  }
+}
+
+// ── Sucesso ───────────────────────────────────────────────────────────
+function enterSuccess(r) {
+  goStep(6);
+  const [ano, mes, dia] = _state.data.split('-');
+  const dataFmt = `${dia}/${mes}/${ano}`;
+  document.getElementById('sucSub').textContent =
+    `Agendamento #${r.id} para ${dataFmt} às ${_state.slot} com ${_state.barbeiro.nome}.`;
+
+  const pixSec = document.getElementById('pixSection');
+  if (r.pix?.codigo_pix) {
+    pixSec.style.display = '';
+    document.getElementById('pixCode').textContent = r.pix.codigo_pix;
+  } else {
+    pixSec.style.display = 'none';
+  }
+}
+
+function copiarPix() {
+  const code = document.getElementById('pixCode').textContent;
+  const doCopy = () => {
+    const ta = document.createElement('textarea');
+    ta.value = code;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); toast('Código PIX copiado!'); } catch { toast('Não foi possível copiar.', 'error'); }
+    ta.remove();
+  };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(code).then(() => toast('Código PIX copiado!')).catch(doCopy);
+  } else { doCopy(); }
+}
+
+function reiniciar() {
+  _state.servicos  = [];
+  _state.barbeiro  = null;
+  _state.data      = '';
+  _state.slot      = '';
+  _state.metodo    = 'local';
+  goStep(1);
+}
+</script>
+
+</body>
+</html>
