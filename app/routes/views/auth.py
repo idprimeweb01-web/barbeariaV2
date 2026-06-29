@@ -235,15 +235,45 @@ def gestor_config_pix():
     return render_template('gestor/config_pix.html', **_gestor_ctx())
 
 
-@views_bp.get('/barbeiro/')
+def _barbeiro_ctx():
+    bid = session.get('barbearia_id')
+    b   = db.session.get(Barbearia, bid) if bid else None
+    return {
+        'b_nome':  session.get('nome', 'Barbeiro'),
+        'bk_slug': b.slug if b else '',
+        'bk_nome': (b.nome_exibicao or b.nome) if b else 'BarberOS',
+    }
+
+
 @views_bp.get('/barbeiro')
+@views_bp.get('/barbeiro/')
 @session_required('barbeiro', 'super_admin')
 def area_barbeiro():
-    return render_template('staff/placeholder.html',
-        area='do Funcionário',
-        nome=session.get('nome', ''),
-        perfil=session.get('perfil', ''),
-    )
+    return redirect('/barbeiro/dashboard')
+
+
+@views_bp.get('/barbeiro/dashboard')
+@session_required('barbeiro', 'super_admin')
+def barbeiro_dashboard():
+    return render_template('barbeiro/dashboard.html', **_barbeiro_ctx())
+
+
+@views_bp.get('/barbeiro/agendamentos')
+@session_required('barbeiro', 'super_admin')
+def barbeiro_agendamentos():
+    return render_template('barbeiro/agendamentos.html', **_barbeiro_ctx())
+
+
+@views_bp.get('/barbeiro/horario')
+@session_required('barbeiro', 'super_admin')
+def barbeiro_horario():
+    return render_template('barbeiro/horario.html', **_barbeiro_ctx())
+
+
+@views_bp.get('/barbeiro/clientes')
+@session_required('barbeiro', 'super_admin')
+def barbeiro_clientes():
+    return render_template('barbeiro/clientes.html', **_barbeiro_ctx())
 
 
 # ── Área Super Admin ──────────────────────────────────────────────────────────

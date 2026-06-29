@@ -1,0 +1,358 @@
+{% extends "barbeiro/base.html" %}
+{% block title %}Meus Agendamentos{% endblock %}
+{% block breadcrumb %}
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Meus Agendamentos</span>
+{% endblock %}
+
+{% block styles %}
+<style>
+/* Status badges */
+.st { border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.st-agendado         { background: rgba(59,130,246,.12);  color: #93c5fd; }
+.st-em_atendimento   { background: rgba(243,156,18,.12);  color: #fbbf24; }
+.st-concluido        { background: rgba(34,197,94,.12);   color: #4ade80; }
+.st-cancelado        { background: rgba(220,38,38,.12);   color: #f87171; }
+.st-aguardando_pagamento { background: rgba(168,85,247,.12); color: #c4b5fd; }
+
+/* Drawer */
+.drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none; z-index: 900; }
+.drawer-overlay.visible { display: block; }
+.drawer {
+  position: fixed; right: 0; top: 0; bottom: 0; width: 380px;
+  background: #1e1e1e; border-left: 1px solid #2a2a2a;
+  display: flex; flex-direction: column; z-index: 901;
+  transform: translateX(100%); transition: transform .25s;
+}
+.drawer.open { transform: none; }
+.drawer-header { padding: 18px 20px; border-bottom: 1px solid #2a2a2a; display: flex; justify-content: space-between; align-items: center; }
+.drawer-header h3 { font-size: 15px; font-weight: 700; }
+.drawer-close { background: none; border: none; color: #555; font-size: 22px; cursor: pointer; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 20px; }
+.drawer-section { margin-bottom: 18px; }
+.drawer-section-title { font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+.drawer-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom: 1px solid #222; }
+.drawer-row:last-child { border-bottom: none; }
+.drawer-row-key { color: #666; }
+.drawer-row-val { color: #ddd; font-weight: 500; }
+.drawer-actions { padding: 14px 20px; border-top: 1px solid #2a2a2a; display: flex; gap: 8px; flex-wrap: wrap; }
+
+.hist-item { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #1a1a1a; font-size: 12px; }
+.hist-item:last-child { border-bottom: none; }
+.nota-item { background: rgba(243,156,18,.06); border: 1px solid rgba(243,156,18,.15); border-radius: 6px; padding: 8px 10px; font-size: 12px; color: #bbb; margin-bottom: 6px; }
+.nota-tipo { font-size: 10px; font-weight: 700; color: var(--cor-primaria); text-transform: uppercase; margin-bottom: 2px; }
+
+@media (max-width: 640px) { .drawer { width: 100%; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div class="section-title">Meus Agendamentos</div>
+</div>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <input type="date" id="filtroData">
+  <select id="filtroStatus">
+    <option value="">Todos os status</option>
+    <option value="agendado">Agendado</option>
+    <option value="em_atendimento">Em atendimento</option>
+    <option value="concluido">Concluído</option>
+    <option value="cancelado">Cancelado</option>
+    <option value="aguardando_pagamento">Aguardando pag.</option>
+  </select>
+  <button class="btn btn-ghost" onclick="carregar()">Filtrar</button>
+</div>
+
+<div class="table-wrap">
+  <table class="data-table" id="tbl">
+    <thead>
+      <tr>
+        <th>HORA</th>
+        <th>CLIENTE</th>
+        <th>SERVIÇO</th>
+        <th>STATUS</th>
+        <th>VALOR</th>
+        <th>AÇÕES</th>
+      </tr>
+    </thead>
+    <tbody id="tbody">
+      <tr><td colspan="6" class="empty-state"><p>Carregando…</p></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Drawer de detalhes -->
+<div class="drawer-overlay" id="drawerOverlay" onclick="fecharDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-header">
+    <h3 id="drawerTitulo">Agendamento</h3>
+    <button class="drawer-close" onclick="fecharDrawer()">✕</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+  <div class="drawer-actions" id="drawerAcoes"></div>
+</div>
+
+<!-- Modal Concluir -->
+<div class="modal-overlay" id="mConcluir">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Concluir atendimento</h3>
+      <button class="modal-close" onclick="fecharModal('mConcluir')">✕</button>
+    </div>
+    <div class="field">
+      <label>Observação interna (opcional)</label>
+      <textarea id="concluirNota" rows="3" placeholder="Preferências, comportamento, próxima visita…" style="resize:vertical"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModal('mConcluir')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarConcluir()">Concluir</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Cancelar -->
+<div class="modal-overlay" id="mCancelar">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Cancelar agendamento</h3>
+      <button class="modal-close" onclick="fecharModal('mCancelar')">✕</button>
+    </div>
+    <div class="field">
+      <label>Motivo (opcional)</label>
+      <textarea id="cancelarMotivo" rows="2" placeholder="Motivo do cancelamento…" style="resize:vertical"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModal('mCancelar')">Voltar</button>
+      <button class="btn btn-danger" onclick="confirmarCancelar()">Cancelar agendamento</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Nota -->
+<div class="modal-overlay" id="mNota">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Adicionar observação do cliente</h3>
+      <button class="modal-close" onclick="fecharModal('mNota')">✕</button>
+    </div>
+    <div class="field">
+      <label>Categoria</label>
+      <select id="notaTipo">
+        <option value="observacao">Observação geral</option>
+        <option value="preferencia">Preferência</option>
+        <option value="alerta">Alerta</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Texto</label>
+      <textarea id="notaTexto" rows="3" placeholder="Ex: Prefere corte mais curto na lateral…" style="resize:vertical"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModal('mNota')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarNota()">Salvar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _agAtual = null;
+
+const BADGE = {
+  agendado:           '<span class="st st-agendado">Agendado</span>',
+  em_atendimento:     '<span class="st st-em_atendimento">Em atendimento</span>',
+  concluido:          '<span class="st st-concluido">Concluído</span>',
+  cancelado:          '<span class="st st-cancelado">Cancelado</span>',
+  aguardando_pagamento:'<span class="st st-aguardando_pagamento">Ag. pag.</span>',
+};
+
+// ── Init ────────────────────────────────────────────────────────────────────
+document.getElementById('filtroData').value = new Date().toISOString().split('T')[0];
+carregar();
+
+async function carregar() {
+  const data   = document.getElementById('filtroData').value;
+  const status = document.getElementById('filtroStatus').value;
+  let url = '/barbeiro/agendamentos?data=' + (data || new Date().toISOString().split('T')[0]);
+  if (status) url += '&status=' + status;
+
+  document.getElementById('tbody').innerHTML =
+    '<tr><td colspan="6" class="empty-state"><p>Carregando…</p></td></tr>';
+  try {
+    const lista = await Bos.get(url);
+    renderTabela(lista);
+  } catch(e) {
+    document.getElementById('tbody').innerHTML =
+      `<tr><td colspan="6" class="empty-state"><p>Erro: ${esc(e.message)}</p></td></tr>`;
+  }
+}
+
+function renderTabela(lista) {
+  if (!lista.length) {
+    document.getElementById('tbody').innerHTML =
+      '<tr><td colspan="6" class="empty-state"><p>Nenhum agendamento nesta data</p></td></tr>';
+    return;
+  }
+  document.getElementById('tbody').innerHTML = lista.map(ag => `
+    <tr style="cursor:pointer" onclick="abrirDrawer(${ag.id})">
+      <td><strong>${esc(ag.hora)}</strong></td>
+      <td>${esc(ag.cliente?.nome || '—')}</td>
+      <td>${esc((ag.servicos||[]).map(s=>s.nome).join(', ') || '—')}</td>
+      <td>${BADGE[ag.status] || esc(ag.status)}</td>
+      <td>${fmtR(ag.valor_total)}</td>
+      <td class="td-actions" onclick="event.stopPropagation()">
+        <button class="btn-icon" onclick="abrirDrawer(${ag.id})">Ver</button>
+      </td>
+    </tr>
+  `).join('');
+  // Armazena lista para lookup
+  window._lista = lista;
+}
+
+// ── Drawer ──────────────────────────────────────────────────────────────────
+function abrirDrawer(agId) {
+  const ag = (window._lista || []).find(a => a.id === agId);
+  if (!ag) return;
+  _agAtual = ag;
+
+  document.getElementById('drawerTitulo').textContent =
+    `${ag.hora} — ${ag.cliente?.nome || '—'}`;
+
+  const cli  = ag.cliente || {};
+  const svs  = (ag.servicos || []);
+  const hist = ag.historico_cliente || [];
+  const notas = ag.notas_cliente || [];
+
+  let html = `
+    <div class="drawer-section">
+      <div class="drawer-section-title">Cliente</div>
+      <div class="drawer-row"><span class="drawer-row-key">Nome</span><span class="drawer-row-val">${esc(cli.nome||'—')}</span></div>
+      <div class="drawer-row"><span class="drawer-row-key">Telefone</span><span class="drawer-row-val">${esc(cli.telefone||'—')}</span></div>
+      <div class="drawer-row"><span class="drawer-row-key">Status</span><span>${BADGE[ag.status]||esc(ag.status)}</span></div>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-title">Serviço(s)</div>
+      ${svs.map(s => `
+        <div class="drawer-row">
+          <span class="drawer-row-key">${esc(s.nome||'—')}</span>
+          <span class="drawer-row-val">${fmtR(s.preco)} · ${s.duracao_minutos||'—'} min</span>
+        </div>`).join('') || '<div style="color:#444;font-size:13px">Sem serviços</div>'}
+      <div class="drawer-row" style="border-top:1px solid #2a2a2a;margin-top:4px;padding-top:8px">
+        <span class="drawer-row-key">Total</span>
+        <span class="drawer-row-val" style="color:var(--cor-primaria)">${fmtR(ag.valor_total)}</span>
+      </div>
+    </div>`;
+
+  if (ag.observacao) {
+    html += `<div class="drawer-section">
+      <div class="drawer-section-title">Observação</div>
+      <div style="font-size:13px;color:#bbb">${esc(ag.observacao)}</div>
+    </div>`;
+  }
+
+  if (hist.length) {
+    html += `<div class="drawer-section">
+      <div class="drawer-section-title">Últimas visitas</div>
+      ${hist.map(h => `<div class="hist-item"><span style="color:#999">${esc(h.data)} ${esc(h.hora||'')} — ${esc(h.servico)}</span><span style="color:var(--cor-primaria)">${fmtR(h.valor)}</span></div>`).join('')}
+    </div>`;
+  }
+
+  if (notas.length) {
+    html += `<div class="drawer-section">
+      <div class="drawer-section-title">Notas do cliente</div>
+      ${notas.map(n => `<div class="nota-item"><div class="nota-tipo">${esc(n.tipo)}</div>${esc(n.conteudo)}<div style="font-size:10px;color:#555;margin-top:4px">${esc(n.criado_em||'')}</div></div>`).join('')}
+    </div>`;
+  }
+
+  document.getElementById('drawerBody').innerHTML = html;
+
+  // Ações dinâmicas por status
+  let acoes = `<button class="btn btn-ghost" style="font-size:12px" onclick="abrirNota()">+ Observação</button>`;
+  if (ag.status === 'agendado') {
+    acoes = `<button class="btn btn-primary" onclick="iniciar()">Iniciar</button>` + acoes;
+    acoes += `<button class="btn btn-danger" onclick="abrirCancelar()">Cancelar</button>`;
+  } else if (ag.status === 'em_atendimento') {
+    acoes = `<button class="btn btn-primary" onclick="abrirConcluir()">Concluir</button>` + acoes;
+    acoes += `<button class="btn btn-danger" onclick="abrirCancelar()">Cancelar</button>`;
+  }
+  document.getElementById('drawerAcoes').innerHTML = acoes;
+
+  document.getElementById('drawerOverlay').classList.add('visible');
+  document.getElementById('drawer').classList.add('open');
+}
+
+function fecharDrawer() {
+  document.getElementById('drawerOverlay').classList.remove('visible');
+  document.getElementById('drawer').classList.remove('open');
+}
+
+// ── Iniciar ─────────────────────────────────────────────────────────────────
+async function iniciar() {
+  if (!_agAtual) return;
+  try {
+    await Bos.patch(`/barbeiro/agendamentos/${_agAtual.id}/iniciar`);
+    toast('Atendimento iniciado!');
+    fecharDrawer();
+    carregar();
+  } catch(e) { toast(e.message || 'Erro', 'error'); }
+}
+
+// ── Concluir ─────────────────────────────────────────────────────────────────
+function abrirConcluir() {
+  document.getElementById('concluirNota').value = '';
+  fecharDrawer();
+  abrirModal('mConcluir');
+}
+async function confirmarConcluir() {
+  if (!_agAtual) return;
+  const nota = document.getElementById('concluirNota').value.trim();
+  try {
+    await Bos.patch(`/barbeiro/agendamentos/${_agAtual.id}/concluir`,
+      nota ? { notas_internas: nota } : {});
+    toast('Agendamento concluído!');
+    fecharModal('mConcluir');
+    carregar();
+  } catch(e) { toast(e.message || 'Erro', 'error'); }
+}
+
+// ── Cancelar ─────────────────────────────────────────────────────────────────
+function abrirCancelar() {
+  document.getElementById('cancelarMotivo').value = '';
+  fecharDrawer();
+  abrirModal('mCancelar');
+}
+async function confirmarCancelar() {
+  if (!_agAtual) return;
+  const motivo = document.getElementById('cancelarMotivo').value.trim();
+  try {
+    await Bos.patch(`/barbeiro/agendamentos/${_agAtual.id}/cancelar`,
+      motivo ? { motivo } : {});
+    toast('Agendamento cancelado.');
+    fecharModal('mCancelar');
+    carregar();
+  } catch(e) { toast(e.message || 'Erro', 'error'); }
+}
+
+// ── Notas ────────────────────────────────────────────────────────────────────
+function abrirNota() {
+  document.getElementById('notaTexto').value = '';
+  document.getElementById('notaTipo').value  = 'observacao';
+  fecharDrawer();
+  abrirModal('mNota');
+}
+async function confirmarNota() {
+  if (!_agAtual) return;
+  const texto = document.getElementById('notaTexto').value.trim();
+  const tipo  = document.getElementById('notaTipo').value;
+  if (!texto) { toast('Digite o texto da observação.', 'error'); return; }
+  try {
+    await Bos.post(`/barbeiro/agendamentos/${_agAtual.id}/notas`, { texto, tipo });
+    toast('Observação salva!');
+    fecharModal('mNota');
+  } catch(e) { toast(e.message || 'Erro', 'error'); }
+}
+</script>
+{% endblock %}

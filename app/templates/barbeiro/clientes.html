@@ -1,273 +1,241 @@
 {% extends "barbeiro/base.html" %}
-{% block title %}Clientes{% endblock %}
+{% block title %}Meus Clientes{% endblock %}
+{% block breadcrumb %}
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Meus Clientes</span>
+{% endblock %}
 
 {% block styles %}
-.cli-search {
-  width:100%; padding:11px 14px; background:var(--bz-input);
-  border:1.5px solid var(--bz-bd2); border-radius:10px;
-  color:var(--bz-t1); font-family:inherit; font-size:14px; outline:none;
-  transition:border-color .2s; margin-bottom:12px;
+<style>
+.pref-chip {
+  display: inline-block; background: rgba(243,156,18,.08);
+  border: 1px solid rgba(243,156,18,.2); border-radius: 6px;
+  padding: 2px 7px; font-size: 11px; color: #aaa; max-width: 160px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.cli-search:focus { border-color:var(--cor-primaria); }
+.hist-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #1e1e1e; font-size: 13px; }
+.hist-row:last-child { border-bottom: none; }
+.hist-sv   { color: #ccc; }
+.hist-val  { color: var(--cor-primaria); font-weight: 700; flex-shrink: 0; }
 
-.cli-card {
-  background:var(--bz-surface); border:1px solid var(--bz-bd);
-  border-radius:12px; padding:14px 16px;
-  display:flex; align-items:center; gap:12px; margin-bottom:8px;
-  cursor:pointer; transition:border-color .15s;
-}
-.cli-card:hover { border-color:var(--cor-primaria); }
-.cli-avatar {
-  width:42px; height:42px; border-radius:50%; flex-shrink:0;
-  background:rgba(186,117,23,.15); border:1.5px solid rgba(186,117,23,.3);
-  display:flex; align-items:center; justify-content:center;
-  font-size:16px; font-weight:700; color:var(--cor-primaria); overflow:hidden;
-}
-.cli-avatar img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
-.cli-info { flex:1; min-width:0; }
-.cli-nome { font-size:14px; font-weight:600; color:var(--bz-t1); }
-.cli-tel  { font-size:12px; color:var(--bz-t4); margin-top:2px; }
-.cli-meta { text-align:right; flex-shrink:0; }
-.cli-visitas { font-size:13px; font-weight:700; color:var(--cor-primaria); }
-.cli-ultima  { font-size:11px; color:var(--bz-t5); margin-top:2px; }
-.cli-empty { text-align:center; padding:48px 20px; color:var(--bz-t5); font-size:14px; }
+.nota-item { background: rgba(243,156,18,.06); border: 1px solid rgba(243,156,18,.15); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.nota-tipo { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--cor-primaria); margin-bottom: 3px; }
+.nota-txt  { font-size: 13px; color: #bbb; }
+.nota-data { font-size: 10px; color: #555; margin-top: 4px; }
 
-/* Sheet */
-.sheet-box {
-  background:var(--bz-card); border:1px solid var(--bz-bd2);
-  border-radius:16px 16px 0 0; padding:20px; width:100%; max-width:520px;
-  max-height:88vh; overflow-y:auto;
-}
-.sheet-handle { width:36px; height:4px; background:var(--bz-bd2); border-radius:4px; margin:0 auto 16px; }
-.sheet-avatar {
-  width:64px; height:64px; border-radius:50%;
-  background:rgba(186,117,23,.15); border:2px solid rgba(186,117,23,.35);
-  display:flex; align-items:center; justify-content:center;
-  font-size:24px; font-weight:700; color:var(--cor-primaria);
-  margin:0 auto 12px; overflow:hidden;
-}
-.sheet-avatar img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
-.sheet-nome  { text-align:center; font-size:17px; font-weight:700; color:var(--bz-t1); }
-.sheet-sub   { text-align:center; font-size:13px; color:var(--bz-t4); margin-top:2px; margin-bottom:16px; }
-.sheet-stats { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px; }
-.sstat { background:var(--bz-surface); border:1px solid var(--bz-bd); border-radius:10px; padding:10px; text-align:center; }
-.sstat-val { font-size:18px; font-weight:800; color:var(--cor-primaria); }
-.sstat-lbl { font-size:10px; color:var(--bz-t5); font-weight:700; text-transform:uppercase; letter-spacing:.3px; margin-top:2px; }
-.sheet-section { font-size:11px; font-weight:700; color:var(--bz-t5); text-transform:uppercase; letter-spacing:.5px; margin:16px 0 8px; }
-.hist-row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--bz-bd); font-size:13px; }
-.hist-row:last-child { border-bottom:none; }
-.hist-data { font-size:11px; color:var(--bz-t5); margin-top:2px; }
-.info-row { display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--bz-bd); font-size:13px; }
-.info-row:last-child { border-bottom:none; }
-.info-key { color:var(--bz-t4); }
-.info-val { color:var(--bz-t1); font-weight:500; text-align:right; }
-.btn-full  { width:100%; padding:13px; border-radius:10px; border:none; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; margin-top:8px; }
-.btn-primary { background:var(--cor-primaria); color:#fff; }
-.btn-ghost   { background:none; border:1.5px solid var(--bz-bd2); color:var(--bz-t3); }
-.btn-danger  { background:none; border:1.5px solid rgba(220,38,38,.4); color:#f87171; }
-.mfield { margin-bottom:14px; }
-.mfield label { display:block; font-size:12px; color:var(--bz-t4); font-weight:600; margin-bottom:5px; }
-.mfield input, .mfield textarea {
-  width:100%; padding:10px 12px; background:var(--bz-input); border:1.5px solid var(--bz-bd2);
-  border-radius:8px; color:var(--bz-t1); font-family:inherit; font-size:14px; outline:none;
-  transition:border-color .2s; resize:vertical;
-}
-.mfield input:focus, .mfield textarea:focus { border-color:var(--cor-primaria); }
+.tabs-modal { display: flex; gap: 2px; margin-bottom: 16px; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 4px; }
+.tab-modal { padding: 6px 16px; border-radius: 6px; border: none; background: none; color: #666; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
+.tab-modal.active { background: var(--cor-primaria); color: #1a1a1a; }
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+.st-hist { border-radius: 999px; padding: 1px 7px; font-size: 10px; font-weight: 700; }
+.st-hist.agendado { background: rgba(59,130,246,.12); color: #93c5fd; }
+.st-hist.concluido { background: rgba(34,197,94,.12); color: #4ade80; }
+.st-hist.cancelado { background: rgba(220,38,38,.12); color: #f87171; }
+.st-hist.em_atendimento { background: rgba(243,156,18,.12); color: #fbbf24; }
+</style>
 {% endblock %}
 
 {% block content %}
-<input class="cli-search" id="busca" placeholder="Buscar por nome ou telefone…"
-       oninput="buscar()" autocomplete="off">
+<div class="section-header">
+  <div class="section-title">Meus Clientes</div>
+</div>
 
-<div id="cliLista">
-  <div class="cli-empty">Carregando…</div>
+<div class="toolbar">
+  <input type="text" id="filtroBusca" placeholder="Buscar por nome ou telefone…"
+         oninput="filtrarTabela()" style="flex:1;min-width:200px">
+</div>
+
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>NOME</th>
+        <th>TELEFONE</th>
+        <th>ÚLTIMOS AGEND.</th>
+        <th>PREFERÊNCIAS</th>
+        <th>VISITAS</th>
+        <th>AÇÕES</th>
+      </tr>
+    </thead>
+    <tbody id="tbody">
+      <tr><td colspan="6" class="empty-state"><p>Carregando…</p></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Modal histórico + notas -->
+<div class="modal-overlay" id="mCliente">
+  <div class="modal-box modal-box-lg">
+    <div class="modal-header">
+      <h3 id="mCliNome">Cliente</h3>
+      <button class="modal-close" onclick="fecharModal('mCliente')">✕</button>
+    </div>
+
+    <div class="tabs-modal">
+      <button class="tab-modal active" id="tabBtnHistorico" onclick="switchTabCli('historico')">Histórico</button>
+      <button class="tab-modal" id="tabBtnNotas" onclick="switchTabCli('notas')">Notas</button>
+    </div>
+
+    <div class="tab-pane active" id="tabHistorico">
+      <div id="histLista"><div style="color:#444;font-size:13px">Carregando…</div></div>
+    </div>
+
+    <div class="tab-pane" id="tabNotas">
+      <div id="notasLista" style="margin-bottom:16px"><div style="color:#444;font-size:13px">Carregando…</div></div>
+      <hr style="border-color:#2a2a2a;margin-bottom:16px">
+      <div class="field">
+        <label>Categoria</label>
+        <select id="notaCategoria">
+          <option value="observacao">Observação geral</option>
+          <option value="preferencia">Preferência</option>
+          <option value="alerta">Alerta</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Texto</label>
+        <textarea id="notaTexto" rows="3" placeholder="Ex: Prefere corte mais curto na lateral…" style="resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn btn-primary" onclick="salvarNota()">Salvar nota</button>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModal('mCliente')">Fechar</button>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  let _todos = [], _debounce = null;
-  let _clienteAtual = null;
+let _todos = [];
+let _cliId = null;
 
-  function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function fmtR(v){ return 'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
-  function initials(n){ return (n||'?').trim().split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
-  function diasAtras(iso) {
-    if (!iso) return 'nunca';
-    const d = Math.floor((Date.now() - new Date(iso)) / 86400000);
-    if (d === 0) return 'hoje';
-    if (d === 1) return 'ontem';
-    return `há ${d} dias`;
+(async function() {
+  try {
+    _todos = await Bos.get('/barbeiro/clientes');
+    renderTabela(_todos);
+  } catch(e) {
+    document.getElementById('tbody').innerHTML =
+      `<tr><td colspan="6" class="empty-state"><p>Erro: ${esc(e.message)}</p></td></tr>`;
   }
+})();
 
-  // ── Lista ────────────────────────────────────────────────
-  function render(lista) {
-    const el = document.getElementById('cliLista');
-    if (!lista.length) {
-      el.innerHTML = '<div class="cli-empty">Nenhum cliente encontrado.</div>'; return;
-    }
-    el.innerHTML = lista.map(c => `
-      <div class="cli-card" onclick="abrirPerfil(${c.id})">
-        <div class="cli-avatar">
-          ${c.foto ? `<img src="${esc(c.foto)}" alt="">` : initials(c.nome)}
-        </div>
-        <div class="cli-info">
-          <div class="cli-nome">${esc(c.nome)}</div>
-          <div class="cli-tel">${esc(c.telefone)}${c.email ? ' · '+esc(c.email) : ''}</div>
-        </div>
-        <div class="cli-meta">
-          <div class="cli-visitas">${c.total_visitas} visita${c.total_visitas!==1?'s':''}</div>
-          <div class="cli-ultima">${diasAtras(c.ultima_visita)}</div>
-        </div>
-      </div>`).join('');
+function renderTabela(lista) {
+  if (!lista.length) {
+    document.getElementById('tbody').innerHTML =
+      '<tr><td colspan="6" class="empty-state"><p>Nenhum cliente atendido ainda</p></td></tr>';
+    return;
   }
+  document.getElementById('tbody').innerHTML = lista.map(c => {
+    const ultimos = (c.ultimos_agendamentos || []).slice(0, 2)
+      .map(a => `<div style="font-size:11px;color:#777">${esc(a.data)} — ${esc(a.servico)}</div>`)
+      .join('') || '<span style="color:#444">—</span>';
+    const pref = c.preferencias
+      ? `<span class="pref-chip" title="${esc(c.preferencias)}">${esc(c.preferencias)}</span>`
+      : '<span style="color:#444">—</span>';
+    return `
+      <tr>
+        <td><strong style="color:#ddd">${esc(c.nome)}</strong></td>
+        <td style="color:#777">${esc(c.telefone||'—')}</td>
+        <td>${ultimos}</td>
+        <td>${pref}</td>
+        <td><span style="color:var(--cor-primaria);font-weight:700">${c.total_visitas}</span></td>
+        <td class="td-actions">
+          <button class="btn-icon" onclick="verHistorico(${c.id}, '${esc(c.nome)}')">Histórico</button>
+          <button class="btn-icon" onclick="adicionarNota(${c.id}, '${esc(c.nome)}')">+ Nota</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
 
-  async function carregar(q) {
-    try {
-      _todos = await api.clientes.listar(q || '');
-      render(_todos);
-    } catch(e) {
-      document.getElementById('cliLista').innerHTML = `<div class="cli-empty">Erro: ${esc(e.message)}</div>`;
-    }
+function filtrarTabela() {
+  const q = document.getElementById('filtroBusca').value.toLowerCase();
+  renderTabela(!q ? _todos : _todos.filter(c =>
+    (c.nome||'').toLowerCase().includes(q) || (c.telefone||'').toLowerCase().includes(q)
+  ));
+}
+
+async function verHistorico(id, nome) {
+  _cliId = id;
+  document.getElementById('mCliNome').textContent = nome;
+  switchTabCli('historico');
+  document.getElementById('histLista').innerHTML = '<div style="color:#444;font-size:13px">Carregando…</div>';
+  document.getElementById('notasLista').innerHTML = '<div style="color:#444;font-size:13px">Carregando…</div>';
+  abrirModal('mCliente');
+  try {
+    const r = await Bos.get(`/barbeiro/clientes/${id}/historico`);
+    renderHistorico(r.historico || []);
+    renderNotas(r.notas || []);
+  } catch(e) {
+    document.getElementById('histLista').innerHTML = `<p style="color:#f87171">${esc(e.message)}</p>`;
   }
+}
 
-  function buscar() {
-    clearTimeout(_debounce);
-    _debounce = setTimeout(() => carregar(document.getElementById('busca').value.trim()), 350);
-  }
+function adicionarNota(id, nome) {
+  _cliId = id;
+  document.getElementById('mCliNome').textContent = nome;
+  document.getElementById('notaTexto').value = '';
+  document.getElementById('notasLista').innerHTML = '<div style="color:#444;font-size:13px">Carregando…</div>';
+  switchTabCli('notas');
+  abrirModal('mCliente');
+  Bos.get(`/barbeiro/clientes/${id}/notas`).then(ns => renderNotas(ns)).catch(() => {});
+}
 
-  // ── Perfil sheet ─────────────────────────────────────────
-  async function abrirPerfil(id) {
-    abrirModal('sheetPerfil');
-    document.getElementById('sheetConteudo').innerHTML = '<div style="text-align:center;padding:32px;color:var(--bz-t5)">Carregando…</div>';
-    try {
-      const d = await api.clientes.perfil(id);
-      _clienteAtual = d;
-      renderPerfil(d);
-    } catch(e) {
-      document.getElementById('sheetConteudo').innerHTML = `<p style="color:#f87171;text-align:center">${esc(e.message)}</p>`;
-    }
-  }
-
-  function renderPerfil(d) {
-    const p = d.dados_pessoais;
-    const av = p.foto
-      ? `<img src="${esc(p.foto)}" alt="">`
-      : `<span>${initials(p.nome)}</span>`;
-
-    document.getElementById('sheetConteudo').innerHTML = `
-      <div class="sheet-avatar">${av}</div>
-      <div class="sheet-nome">${esc(p.nome)}</div>
-      <div class="sheet-sub">${esc(p.telefone)}${p.email ? ' · '+esc(p.email) : ''}</div>
-
-      <div class="sheet-stats">
-        <div class="sstat">
-          <div class="sstat-val">${d.total_visitas}</div>
-          <div class="sstat-lbl">Visitas</div>
-        </div>
-        <div class="sstat">
-          <div class="sstat-val">${fmtR(d.total_gasto)}</div>
-          <div class="sstat-lbl">Gasto</div>
-        </div>
-        <div class="sstat">
-          <div class="sstat-val">${d.ultima_visita ? diasAtras(d.ultima_visita) : '—'}</div>
-          <div class="sstat-lbl">Última</div>
-        </div>
-      </div>
-
-      ${d.servico_mais_feito ? `
-        <div style="background:rgba(186,117,23,.08);border:1px solid rgba(186,117,23,.2);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--bz-t2);margin-bottom:4px">
-          ✂️ Serviço favorito: <strong>${esc(d.servico_mais_feito)}</strong>
-        </div>` : ''}
-
-      ${p.observacoes ? `
-        <div style="background:var(--bz-surface);border:1px solid var(--bz-bd);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--bz-t3);margin-bottom:4px">
-          📝 ${esc(p.observacoes)}
-        </div>` : ''}
-
-      <div class="sheet-section">Histórico</div>
-      ${d.historico.length ? d.historico.map(h => `
+function renderHistorico(hist) {
+  document.getElementById('histLista').innerHTML = hist.length
+    ? hist.map(h => `
         <div class="hist-row">
           <div>
-            <div>${esc(h.servico)}</div>
-            <div class="hist-data">${new Date(h.data).toLocaleDateString('pt-BR')} · ${esc(h.barbeiro)}</div>
+            <div style="font-size:11px;color:#777;margin-bottom:2px">
+              ${esc(h.data)} ${esc(h.hora||'')} · ${h.duracao_minutos||'—'} min ·
+              <span class="st-hist ${esc(h.status||'')}">${esc(h.status||'—')}</span>
+            </div>
+            <div class="hist-sv">${esc(h.servico)}</div>
+            ${h.observacao ? `<div style="font-size:11px;color:#555;margin-top:2px">${esc(h.observacao)}</div>` : ''}
           </div>
-          <div style="color:var(--cor-primaria);font-weight:700">${fmtR(h.valor)}</div>
+          <div class="hist-val">${fmtR(h.valor)}</div>
         </div>`).join('')
-      : '<div style="color:var(--bz-t5);font-size:13px;padding:8px 0">Nenhuma visita registrada.</div>'}
+    : '<div style="color:#444;font-size:13px;padding:12px 0">Sem histórico de visitas</div>';
+}
 
-      <button class="btn-full btn-primary" style="margin-top:16px" onclick="abrirEdicao()">Editar</button>
-      <button class="btn-full btn-danger" onclick="confirmarDelete(${p.id}, '${esc(p.nome).replace("'", "\\'")}')">Remover cliente</button>
-    `;
-  }
+function renderNotas(notas) {
+  const tipos = { alerta: '#f87171', preferencia: '#93c5fd', observacao: 'var(--cor-primaria)' };
+  document.getElementById('notasLista').innerHTML = notas.length
+    ? notas.map(n => `
+        <div class="nota-item">
+          <div class="nota-tipo" style="color:${tipos[n.tipo]||'var(--cor-primaria)'}">${esc(n.tipo||'observacao')}</div>
+          <div class="nota-txt">${esc(n.conteudo)}</div>
+          <div class="nota-data">${esc(n.criado_em||'')}</div>
+        </div>`).join('')
+    : '<div style="color:#444;font-size:13px;padding:8px 0">Sem notas registradas</div>';
+}
 
-  // ── Edição ────────────────────────────────────────────────
-  function abrirEdicao() {
-    const p = _clienteAtual.dados_pessoais;
-    document.getElementById('eNome').value      = p.nome || '';
-    document.getElementById('eEmail').value     = p.email || '';
-    document.getElementById('eObs').value       = p.observacoes || '';
-    fecharModal('sheetPerfil');
-    abrirModal('sheetEdicao');
-  }
+async function salvarNota() {
+  if (!_cliId) return;
+  const texto     = document.getElementById('notaTexto').value.trim();
+  const categoria = document.getElementById('notaCategoria').value;
+  if (!texto) { toast('Digite o texto da nota.', 'error'); return; }
+  try {
+    await Bos.post(`/barbeiro/clientes/${_cliId}/notas`, { texto, categoria });
+    toast('Nota salva!');
+    document.getElementById('notaTexto').value = '';
+    const ns = await Bos.get(`/barbeiro/clientes/${_cliId}/notas`);
+    renderNotas(ns);
+    const idx = _todos.findIndex(c => c.id === _cliId);
+    if (idx >= 0) _todos[idx].preferencias = texto;
+    renderTabela(_todos);
+  } catch(e) { toast(e.message || 'Erro', 'error'); }
+}
 
-  async function salvarEdicao(e) {
-    e.preventDefault();
-    const p = _clienteAtual.dados_pessoais;
-    const btn = document.getElementById('btnSalvarEdicao');
-    btn.disabled = true; btn.textContent = 'Salvando…';
-    try {
-      await api.clientes.editar(p.id, {
-        nome:        document.getElementById('eNome').value.trim(),
-        email:       document.getElementById('eEmail').value.trim() || null,
-        observacoes: document.getElementById('eObs').value.trim() || null,
-      });
-      fecharModal('sheetEdicao');
-      toast('Cliente atualizado!');
-      carregar(document.getElementById('busca').value.trim());
-    } catch(err) { toast(err.message, 'error'); }
-    finally { btn.disabled = false; btn.textContent = 'Salvar'; }
-  }
-
-  // ── Delete ────────────────────────────────────────────────
-  function confirmarDelete(id, nome) {
-    if (!confirm(`Remover "${nome}" da lista de clientes?`)) return;
-    api.clientes.deletar(id)
-      .then(() => {
-        fecharModal('sheetPerfil');
-        toast('Cliente removido.');
-        carregar(document.getElementById('busca').value.trim());
-      })
-      .catch(e => toast(e.message, 'error'));
-  }
-
-  carregar();
+function switchTabCli(tab) {
+  document.getElementById('tabBtnHistorico').classList.toggle('active', tab === 'historico');
+  document.getElementById('tabBtnNotas').classList.toggle('active', tab === 'notas');
+  document.getElementById('tabHistorico').classList.toggle('active', tab === 'historico');
+  document.getElementById('tabNotas').classList.toggle('active', tab === 'notas');
+}
 </script>
-
-<!-- Sheet perfil -->
-<div class="modal-overlay" id="sheetPerfil" onclick="if(event.target===this)fecharModal('sheetPerfil')">
-  <div class="sheet-box">
-    <div class="sheet-handle"></div>
-    <div id="sheetConteudo"></div>
-    <button class="btn-full btn-ghost" onclick="fecharModal('sheetPerfil')">Fechar</button>
-  </div>
-</div>
-
-<!-- Sheet edição -->
-<div class="modal-overlay" id="sheetEdicao" onclick="if(event.target===this)fecharModal('sheetEdicao')">
-  <div class="sheet-box">
-    <div class="sheet-handle"></div>
-    <div class="modal-header">
-      <h3>Editar Cliente</h3>
-      <button class="modal-close" onclick="fecharModal('sheetEdicao')">×</button>
-    </div>
-    <form onsubmit="salvarEdicao(event)">
-      <div class="mfield"><label>Nome *</label><input type="text" id="eNome" required></div>
-      <div class="mfield"><label>E-mail</label><input type="email" id="eEmail" placeholder="opcional"></div>
-      <div class="mfield"><label>Observações</label><textarea id="eObs" rows="3" placeholder="Anotações sobre o cliente…"></textarea></div>
-      <button type="submit" id="btnSalvarEdicao" class="btn-full btn-primary">Salvar</button>
-      <button type="button" class="btn-full btn-ghost" onclick="fecharModal('sheetEdicao')">Cancelar</button>
-    </form>
-  </div>
-</div>
 {% endblock %}

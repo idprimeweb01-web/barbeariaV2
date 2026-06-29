@@ -1,152 +1,216 @@
 {% extends "barbeiro/base.html" %}
 {% block title %}Dashboard{% endblock %}
+{% block breadcrumb %}
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Dashboard</span>
+{% endblock %}
 
 {% block styles %}
-.db-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-.db-card { background: #242424; border: 1px solid #2d2d2d; border-radius: 12px; padding: 14px; }
-.db-label { font-size: 11px; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 4px; }
-.db-value { font-size: 26px; font-weight: 800; color: var(--cor-primaria); line-height: 1.1; }
-.db-value.sm { font-size: 19px; }
-.db-sub { font-size: 11px; font-weight: 700; margin-top: 4px; }
-.db-sub.pos { color: #4ade80; }
-.db-sub.neg { color: #f87171; }
-.db-sub.neu { color: #555; }
-.chart-card { background: #242424; border: 1px solid #2d2d2d; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
-.chart-lbl  { font-size: 11px; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 10px; }
-.db-loading { text-align: center; color: #444; padding: 32px; font-size: 13px; }
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px,1fr)); gap: 14px; margin-bottom: 20px; }
+.kpi-card {
+  background: #242424; border: 1px solid #2d2d2d; border-radius: 12px;
+  padding: 20px; display: flex; flex-direction: column; gap: 6px;
+}
+.kpi-label { font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: .5px; }
+.kpi-val   { font-size: 32px; font-weight: 800; color: var(--cor-primaria); line-height: 1; }
+.kpi-sub   { font-size: 12px; color: #444; }
 
-.planos-mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-.plano-mini-card { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; padding: 12px; }
-.plano-mini-nome { font-size: 13px; font-weight: 700; color: var(--cor-primaria); margin-bottom: 4px; }
-.plano-mini-preco { font-size: 12px; color: #888; margin-bottom: 6px; }
-.plano-mini-meta { font-size: 11px; color: #666; line-height: 1.5; }
+/* Card próximo — destaque */
+.kpi-proximo .kpi-val { font-size: 22px; }
+.kpi-proximo-info { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+.kpi-proximo-cli { font-size: 13px; font-weight: 600; color: #ddd; }
+.kpi-proximo-sv  { font-size: 12px; color: #777; }
+.kpi-proximo-val { font-size: 12px; color: var(--cor-primaria); font-weight: 700; }
 
-.ag-hoje-card { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; padding: 12px; margin-bottom: 8px; }
-.ag-hoje-top { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: #ddd; }
-.ag-hoje-meta { font-size: 12px; color: #888; margin-top: 4px; }
-.ag-hoje-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: rgba(186,117,23,.15); color: var(--cor-primaria); }
-.section-lbl { font-size: 11px; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; margin: 16px 0 10px; }
+/* Card comissão */
+.kpi-comissao .kpi-val { color: #4ade80; }
+
+/* Linha 2 */
+.dash-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.info-card {
+  background: #242424; border: 1px solid #2d2d2d; border-radius: 12px; padding: 18px;
+}
+.info-title { font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 14px; }
+.info-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #1e1e1e; font-size: 13px; }
+.info-row:last-child { border-bottom: none; }
+.info-row-name { color: #bbb; }
+.info-row-val  { color: var(--cor-primaria); font-weight: 700; }
+
+.dash-loading { text-align: center; padding: 60px; color: #444; }
+@media (max-width: 640px) { .dash-row2 { grid-template-columns: 1fr; } }
+</style>
 {% endblock %}
 
 {% block content %}
-<div id="dbLoading" class="db-loading">Carregando…</div>
-<div id="dbConteudo" style="display:none">
-  <div class="db-grid" id="dbCards"></div>
-  <div class="chart-card">
-    <div class="chart-lbl">Faturamento — últimos 7 dias</div>
-    <canvas id="dbChart" height="130"></canvas>
+<div class="dash-loading" id="loadEl">Carregando…</div>
+<div id="dashConteudo" style="display:none">
+
+  <!-- ── 4 KPI cards ── -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Agendamentos Hoje</div>
+      <div class="kpi-val" id="dAgHoje">—</div>
+      <div class="kpi-sub" id="dAgMes"></div>
+    </div>
+
+    <div class="kpi-card kpi-proximo">
+      <div class="kpi-label">Próximo Atendimento</div>
+      <div class="kpi-val" id="dProxHora">—</div>
+      <div class="kpi-proximo-info" id="dProxInfo" style="display:none">
+        <span class="kpi-proximo-cli" id="dProxCli"></span>
+        <span class="kpi-proximo-sv"  id="dProxSv"></span>
+        <span class="kpi-proximo-val" id="dProxVal"></span>
+      </div>
+    </div>
+
+    <div class="kpi-card kpi-comissao">
+      <div class="kpi-label">Comissão do Mês</div>
+      <div class="kpi-val" id="dComissao">—</div>
+      <div class="kpi-sub" id="dComissaoSub"></div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-label">Receita Hoje</div>
+      <div class="kpi-val" style="font-size:22px" id="dReceita">—</div>
+      <div class="kpi-sub" id="dReceitaMes"></div>
+    </div>
   </div>
 
-  <div id="meusPlanosSecao" style="display:none">
-    <div class="section-lbl">Meus planos (que eu atendo)</div>
-    <div class="planos-mini-grid" id="planosMiniGrid"></div>
+  <!-- ── Linha 2: Gráfico 7 dias + Próximos agendamentos ── -->
+  <div class="dash-row2">
+    <div class="info-card">
+      <div class="info-title">Receita — últimos 7 dias</div>
+      <canvas id="chartReceita" height="180"></canvas>
+    </div>
+
+    <div class="info-card">
+      <div class="info-title">Próximos agendamentos</div>
+      <div id="proxLista">
+        <div style="color:#444;font-size:13px;padding:12px 0">Nenhum agendamento futuro</div>
+      </div>
+    </div>
   </div>
 
-  <div id="agendamentosHojeSecao" style="display:none">
-    <div class="section-lbl">Agendamentos de hoje</div>
-    <div id="agendamentosHojeLista"></div>
-  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-  function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+(async function() {
+  try {
+    const d = await Bos.get('/barbeiro/dashboard');
 
-  function _pct(a, b) {
-    if (!b) return a > 0 ? {t:'+100%',c:'pos'} : {t:'—',c:'neu'};
-    const v = Math.round((a-b)/b*100);
-    return {t:(v>=0?'+':'')+v+'%', c:v>=0?'pos':'neg'};
-  }
+    document.getElementById('loadEl').style.display   = 'none';
+    document.getElementById('dashConteudo').style.display = '';
 
-  function _card(label, value, sub, subClass) {
-    return `<div class="db-card">
-      <div class="db-label">${label}</div>
-      <div class="db-value ${value.length > 7 ? 'sm' : ''}">${value}</div>
-      <div class="db-sub ${subClass}">${sub}</div>
-    </div>`;
-  }
+    // Chave com acento: L('comissao').lower() = 'comissão' (com ã)
+    const hojeComissao = Object.values(d.hoje || {}).find((_, i) =>
+      Object.keys(d.hoje)[i].includes('ã')  // ã
+    ) ?? 0;
+    const mesComissao  = Object.values(d.mes || {}).find((_, i) =>
+      Object.keys(d.mes)[i].includes('ã')
+    ) ?? 0;
 
-  async function carregar() {
-    try {
-      const d = await api.barbeiro.dashboard();
-      const p1 = _pct(d.atendimentos_hoje,  d.atendimentos_ontem);
-      const p2 = _pct(d.faturamento_hoje,   d.faturamento_ontem);
-      const p = d.proximo_cliente;
+    // Card 1 — Agendamentos
+    const agHoje = d.hoje?.agendamentos ?? 0;
+    const agMes  = d.mes?.agendamentos  ?? 0;
+    document.getElementById('dAgHoje').textContent = agHoje;
+    document.getElementById('dAgMes').textContent  = `${agMes} no mês`;
 
-      document.getElementById('dbCards').innerHTML =
-        _card('Atendimentos hoje', String(d.atendimentos_hoje),
-              p1.t + ' vs ontem', p1.c) +
-        _card('Faturamento hoje',  `R$${d.faturamento_hoje.toFixed(2)}`,
-              p2.t + ' vs ontem', p2.c) +
-        _card('Taxa de ocupação', d.taxa_ocupacao + '%',
-              `${d.slots_ocupados}/${d.total_slots} slots`, 'neu') +
-        (p
-          ? _card('Próximo cliente', p.hora,
-                  esc(p.nome) + ' · ' + esc(p.servico), 'neu')
-          : _card('Próximo cliente', '—', 'Nenhum pendente', 'neu'));
-
-      // Chart
-      new Chart(document.getElementById('dbChart').getContext('2d'), {
-        type: 'bar',
-        data: {
-          labels:   d.receita_7dias.map(r => r.data.slice(5).replace('-','/')),
-          datasets: [{
-            data:            d.receita_7dias.map(r => r.receita),
-            backgroundColor: 'rgba(186,117,23,.35)',
-            borderColor:     '#BA7517', borderWidth: 2, borderRadius: 6,
-          }],
-        },
-        options: {
-          responsive: true,
-          plugins: { legend: { display: false } },
-          scales: {
-            x: { grid: { color: '#2a2a2a' }, ticks: { color: '#555', font: { size: 10 } } },
-            y: { grid: { color: '#2a2a2a' }, ticks: { color: '#555', callback: v => `R$${v}` }, beginAtZero: true },
-          },
-        },
-      });
-
-      document.getElementById('dbLoading').style.display  = 'none';
-      document.getElementById('dbConteudo').style.display = '';
-    } catch(e) {
-      document.getElementById('dbLoading').textContent = 'Erro: ' + e.message;
+    // Card 2 — Próximo
+    const prox = (d.proximos || [])[0];
+    if (prox) {
+      const hora = prox.data_hora
+        ? new Date(prox.data_hora).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})
+        : '—';
+      // L('cliente').lower() = 'cliente'; L('servicos').lower() = 'serviços'
+      const cliKey = Object.keys(prox).find(k => k === 'cliente') || '';
+      const svKey  = Object.keys(prox).find(k => k.startsWith('servi')) || '';
+      const svNomes = svKey ? (prox[svKey] || []).join(', ') : '—';
+      document.getElementById('dProxHora').textContent = hora;
+      document.getElementById('dProxCli').textContent  = esc(prox[cliKey] || '—');
+      document.getElementById('dProxSv').textContent   = esc(svNomes);
+      document.getElementById('dProxVal').textContent  = fmtR(prox.valor_total || 0);
+      document.getElementById('dProxInfo').style.display = '';
+    } else {
+      document.getElementById('dProxHora').textContent = 'Nenhum';
     }
-  }
 
-  async function carregarMeusPlanos() {
-    try {
-      const planos = await api.barbeiro.meusPlanos();
-      if (!planos.length) return;
-      document.getElementById('planosMiniGrid').innerHTML = planos.map(p => `
-        <div class="plano-mini-card">
-          <div class="plano-mini-nome">${esc(p.nome)}</div>
-          <div class="plano-mini-preco">R$ ${p.preco_mensal.toFixed(2)}/mês</div>
-          <div class="plano-mini-meta">${p.clientes} cliente(s)<br>${p.servicos.map(esc).join(', ') || '—'}</div>
-        </div>
-      `).join('');
-      document.getElementById('meusPlanosSecao').style.display = '';
-    } catch (e) { /* silencioso */ }
-  }
+    // Card 3 — Comissão
+    document.getElementById('dComissao').textContent    = fmtR(mesComissao);
+    document.getElementById('dComissaoSub').textContent = `${fmtR(hojeComissao)} hoje`;
 
-  async function carregarAgendamentosHoje() {
-    try {
-      const lista = await api.barbeiro.agendamentosHoje();
-      if (!lista.length) return;
-      document.getElementById('agendamentosHojeLista').innerHTML = lista.map(a => `
-        <div class="ag-hoje-card">
-          <div class="ag-hoje-top"><span>${a.hora} — ${esc(a.cliente_nome)}</span>${a.plano_nome ? `<span class="ag-hoje-badge">${esc(a.plano_nome)}</span>` : ''}</div>
-          <div class="ag-hoje-meta">${esc(a.servico)}${a.plano_nome ? ' (incluído)' : ' (avulso)'} · ✓ Confirmado</div>
-        </div>
-      `).join('');
-      document.getElementById('agendamentosHojeSecao').style.display = '';
-    } catch (e) { /* silencioso */ }
-  }
+    // Card 4 — Receita
+    document.getElementById('dReceita').textContent    = fmtR(d.hoje?.receita ?? 0);
+    document.getElementById('dReceitaMes').textContent = `${fmtR(d.mes?.receita ?? 0)} no mês`;
 
-  carregar();
-  carregarMeusPlanos();
-  carregarAgendamentosHoje();
-  setInterval(carregar, 60000);
+    // Próximos lista
+    const proximos = d.proximos || [];
+    document.getElementById('proxLista').innerHTML = proximos.length
+      ? proximos.map(p => {
+          const hora  = p.data_hora ? new Date(p.data_hora).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
+          const data  = p.data_hora ? new Date(p.data_hora).toLocaleDateString('pt-BR') : '—';
+          const cliK  = Object.keys(p).find(k => k === 'cliente') || '';
+          const svK   = Object.keys(p).find(k => k.startsWith('servi')) || '';
+          const nomes = svK ? (p[svK] || []).join(', ') : '—';
+          return `<div class="info-row">
+            <span class="info-row-name">${data} ${hora} — ${esc(p[cliK] || '—')}<br>
+              <small style="color:#555">${esc(nomes)}</small>
+            </span>
+            <span class="info-row-val">${fmtR(p.valor_total)}</span>
+          </div>`;
+        }).join('')
+      : '<div style="color:#444;font-size:13px;padding:12px 0">Nenhum agendamento futuro</div>';
+
+    // Gráfico 7 dias
+    await _chart7dias();
+
+  } catch(e) {
+    document.getElementById('loadEl').textContent = 'Erro ao carregar: ' + e.message;
+  }
+})();
+
+async function _chart7dias() {
+  const hoje  = new Date();
+  const datas = [], labels = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(hoje);
+    d.setDate(d.getDate() - i);
+    datas.push(d.toISOString().split('T')[0]);
+    labels.push(d.toLocaleDateString('pt-BR', {weekday:'short', day:'2-digit'}));
+  }
+  try {
+    const r    = await Bos.get('/barbeiro/agendamentos?data=' + datas[6]);
+    const rows = Array.isArray(r) ? r : [];
+    const porDia = {};
+    datas.forEach(dt => porDia[dt] = 0);
+    // Carrega cada dia individualmente seria N requisições — usamos o único endpoint de hoje
+    // O gráfico mostra apenas hoje com dados reais; dias anteriores ficam 0 até API de relatório existir
+    rows.filter(ag => ag.status === 'concluido')
+        .forEach(ag => { if (porDia[datas[6]] !== undefined) porDia[datas[6]] += ag.valor_total || 0; });
+
+    new Chart(document.getElementById('chartReceita'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          data: datas.map(dt => porDia[dt]),
+          backgroundColor: 'rgba(243,156,18,.25)',
+          borderColor: '#f39c12', borderWidth: 2, borderRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtR(c.parsed.y) } } },
+        scales: {
+          x: { grid: { color: '#1e1e1e' }, ticks: { color: '#555', font: { size: 10 } } },
+          y: { grid: { color: '#1e1e1e' }, ticks: { color: '#555', callback: v => fmtR(v) }, beginAtZero: true },
+        },
+      },
+    });
+  } catch { /* sem dados */ }
+}
 </script>
 {% endblock %}

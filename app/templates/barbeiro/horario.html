@@ -1,0 +1,222 @@
+{% extends "barbeiro/base.html" %}
+{% block title %}Meu Horário{% endblock %}
+{% block breadcrumb %}
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Meu Horário</span>
+{% endblock %}
+
+{% block styles %}
+<style>
+.horario-section {
+  background: #242424; border: 1px solid #2d2d2d; border-radius: 12px;
+  padding: 22px; margin-bottom: 18px;
+}
+.hor-section-title {
+  font-size: 13px; font-weight: 700; color: #ccc; margin-bottom: 16px;
+  padding-bottom: 10px; border-bottom: 1px solid #2d2d2d;
+}
+.hor-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #1e1e1e; font-size: 13px; }
+.hor-row:last-child { border-bottom: none; }
+.hor-row-left { display: flex; flex-direction: column; gap: 2px; }
+.hor-row-title { color: #ddd; font-weight: 500; }
+.hor-row-sub   { color: #555; font-size: 11px; }
+
+.pausa-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 12px; background: #1e1e1e; border: 1px solid #2a2a2a;
+  border-radius: 8px; margin-bottom: 8px;
+}
+.pausa-info  { font-size: 13px; }
+.pausa-hora  { font-weight: 600; color: #ddd; }
+.pausa-descr { font-size: 11px; color: #666; margin-top: 2px; }
+.pausa-acoes { display: flex; gap: 6px; }
+
+.save-btn-row { display: flex; justify-content: flex-end; margin-top: 14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div class="section-title">Meu Horário</div>
+</div>
+
+<!-- ── Seção 1: Horário de trabalho ── -->
+<div class="horario-section">
+  <div class="hor-section-title">Horário de Trabalho</div>
+  <div class="field-row">
+    <div class="field">
+      <label>Hora início</label>
+      <input type="time" id="hAberta">
+    </div>
+    <div class="field">
+      <label>Hora fim</label>
+      <input type="time" id="hFechada">
+    </div>
+  </div>
+  <div class="field">
+    <label>Intervalo entre atendimentos (minutos)</label>
+    <select id="hIntervalo">
+      <option value="15">15 min</option>
+      <option value="20">20 min</option>
+      <option value="30" selected>30 min</option>
+      <option value="45">45 min</option>
+      <option value="60">60 min</option>
+    </select>
+  </div>
+  <div class="field">
+    <label class="toggle-label">
+      <input type="checkbox" id="hAberto">
+      <span class="toggle-track"></span>
+      Agenda aberta (aceitar novos agendamentos)
+    </label>
+  </div>
+  <div class="save-btn-row">
+    <button class="btn btn-primary" onclick="salvarHorario()">Salvar horário</button>
+  </div>
+</div>
+
+<!-- ── Seção 2: Pausas ── -->
+<div class="horario-section">
+  <div class="hor-section-title">
+    Pausas recorrentes
+    <button class="btn btn-ghost" style="float:right;font-size:12px;padding:5px 12px" onclick="abrirPausa(null)">+ Adicionar pausa</button>
+  </div>
+
+  <div id="pausasLista">
+    <div style="color:#444;font-size:13px;padding:12px 0">Nenhuma pausa cadastrada</div>
+  </div>
+</div>
+
+<!-- Modal pausa (criar / editar) -->
+<div class="modal-overlay" id="mPausa">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="mPausaTitulo">Adicionar pausa</h3>
+      <button class="modal-close" onclick="fecharModal('mPausa')">✕</button>
+    </div>
+    <div class="field">
+      <label>Descrição</label>
+      <input type="text" id="pDescricao" placeholder="Ex: Almoço, Descanso…" maxlength="50">
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Hora início</label>
+        <input type="time" id="pInicio">
+      </div>
+      <div class="field">
+        <label>Hora fim</label>
+        <input type="time" id="pFim">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModal('mPausa')">Cancelar</button>
+      <button class="btn btn-primary" id="btnSalvarPausa" onclick="salvarPausa()">Salvar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _pausaId = null;  // null = criar, number = editar
+
+// ── Carregar configuração ────────────────────────────────────────────────────
+(async function() {
+  try {
+    const r = await Bos.get('/barbeiro/horario');
+    const c = r.config;
+    if (c) {
+      if (c.horario_abertura)   document.getElementById('hAberta').value   = c.horario_abertura;
+      if (c.horario_fechamento) document.getElementById('hFechada').value  = c.horario_fechamento;
+      if (c.intervalo_minutos)  document.getElementById('hIntervalo').value = String(c.intervalo_minutos);
+      document.getElementById('hAberto').checked = !!c.loja_aberta;
+    }
+    renderPausas(r.pausas || []);
+  } catch(e) {
+    toast('Erro ao carregar horário: ' + e.message, 'error');
+  }
+})();
+
+// ── Salvar horário ────────────────────────────────────────────────────────────
+async function salvarHorario() {
+  const payload = {
+    horario_abertura:   document.getElementById('hAberta').value,
+    horario_fechamento: document.getElementById('hFechada').value,
+    intervalo_minutos:  parseInt(document.getElementById('hIntervalo').value),
+    loja_aberta:        document.getElementById('hAberto').checked,
+  };
+  if (!payload.horario_abertura || !payload.horario_fechamento) {
+    toast('Preencha os horários de início e fim.', 'error'); return;
+  }
+  try {
+    await Bos.patch('/barbeiro/horario', payload);
+    toast('Horário salvo!');
+  } catch(e) { toast(e.message || 'Erro', 'error'); }
+}
+
+// ── Pausas ────────────────────────────────────────────────────────────────────
+function renderPausas(pausas) {
+  const el = document.getElementById('pausasLista');
+  if (!pausas.length) {
+    el.innerHTML = '<div style="color:#444;font-size:13px;padding:12px 0">Nenhuma pausa cadastrada</div>';
+    return;
+  }
+  el.innerHTML = pausas.map(p => `
+    <div class="pausa-item">
+      <div class="pausa-info">
+        <div class="pausa-hora">${esc(p.hora_inicio)} – ${esc(p.hora_fim)}</div>
+        <div class="pausa-descr">${esc(p.descricao || 'Sem descrição')}</div>
+      </div>
+      <div class="pausa-acoes">
+        <button class="btn-icon" onclick="abrirPausa(${p.id}, '${esc(p.hora_inicio)}', '${esc(p.hora_fim)}', '${esc(p.descricao||'')}')">Editar</button>
+        <button class="btn-icon danger" onclick="removerPausa(${p.id})">Remover</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function abrirPausa(id, ini, fim, descr) {
+  _pausaId = id;
+  document.getElementById('mPausaTitulo').textContent = id ? 'Editar pausa' : 'Adicionar pausa';
+  document.getElementById('pDescricao').value = descr || '';
+  document.getElementById('pInicio').value    = ini  || '';
+  document.getElementById('pFim').value       = fim  || '';
+  abrirModal('mPausa');
+}
+
+async function salvarPausa() {
+  const descricao   = document.getElementById('pDescricao').value.trim();
+  const hora_inicio = document.getElementById('pInicio').value;
+  const hora_fim    = document.getElementById('pFim').value;
+  if (!hora_inicio || !hora_fim) {
+    toast('Preencha os horários.', 'error'); return;
+  }
+  const payload = { hora_inicio, hora_fim, descricao };
+  try {
+    if (_pausaId) {
+      await Bos.patch(`/barbeiro/pausas/${_pausaId}`, payload);
+      toast('Pausa atualizada!');
+    } else {
+      await Bos.post('/barbeiro/pausas', payload);
+      toast('Pausa adicionada!');
+    }
+    fecharModal('mPausa');
+    await recarregarPausas();
+  } catch(e) { toast(e.message || 'Erro', 'error'); }
+}
+
+async function removerPausa(id) {
+  if (!confirm('Remover esta pausa?')) return;
+  try {
+    await Bos.delete(`/barbeiro/pausas/${id}`);
+    toast('Pausa removida.');
+    await recarregarPausas();
+  } catch(e) { toast(e.message || 'Erro', 'error'); }
+}
+
+async function recarregarPausas() {
+  const r = await Bos.get('/barbeiro/horario');
+  renderPausas(r.pausas || []);
+}
+</script>
+{% endblock %}

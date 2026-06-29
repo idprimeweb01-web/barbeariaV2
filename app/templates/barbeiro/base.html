@@ -2,368 +2,423 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>BarberOS — {% block title %}{% endblock %}</title>
-  <!-- Anti-FOUC: aplica tema ANTES do render -->
-  <script>
-    if(localStorage.getItem('barberos_tema')==='claro')document.documentElement.classList.add('light');
-    (function(){try{var t=JSON.parse(localStorage.getItem('barberos_barbearia_tema'));if(t){var r=document.documentElement.style;if(t.cor_primaria)r.setProperty('--cor-primaria',t.cor_primaria);if(t.cor_fundo)r.setProperty('--cor-fundo',t.cor_fundo);if(t.cor_card)r.setProperty('--cor-card',t.cor_card);if(t.fonte)r.setProperty('--fonte',"'"+t.fonte+"', sans-serif");}}catch(e){}}());
-  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Painel{% endblock %} — Barbeiro</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <script>
+    (function(){try{var t=JSON.parse(localStorage.getItem('bos_tema'));if(t){var r=document.documentElement.style;if(t.cor_primaria)r.setProperty('--cor-primaria',t.cor_primaria);if(t.cor_fundo)r.setProperty('--cor-fundo',t.cor_fundo);if(t.cor_card)r.setProperty('--cor-card',t.cor_card);if(t.fonte)r.setProperty('--fonte',"'"+t.fonte+"', sans-serif");}}catch(e){}}());
+  </script>
+  {% block styles %}{% endblock %}
   <style>
-    /* ── Variáveis de tema ──────────────────────────────────── */
-    :root {
-      --bz-page:    #1a1a1a;
-      --bz-surface: #1f1f1f;
-      --bz-card:    #242424;
-      --bz-input:   #1e1e1e;
-      --bz-bd:      #2d2d2d;
-      --bz-bd2:     #333;
-      --bz-t1:      #fff;
-      --bz-t2:      #aaa;
-      --bz-t3:      #777;
-      --bz-t4:      #666;
-      --bz-t5:      #555;
-    }
-    html.light {
-      --bz-page:    #f0f2f5;
-      --bz-surface: #ffffff;
-      --bz-card:    #f8f9fb;
-      --bz-input:   #eef0f3;
-      --bz-bd:      #e0e4e9;
-      --bz-bd2:     #d0d5db;
-      --bz-t1:      #111827;
-      --bz-t2:      #374151;
-      --bz-t3:      #6b7280;
-      --bz-t4:      #9ca3af;
-      --bz-t5:      #6b7280;
-    }
+    :root { --cor-primaria: #f39c12; --cor-primaria-hover: #e67e22; }
 
-    body { background: var(--bz-page); color: var(--bz-t1); }
+    /* ── Shell ──────────────────────────────────────────────── */
+    body { display: flex; margin: 0; }
+    .app-shell { display: flex; width: 100%; min-height: 100vh; }
 
-    /* ── Header ────────────────────────────────────────────── */
-    .b-header {
-      background: var(--bz-surface);
-      border-bottom: 1px solid var(--bz-bd);
-      padding: 0 16px;
-      height: 52px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      position: sticky;
-      top: 0;
-      z-index: 100;
+    /* ── Sidebar ─────────────────────────────────────────────── */
+    .sidebar {
+      width: 220px; flex-shrink: 0;
+      background: #1c1c1c; border-right: 1px solid #2a2a2a;
+      display: flex; flex-direction: column;
+      position: fixed; left: 0; top: 0; height: 100vh;
+      z-index: 200; transition: transform .25s;
     }
-    .b-brand {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--bz-t1);
-      text-decoration: none;
-      flex-shrink: 0;
+    .sidebar-brand {
+      padding: 18px 18px 14px; border-bottom: 1px solid #2a2a2a;
+      display: flex; align-items: center; gap: 10px;
     }
-    .b-brand span { color: var(--cor-primaria); }
-    .b-header-sep { width: 1px; height: 20px; background: var(--bz-bd2); flex-shrink: 0; }
-    .b-user { flex: 1; font-size: 13px; color: var(--bz-t2); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .b-time { font-size: 13px; color: var(--bz-t4); flex-shrink: 0; font-variant-numeric: tabular-nums; }
-    .b-logout {
-      background: none;
-      border: none;
-      color: var(--bz-t4);
-      cursor: pointer;
-      padding: 6px;
-      border-radius: 6px;
+    .sidebar-logo {
+      width: 30px; height: 30px; border-radius: 8px;
+      background: var(--cor-primaria); display: flex; align-items: center;
+      justify-content: center; flex-shrink: 0;
+    }
+    .sidebar-logo svg { color: #1a1a1a; }
+    .sidebar-brand-text { flex: 1; min-width: 0; }
+    .sidebar-brand-name { font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sidebar-brand-sub  { font-size: 10px; color: #555; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+
+    .sidebar-nav { flex: 1; padding: 6px 0; overflow-y: auto; }
+    .nav-link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px; color: #666; text-decoration: none;
+      font-size: 13px; font-weight: 500;
+      border-left: 3px solid transparent;
+      transition: all .15s; white-space: nowrap;
+    }
+    .nav-link:hover { color: #ccc; background: rgba(255,255,255,.04); }
+    .nav-link.active { color: var(--cor-primaria); background: rgba(243,156,18,.08); border-left-color: var(--cor-primaria); }
+    .nav-link svg { flex-shrink: 0; opacity: .8; }
+    .nav-link.active svg { opacity: 1; }
+
+    .sidebar-footer {
+      padding: 12px 14px; border-top: 1px solid #2a2a2a;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .user-avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: rgba(243,156,18,.15); border: 1.5px solid rgba(243,156,18,.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: var(--cor-primaria); flex-shrink: 0;
+    }
+    .sidebar-user-info { flex: 1; min-width: 0; }
+    .sidebar-user-name { font-size: 12px; font-weight: 600; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sidebar-user-role { font-size: 10px; color: #555; }
+    .btn-logout {
+      background: none; border: none; color: #444; cursor: pointer;
+      padding: 4px; transition: color .15s; border-radius: 6px;
+      display: flex; align-items: center;
+    }
+    .btn-logout:hover { color: #dc2626; }
+
+    /* ── Main area ───────────────────────────────────────────── */
+    .app-main { margin-left: 220px; flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+
+    .app-header {
+      height: 52px; background: #1c1c1c; border-bottom: 1px solid #2a2a2a;
+      padding: 0 20px 0 16px; display: flex; align-items: center; gap: 8px;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .hamburger { display: none; background: none; border: none; color: #666; cursor: pointer; padding: 4px; align-items: center; flex-shrink: 0; }
+    .hamburger:hover { color: #ccc; }
+
+    .breadcrumb { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; overflow: hidden; }
+    .breadcrumb a { font-size: 13px; color: #555; text-decoration: none; white-space: nowrap; }
+    .breadcrumb a:hover { color: #aaa; }
+    .breadcrumb-sep { font-size: 12px; color: #3a3a3a; flex-shrink: 0; }
+    .breadcrumb-current { font-size: 13px; font-weight: 600; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .hdr-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .hdr-username { font-size: 12px; color: #555; white-space: nowrap; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+    .hdr-logout {
+      background: none; border: none; color: #444; cursor: pointer;
+      padding: 6px; border-radius: 6px; display: flex; align-items: center;
       transition: color .15s;
-      flex-shrink: 0;
-      display: flex;
     }
-    .b-logout:hover { color: #dc2626; }
+    .hdr-logout:hover { color: #dc2626; }
 
-    /* ── Content ───────────────────────────────────────────── */
-    .b-content {
-      max-width: 520px;
-      margin: 0 auto;
-      padding: 16px 16px 80px;
-    }
+    /* ── App content ─────────────────────────────────────────── */
+    .app-content { flex: 1; padding: 22px 24px; }
 
-    /* ── Booking banner ────────────────────────────────────── */
-    .bk-bar {
-      background: rgba(186,117,23,.07); border-bottom: 1px solid rgba(186,117,23,.15);
-      padding: 7px 16px; display: flex; align-items: center; gap: 8px;
-    }
-    .bk-label { font-size: 11px; color: var(--bz-t4); font-weight: 600; white-space: nowrap; }
-    .bk-link  {
-      font-size: 12px; font-weight: 700; color: var(--cor-primaria);
-      text-decoration: none; white-space: nowrap; overflow: hidden;
-      text-overflow: ellipsis; flex: 1; min-width: 0;
-    }
-    .bk-link:hover { text-decoration: underline; }
-    .bk-copy {
-      background: none; border: 1px solid rgba(186,117,23,.3); color: var(--cor-primaria);
-      border-radius: 6px; padding: 3px 8px; font-size: 10px; font-weight: 700;
-      cursor: pointer; font-family: inherit; flex-shrink: 0; white-space: nowrap;
-    }
-    .bk-copy:hover { background: rgba(186,117,23,.1); }
+    /* ── Section header ──────────────────────────────────────── */
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .section-title  { font-size: 17px; font-weight: 700; }
 
-    /* ── Bottom nav ────────────────────────────────────────── */
-    .b-nav {
-      position: fixed; bottom: 0; left: 0; right: 0;
-      background: var(--bz-surface); border-top: 1px solid var(--bz-bd);
-      display: flex; overflow-x: auto; z-index: 100;
-      scrollbar-width: none;
+    /* ── Buttons ─────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 18px; border-radius: 8px; border: none;
+      font-size: 13px; font-weight: 700; font-family: inherit;
+      cursor: pointer; transition: all .15s; text-decoration: none;
     }
-    .b-nav::-webkit-scrollbar { display: none; }
-    .b-nav-item {
-      flex: 1; min-width: 58px;
-      display: flex; flex-direction: column; align-items: center; gap: 3px;
-      padding: 8px 2px 6px; color: var(--bz-t5); text-decoration: none;
-      font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
-      border-top: 2px solid transparent; transition: all .15s; white-space: nowrap;
-    }
-    .b-nav-item:hover  { color: #aaa; }
-    .b-nav-item.active { color: var(--cor-primaria); border-top-color: var(--cor-primaria); }
+    .btn-primary { background: var(--cor-primaria); color: #1a1a1a; }
+    .btn-primary:hover { background: var(--cor-primaria-hover); }
+    .btn-ghost  { background: none; border: 1px solid #333; color: #aaa; }
+    .btn-ghost:hover { border-color: #555; color: #ddd; }
+    .btn-danger { background: rgba(220,38,38,.12); border: 1px solid rgba(220,38,38,.3); color: #f87171; }
+    .btn-danger:hover { background: rgba(220,38,38,.2); }
+    .btn:disabled { opacity: .5; cursor: wait; }
 
-    /* ── Card ──────────────────────────────────────────────── */
-    .b-card {
-      background: var(--bz-card);
-      border: 1px solid var(--bz-bd);
-      border-radius: 12px;
-      overflow: hidden;
-      margin-bottom: 12px;
+    .btn-icon {
+      background: none; border: 1px solid #2d2d2d; color: #777; border-radius: 7px;
+      padding: 5px 10px; cursor: pointer; font-size: 12px; font-family: inherit;
+      transition: all .15s; display: inline-flex; align-items: center; gap: 4px;
     }
+    .btn-icon:hover { border-color: var(--cor-primaria); color: var(--cor-primaria); }
+    .btn-icon.danger:hover { border-color: #dc2626; color: #dc2626; }
 
-    /* ── Toast ─────────────────────────────────────────────── */
-    #toasts {
-      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
-      display: flex; flex-direction: column; gap: 8px; z-index: 9999;
-      width: calc(100% - 32px); max-width: 400px;
+    /* ── Metric cards ────────────────────────────────────────── */
+    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px,1fr)); gap: 14px; margin-bottom: 24px; }
+    .metric-card {
+      background: #242424; border: 1px solid #2d2d2d; border-radius: 10px;
+      padding: 18px 20px; display: flex; flex-direction: column; gap: 6px;
     }
-    .toast {
-      padding: 12px 16px; border-radius: 10px; font-size: 14px; font-weight: 500;
-      text-align: center; box-shadow: 0 4px 16px rgba(0,0,0,.4);
-      animation: tIn .2s ease;
-    }
-    .toast.t-success { background: #14532d; border: 1px solid #16a34a; color: #bbf7d0; }
-    .toast.t-error   { background: #7f1d1d; border: 1px solid #dc2626; color: #fecaca; }
-    .toast.t-info    { background: rgba(186,117,23,.15); border: 1px solid #BA7517; color: #fbbf24; }
-    @keyframes tIn  { from { transform: translateY(20px); opacity:0; } to { transform: none; opacity:1; } }
-    @keyframes tOut { to   { transform: translateY(20px); opacity:0; } }
-    .toast.out { animation: tOut .2s ease forwards; }
+    .metric-label { font-size: 11px; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+    .metric-value { font-size: 28px; font-weight: 800; color: var(--cor-primaria); line-height: 1; }
+    .metric-sub   { font-size: 12px; color: #555; }
 
-    /* ── Modal ─────────────────────────────────────────────── */
+    /* ── Table ───────────────────────────────────────────────── */
+    .table-wrap { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; overflow: hidden; }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th {
+      padding: 10px 16px; text-align: left; font-size: 11px; font-weight: 700;
+      color: #555; text-transform: uppercase; letter-spacing: .5px;
+      background: #1e1e1e; border-bottom: 1px solid #2d2d2d;
+    }
+    .data-table td { padding: 12px 16px; font-size: 13px; border-bottom: 1px solid #222; vertical-align: middle; }
+    .data-table tbody tr:last-child td { border-bottom: none; }
+    .data-table tbody tr:hover { background: rgba(255,255,255,.02); }
+    .td-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    /* ── Form fields ─────────────────────────────────────────── */
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 11px; color: #777; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .3px; }
+    .field input, .field select, .field textarea {
+      width: 100%; padding: 9px 12px; background: #1e1e1e; border: 1px solid #2d2d2d;
+      border-radius: 6px; color: #ddd; font-family: inherit; font-size: 13px;
+      outline: none; box-sizing: border-box; transition: border-color .2s;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--cor-primaria); }
+    .field select option { background: #1e1e1e; }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    /* ── Badges ──────────────────────────────────────────────── */
+    .badge { border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .badge-green  { background: rgba(34,197,94,.12);  color: #4ade80; }
+    .badge-orange { background: rgba(243,156,18,.12); color: #fbbf24; }
+    .badge-red    { background: rgba(220,38,38,.12);  color: #f87171; }
+    .badge-gray   { background: rgba(255,255,255,.07);color: #666;    }
+    .badge-blue   { background: rgba(59,130,246,.12); color: #93c5fd; }
+
+    /* ── Modal ───────────────────────────────────────────────── */
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,.7);
-      display: none; align-items: flex-end; justify-content: center;
-      z-index: 1000;
+      display: none; align-items: center; justify-content: center;
+      z-index: 1000; padding: 20px;
     }
     .modal-overlay.visible { display: flex; }
     .modal-box {
-      background: var(--bz-card); border: 1px solid var(--bz-bd2);
-      border-radius: 16px 16px 0 0;
-      padding: 20px; width: 100%; max-width: 520px;
+      background: #232323; border: 1px solid #2d2d2d; border-radius: 12px;
+      padding: 24px; width: 100%; max-width: 480px;
       max-height: 90vh; overflow-y: auto;
     }
-    .modal-handle { width: 36px; height: 4px; background: var(--bz-bd2); border-radius: 4px; margin: 0 auto 16px; }
-    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    .modal-header h3 { font-size: 15px; font-weight: 700; color: var(--bz-t1); }
-    .modal-close { background: none; border: none; color: var(--bz-t4); font-size: 22px; cursor: pointer; padding: 0; line-height: 1; }
+    .modal-box-lg { max-width: 600px; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .modal-header h3 { font-size: 15px; font-weight: 700; }
+    .modal-close { background: none; border: none; color: #555; font-size: 22px; cursor: pointer; line-height: 1; padding: 0; }
+    .modal-close:hover { color: #fff; }
+    .modal-footer { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
 
-    {% block styles %}{% endblock %}
+    /* ── Toggle switch ───────────────────────────────────────── */
+    .toggle-label { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; color: #bbb; }
+    .toggle-label input[type=checkbox] { display: none; }
+    .toggle-track {
+      width: 38px; height: 21px; background: #3a3a3a; border-radius: 21px;
+      position: relative; transition: background .2s; flex-shrink: 0;
+    }
+    .toggle-track::after {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 15px; height: 15px; background: #666; border-radius: 50%;
+      transition: transform .2s, background .2s;
+    }
+    .toggle-label input:checked + .toggle-track { background: var(--cor-primaria); }
+    .toggle-label input:checked + .toggle-track::after { transform: translateX(17px); background: #1a1a1a; }
 
-    /* ── Light overrides (template-level classes) ────────────── */
-    html.light .db-card,.html.light .chart-card { background: var(--bz-card); border-color: var(--bz-bd); }
-    html.light .db-card  { background: var(--bz-card); border-color: var(--bz-bd); }
-    html.light .db-label { color: var(--bz-t5); }
-    html.light .db-value { color: var(--cor-primaria); }
-    html.light .db-sub   { color: var(--bz-t4); }
-    html.light .chart-card { background: var(--bz-card); border-color: var(--bz-bd); }
-    html.light .chart-lbl  { color: var(--bz-t5); }
+    /* ── Toast ───────────────────────────────────────────────── */
+    #toasts { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; }
+    .toast {
+      padding: 12px 16px; border-radius: 8px; font-size: 13px; font-weight: 500;
+      min-width: 220px; box-shadow: 0 4px 20px rgba(0,0,0,.5);
+      animation: tIn .2s ease; pointer-events: none;
+    }
+    .toast.t-success { background: #14532d; border: 1px solid #16a34a; color: #bbf7d0; }
+    .toast.t-error   { background: #7f1d1d; border: 1px solid #dc2626; color: #fecaca; }
+    .toast.t-info    { background: rgba(243,156,18,.12); border: 1px solid #f39c12; color: #fcd34d; }
+    @keyframes tIn  { from { transform: translateX(110%); opacity:0; } to { transform: translateX(0); opacity:1; } }
+    @keyframes tOut { to   { transform: translateX(110%); opacity:0; } }
+    .toast.out { animation: tOut .2s ease forwards; }
 
-    html.light .dia-btn    { background: var(--bz-card); border-color: var(--bz-bd2); color: var(--bz-t2); }
-    html.light .dia-label  { color: var(--bz-t2); }
-    html.light .sched-wrap { background: var(--bz-surface); border-color: var(--bz-bd); }
-    html.light .sched-table th { background: var(--bz-page); color: var(--bz-t5); border-color: var(--bz-bd); }
-    html.light .sched-table td { border-color: var(--bz-bd); }
-    html.light .sched-table tbody tr:hover { background: rgba(0,0,0,.03); }
-    html.light .sched-empty   { color: var(--bz-t4); }
-    html.light .td-hora       { color: var(--bz-t1); }
-    html.light .td-cli-nome   { color: var(--bz-t1); }
-    html.light .td-cli-sv     { color: var(--bz-t4); }
-    html.light .row-done      { opacity: .5; }
-    html.light .m-slot-info   { background: rgba(186,117,23,.08); }
-    html.light .mfield input, html.light .mfield select { background: var(--bz-input); border-color: var(--bz-bd2); color: var(--bz-t1); }
-    html.light .mfield select option { background: var(--bz-surface); color: var(--bz-t1); }
-    html.light .btn-ghost  { border-color: var(--bz-bd2); color: var(--bz-t4); }
-    html.light .btn-cancel { border-color: rgba(220,38,38,.5); }
+    /* ── Empty state ─────────────────────────────────────────── */
+    .empty-state { text-align: center; padding: 48px 20px; color: #444; }
+    .empty-state p { font-size: 14px; }
 
-    html.light .p-table-wrap { background: var(--bz-surface); border-color: var(--bz-bd); }
-    html.light .p-table th   { background: var(--bz-page); color: var(--bz-t5); border-color: var(--bz-bd); }
-    html.light .p-table td   { border-color: var(--bz-bd); }
-    html.light .p-search     { background: var(--bz-input); border-color: var(--bz-bd2); color: var(--bz-t1); }
-    html.light .p-empty      { color: var(--bz-t4); }
+    /* ── Chart ───────────────────────────────────────────────── */
+    .chart-wrap { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; padding: 18px; }
+    .chart-title { font-size: 13px; font-weight: 600; color: #888; margin-bottom: 14px; }
 
-    html.light .pf-card { background: var(--bz-card); border-color: var(--bz-bd); }
-    html.light .pf-nome { color: var(--bz-t1); }
-    html.light .pf-row  { border-color: var(--bz-bd); }
-    html.light .pf-key  { color: var(--bz-t4); }
-    html.light .pf-val  { color: var(--bz-t2); }
-    html.light .mf input { background: var(--bz-input); border-color: var(--bz-bd2); color: var(--bz-t1); }
+    /* ── Filtros toolbar ─────────────────────────────────────── */
+    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+    .toolbar input, .toolbar select {
+      padding: 8px 12px; background: #1e1e1e; border: 1px solid #2d2d2d;
+      border-radius: 7px; color: #ddd; font-family: inherit; font-size: 13px; outline: none;
+    }
+    .toolbar input:focus, .toolbar select:focus { border-color: var(--cor-primaria); }
 
-    html.light .rd-card        { background: var(--bz-card); border-color: var(--bz-bd); }
-    html.light .rd-title       { color: var(--bz-t2); }
-    html.light .rd-field input { background: var(--bz-input); border-color: var(--bz-bd2); color: var(--bz-t1); }
-    html.light .btn-full.ghost { border-color: var(--bz-bd2); color: var(--bz-t4); }
-
-    html.light .cfg-card    { background: var(--bz-card); border-color: var(--bz-bd); }
-    html.light .cfg-title   { color: var(--bz-t4); }
-    html.light .cfg-row     { border-color: var(--bz-bd); }
-    html.light .cfg-label   { color: var(--bz-t1); }
-    html.light .cfg-desc    { color: var(--bz-t4); }
-    html.light .cfg-version { color: var(--bz-t4); }
-    html.light .sw-track    { background: var(--bz-bd2); }
+    /* ── Responsive ──────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .sidebar { transform: translateX(-100%); }
+      .sidebar.open { transform: none; box-shadow: 6px 0 24px rgba(0,0,0,.6); }
+      .app-main { margin-left: 0; }
+      .hamburger { display: flex; }
+      .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 199; display: none; }
+      .sidebar-overlay.visible { display: block; }
+      .metrics-grid { grid-template-columns: 1fr 1fr; }
+      .field-row { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 480px) {
+      .app-content { padding: 16px 12px; }
+      .metrics-grid { grid-template-columns: 1fr; }
+      .section-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+      .table-wrap { overflow-x: auto; }
+      .hdr-username { display: none; }
+    }
   </style>
 </head>
 <body>
-  <header class="b-header">
-    <a class="b-brand" href="/barbeiro/dashboard" id="bBrand">BarberOS</a>
-    <div class="b-header-sep"></div>
-    <span class="b-user" id="bUser">—</span>
-    <span class="b-time" id="bTime"></span>
-    <button class="b-logout" onclick="api.logout()" title="Sair">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-    </button>
-  </header>
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
-  <div class="bk-bar" id="bkBar" style="display:none">
-    <span class="bk-label">📅 Agendar:</span>
-    <a class="bk-link" id="bkLink" href="#" target="_blank">—</a>
-    <button class="bk-copy" onclick="copiarLink()" title="Copiar link">Copiar</button>
+<div class="app-shell">
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-logo">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="m14.5 2.5-9 9"/><path d="m7.5 4.5 7 7"/><path d="m2 22 6-2 10-10-4-4L4 16l-2 6z"/>
+        </svg>
+      </div>
+      <div class="sidebar-brand-text">
+        <div class="sidebar-brand-name" id="sidebarBrandName">{{ bk_nome }}</div>
+        <div class="sidebar-brand-sub">Barbeiro</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="/barbeiro/dashboard" class="nav-link" data-path="/barbeiro/dashboard">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        Dashboard
+      </a>
+      <a href="/barbeiro/agendamentos" class="nav-link" data-path="/barbeiro/agendamentos">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        Meus Agendamentos
+      </a>
+      <a href="/barbeiro/horario" class="nav-link" data-path="/barbeiro/horario">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        Meu Horário
+      </a>
+      <a href="/barbeiro/clientes" class="nav-link" data-path="/barbeiro/clientes">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+        Meus Clientes
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-avatar" id="userInitial">B</div>
+      <div class="sidebar-user-info">
+        <div class="sidebar-user-name" id="sidebarUserName">{{ b_nome }}</div>
+        <div class="sidebar-user-role">Barbeiro</div>
+      </div>
+      <button class="btn-logout" onclick="Bos.logout()" title="Sair">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <div class="app-main">
+    <header class="app-header">
+      <button class="hamburger" onclick="toggleSidebar()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+      <nav class="breadcrumb">
+        <a href="/barbeiro/dashboard">Dashboard</a>
+        {% block breadcrumb %}{% endblock %}
+      </nav>
+      <div class="hdr-right">
+        <span class="hdr-username">{{ b_nome }}</span>
+        <button class="hdr-logout" onclick="Bos.logout()" title="Sair">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="app-content">
+      {% block content %}{% endblock %}
+    </main>
   </div>
+</div>
 
-  <main class="b-content">
-    {% block content %}{% endblock %}
-  </main>
-
-  <nav class="b-nav" id="bNav">
-    <a class="b-nav-item" href="/barbeiro/dashboard" data-path="/barbeiro/dashboard">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-      Início
-    </a>
-    <a class="b-nav-item" href="/barbeiro/agenda" data-path="/barbeiro/agenda">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-      Agenda
-    </a>
-    <a class="b-nav-item" href="/barbeiro/clientes" data-path="/barbeiro/clientes">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      Clientes
-    </a>
-    <a class="b-nav-item" href="/barbeiro/produtos" data-path="/barbeiro/produtos">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-      Produtos
-    </a>
-    <a class="b-nav-item" href="/barbeiro/perfil" data-path="/barbeiro/perfil">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      Perfil
-    </a>
-    <a class="b-nav-item" href="/barbeiro/redefinicoes" data-path="/barbeiro/redefinicoes">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      Conta
-    </a>
-    <a class="b-nav-item" href="/barbeiro/configuracoes" data-path="/barbeiro/configuracoes">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-      Config
-    </a>
-  </nav>
-
-  <div id="toasts"></div>
-
-  <script src="/static/js/api.js"></script>
-<script src="/static/js/upload-widget.js"></script>
-  <script>
-    // ── Nav active state ──────────────────────────────────────
-    document.querySelectorAll('.b-nav-item[data-path]').forEach(a => {
-      if (window.location.pathname === a.dataset.path) a.classList.add('active');
-    });
-  </script>
-  <script>
-    // ── Auth guard ────────────────────────────────────────────
-    (function() {
-      const u = api.getUser();
-      if (!u || !api.getToken()) { window.location.href = '/login'; return; }
-      if (!['barbeiro','gestor','super_admin'].includes(u.perfil)) {
-        window.location.href = '/login'; return;
+<div id="toasts"></div>
+<script src="/static/js/bos.js"></script>
+<script>
+  // ── Active nav ─────────────────────────────────────────────
+  (function(){
+    const path = window.location.pathname;
+    document.querySelectorAll('.nav-link[data-path]').forEach(a => {
+      if (path === a.dataset.path || (a.dataset.path !== '/barbeiro/dashboard' && path.startsWith(a.dataset.path))) {
+        a.classList.add('active');
       }
-      document.getElementById('bUser').textContent = u.nome || 'Barbeiro';
-    })();
-
-    // ── Booking banner ────────────────────────────────────────
-    (async function() {
-      try {
-        const d = await api.barbeiro.urlAgendamento();
-        const bar  = document.getElementById('bkBar');
-        const link = document.getElementById('bkLink');
-        const href = d.url.startsWith('http') ? d.url : location.origin + d.url;
-        link.href        = href;
-        link.textContent = href;
-        bar.style.display = '';
-      } catch(e) { /* silencioso */ }
-    })();
-
-    window._bkHref = '#';
-    function copiarLink() {
-      const link = document.getElementById('bkLink');
-      navigator.clipboard?.writeText(link.href).then(() => toast('Link copiado!', 'info'));
-    }
-
-    // ── Tema da barbearia ─────────────────────────────────────
-    (async function() {
-      const KEY = 'barberos_barbearia_tema';
-      function _applyTheme(t) {
-        const r = document.documentElement.style;
-        if (t.cor_primaria) r.setProperty('--cor-primaria', t.cor_primaria);
-        if (t.cor_fundo)    r.setProperty('--cor-fundo',    t.cor_fundo);
-        if (t.cor_card)     r.setProperty('--cor-card',     t.cor_card);
-        if (t.fonte)        r.setProperty('--fonte', "'" + t.fonte + "', sans-serif");
-        if (t.nome_exibicao) {
-          const el = document.getElementById('bBrand');
-          if (el) el.textContent = t.nome_exibicao;
-          document.title = t.nome_exibicao + ' — ' + (document.title.split(' — ')[1] || '').trim();
-        }
-      }
-      try { _applyTheme(JSON.parse(localStorage.getItem(KEY)) || {}); } catch {}
-      try {
-        const t = await api.barbearia.tema();
-        localStorage.setItem(KEY, JSON.stringify(t));
-        _applyTheme(t);
-      } catch {}
-    })();
-
-    // ── Relógio ───────────────────────────────────────────────
-    function tick() {
-      const t = new Date();
-      document.getElementById('bTime').textContent =
-        t.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
-    }
-    tick();
-    setInterval(tick, 5000);
-
-    // ── Toast ─────────────────────────────────────────────────
-    function toast(msg, tipo = 'success') {
-      const d = document.createElement('div');
-      d.className = `toast t-${tipo}`;
-      d.textContent = msg;
-      document.getElementById('toasts').appendChild(d);
-      setTimeout(() => d.classList.add('out'), 2500);
-      setTimeout(() => d.remove(), 2800);
-    }
-
-    // ── Modal ─────────────────────────────────────────────────
-    function abrirModal(id)  { document.getElementById(id).classList.add('visible'); }
-    function fecharModal(id) { document.getElementById(id).classList.remove('visible'); }
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.visible')
-        .forEach(m => m.classList.remove('visible'));
     });
-  </script>
-  {% block scripts %}{% endblock %}
+    const nome = document.getElementById('sidebarUserName')?.textContent || '';
+    const init = document.getElementById('userInitial');
+    if (init && nome) init.textContent = nome.charAt(0).toUpperCase();
+  })();
+
+  // ── Toast ──────────────────────────────────────────────────
+  function toast(msg, tipo = 'success') {
+    const d = document.createElement('div');
+    d.className = `toast t-${tipo}`;
+    d.textContent = msg;
+    document.getElementById('toasts').appendChild(d);
+    setTimeout(() => d.classList.add('out'), 2800);
+    setTimeout(() => d.remove(), 3100);
+  }
+
+  // ── Modal helpers ──────────────────────────────────────────
+  function abrirModal(id)  { document.getElementById(id).classList.add('visible'); }
+  function fecharModal(id) { document.getElementById(id).classList.remove('visible'); }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.visible').forEach(m => m.classList.remove('visible'));
+    }
+  });
+
+  // ── Sidebar mobile ─────────────────────────────────────────
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('open');
+    document.getElementById('sidebarOverlay').classList.toggle('visible');
+  }
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebarOverlay').classList.remove('visible');
+  }
+  document.querySelectorAll('.sidebar .nav-link').forEach(a => {
+    a.addEventListener('click', () => { if (window.innerWidth <= 768) closeSidebar(); });
+  });
+
+  // ── Escape HTML ────────────────────────────────────────────
+  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  // ── Moeda ──────────────────────────────────────────────────
+  function fmtR(v) {
+    return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  // ── Tema ───────────────────────────────────────────────────
+  (async function() {
+    const KEY = 'bos_tema';
+    function _apply(t) {
+      if (!t) return;
+      const r = document.documentElement.style;
+      if (t.cor_primaria) r.setProperty('--cor-primaria', t.cor_primaria);
+      if (t.cor_fundo)    r.setProperty('--cor-fundo', t.cor_fundo);
+      if (t.cor_card)     r.setProperty('--cor-card', t.cor_card);
+      if (t.fonte)        r.setProperty('--fonte', `'${t.fonte}', sans-serif`);
+    }
+    try { _apply(JSON.parse(localStorage.getItem(KEY))); } catch {}
+    try {
+      const t = await Bos.get('/gestor/barbearia/tema');
+      if (t) { localStorage.setItem(KEY, JSON.stringify(t)); _apply(t); }
+    } catch {}
+  })();
+</script>
+{% block scripts %}{% endblock %}
 </body>
 </html>
