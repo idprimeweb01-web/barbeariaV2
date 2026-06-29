@@ -1,6 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from app.extensions import db
 from app.models.mixins import TenantMixin
+
+def _utcnow():
+    """Substitui datetime.utcnow() — retorna UTC timezone-aware."""
+    return datetime.now(timezone.utc)
 
 
 # ── Barbearia ──────────────────────────────────────────────────────────────────
@@ -18,7 +22,7 @@ class Barbearia(db.Model):
     pix_nome_titular = db.Column(db.String(150))
     pix_cidade       = db.Column(db.String(50))
     pix_banco        = db.Column(db.String(50))
-    criado_em        = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em        = db.Column(db.DateTime, default=_utcnow)
     # ── P2: WhatsApp Business API ─────────────────────────────────────────────
     whatsapp_business_id      = db.Column(db.String(100))   # WABA ID (Meta)
     whatsapp_phone_number_id  = db.Column(db.String(100))   # Phone Number ID (Meta Cloud API)
@@ -56,7 +60,7 @@ class Usuario(db.Model):
     ativo           = db.Column(db.Boolean, default=True, nullable=False)
     foto_perfil_url = db.Column(db.String(255))
     data_nascimento = db.Column(db.Date)
-    criado_em       = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em       = db.Column(db.DateTime, default=_utcnow)
     # ── P2: 2FA ───────────────────────────────────────────────────────────────
     duplo_fator_ativo   = db.Column(db.Boolean, nullable=False, default=False)
     duplo_fator_segredo = db.Column(db.String(64))  # TOTP secret (armazenar criptografado em produção)
@@ -108,7 +112,7 @@ class Cliente(db.Model):
     notif_whatsapp  = db.Column(db.Boolean, default=True, nullable=False)
     notif_email     = db.Column(db.Boolean, default=True, nullable=False)
     data_nascimento = db.Column(db.Date)
-    criado_em       = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em       = db.Column(db.DateTime, default=_utcnow)
     # ── P2: Preferências ──────────────────────────────────────────────────────
     barbeiro_preferido_id = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=True)
     # ── P2: Carteira digital ──────────────────────────────────────────────────
@@ -154,7 +158,7 @@ class Produto(TenantMixin, db.Model):
     quantidade_reservada = db.Column(db.Integer, nullable=False, default=0)
     foto                 = db.Column(db.String(255))
     ativo                = db.Column(db.Boolean, default=True, nullable=False)
-    criado_em            = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em            = db.Column(db.DateTime, default=_utcnow)
 
     @property
     def quantidade_disponivel(self):
@@ -176,7 +180,7 @@ class ConfiguracaoAgenda(db.Model):
     horario_fechamento = db.Column(db.Time, nullable=False)
     intervalo_minutos  = db.Column(db.Integer, nullable=False)
     loja_aberta        = db.Column(db.Boolean, default=True, nullable=False)
-    atualizado_em      = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    atualizado_em      = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 class Agendamento(TenantMixin, db.Model):
@@ -192,7 +196,7 @@ class Agendamento(TenantMixin, db.Model):
     valor_total      = db.Column(db.Numeric(10, 2), nullable=False, default=0)
     observacao       = db.Column(db.String(300))
     metodo_pagamento = db.Column(db.String(20))  # pix, local
-    criado_em        = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em        = db.Column(db.DateTime, default=_utcnow)
 
 
 class AgendamentoServico(db.Model):
@@ -217,7 +221,7 @@ class AgendamentoSolicitacaoPix(db.Model):
     comprovante_url = db.Column(db.String(255))
     status          = db.Column(db.String(20), nullable=False, default='pendente')  # pendente, aprovado, rejeitado
     motivo_rejeicao = db.Column(db.String(500))
-    criado_em       = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em       = db.Column(db.DateTime, default=_utcnow)
     respondido_em   = db.Column(db.DateTime)
 
 
@@ -241,7 +245,7 @@ class PausaBarbeiro(db.Model):
     hora_inicio  = db.Column(db.Time, nullable=False)
     hora_fim     = db.Column(db.Time, nullable=False)
     descricao    = db.Column(db.String(50))
-    criado_em    = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em    = db.Column(db.DateTime, default=_utcnow)
 
 
 # ── Atendimento / Caixa ────────────────────────────────────────────────────────
@@ -265,7 +269,7 @@ class Atendimento(TenantMixin, db.Model):
     cliente_id      = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
     status_operacao = db.Column(db.String(20), nullable=False)  # efetuado, nao_efetuado
     total           = db.Column(db.Numeric(10, 2))
-    criado_em       = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em       = db.Column(db.DateTime, default=_utcnow)
 
 
 class AtendimentoItem(db.Model):
@@ -290,7 +294,7 @@ class Pagamento(db.Model):
     status                 = db.Column(db.String(20), nullable=False, default='aprovado')
     gateway                = db.Column(db.String(30))
     gateway_transaction_id = db.Column(db.String(100))
-    criado_em              = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em              = db.Column(db.DateTime, default=_utcnow)
     # ── P2: Integração de pagamento externo (Stripe / PayPal / Asaas) ─────────
     gateway_status   = db.Column(db.String(50))   # status retornado pelo gateway (ex: 'succeeded', 'pending')
     gateway_metadata = db.Column(db.Text)          # JSON raw da resposta do gateway (para reconciliação)
@@ -305,7 +309,7 @@ class SolicitacaoSenha(db.Model):
     usuario_id   = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
     barbearia_id = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False)
     status       = db.Column(db.String(20), nullable=False, default='pendente')  # pendente, resolvido
-    criado_em    = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em    = db.Column(db.DateTime, default=_utcnow)
 
 
 class SolicitacaoLiberacao(TenantMixin, db.Model):
@@ -319,7 +323,7 @@ class SolicitacaoLiberacao(TenantMixin, db.Model):
     motivo           = db.Column(db.String(300))
     status           = db.Column(db.String(20), nullable=False, default='pendente')  # pendente, aprovado, rejeitado
     notificado       = db.Column(db.Boolean, default=False, nullable=False)
-    data_solicitacao = db.Column(db.DateTime, default=datetime.utcnow)
+    data_solicitacao = db.Column(db.DateTime, default=_utcnow)
     data_resposta    = db.Column(db.DateTime)
 
 
@@ -335,8 +339,8 @@ class Plano(TenantMixin, db.Model):
     descricao     = db.Column(db.Text)
     preco_mensal  = db.Column(db.Numeric(10, 2), nullable=False)
     ativo         = db.Column(db.Boolean, default=True, nullable=False)
-    criado_em     = db.Column(db.DateTime, default=datetime.utcnow)
-    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    criado_em     = db.Column(db.DateTime, default=_utcnow)
+    atualizado_em = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
     # ── P2: Planos configuráveis ──────────────────────────────────────────────
     trial_dias      = db.Column(db.Integer, nullable=False, default=0)   # 0 = sem trial
     max_assinaturas = db.Column(db.Integer)                              # NULL = ilimitado
@@ -367,7 +371,7 @@ class ClientePlano(db.Model):
     data_inicio  = db.Column(db.Date, nullable=False)
     data_fim     = db.Column(db.Date)
     ativo        = db.Column(db.Boolean, default=True, nullable=False)
-    criado_em    = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em    = db.Column(db.DateTime, default=_utcnow)
     # ── P2: Renovação automática ──────────────────────────────────────────────
     auto_renovar = db.Column(db.Boolean, nullable=False, default=False)
 
@@ -395,7 +399,7 @@ class ClientePlanoSolicitacao(db.Model):
     comprovante_url  = db.Column(db.String(255))
     metodo_pagamento = db.Column(db.String(20), nullable=False, default='pix')
     status           = db.Column(db.String(20), nullable=False, default='pendente')  # pendente, aprovado, rejeitado
-    criado_em        = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em        = db.Column(db.DateTime, default=_utcnow)
     aprovado_em      = db.Column(db.DateTime)
     motivo_rejeicao  = db.Column(db.String(500))
 
@@ -410,7 +414,7 @@ class PlanoBarbeiro(db.Model):
     plano_id      = db.Column(db.Integer, db.ForeignKey('planos.id'), nullable=False, index=True)
     barbeiro_id   = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=False)
     barbearia_id  = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False)
-    adicionado_em = db.Column(db.DateTime, default=datetime.utcnow)
+    adicionado_em = db.Column(db.DateTime, default=_utcnow)
 
 
 # ── VIP ────────────────────────────────────────────────────────────────────────
@@ -428,7 +432,7 @@ class VipNivel(TenantMixin, db.Model):
     valor_desconto   = db.Column(db.Numeric(10, 2))
     ativo            = db.Column(db.Boolean, default=True, nullable=False)
     modo_brinde_ativo = db.Column(db.Boolean, default=True, nullable=False)
-    criado_em        = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em        = db.Column(db.DateTime, default=_utcnow)
 
 
 class ClienteVip(db.Model):
@@ -443,8 +447,8 @@ class ClienteVip(db.Model):
     nivel_vip_atual        = db.Column(db.Integer, default=0, nullable=False)
     brindes_resgatados     = db.Column(db.Text, default='[]')  # JSON serializado
     data_proxima_renovacao = db.Column(db.Date)
-    criado_em              = db.Column(db.DateTime, default=datetime.utcnow)
-    atualizado_em          = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    criado_em              = db.Column(db.DateTime, default=_utcnow)
+    atualizado_em          = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 # ── Feature Flags (v2: normalizado) ────────────────────────────────────────────
@@ -471,7 +475,7 @@ class FeatureBarbearia(db.Model):
     barbearia_id  = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, index=True)
     feature_id    = db.Column(db.Integer, db.ForeignKey('feature_metadata.id'), nullable=False)
     ativo         = db.Column(db.Boolean, default=False, nullable=False)
-    atualizado_em = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    atualizado_em = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 # ── Auditoria / Customização ───────────────────────────────────────────────────
@@ -486,7 +490,7 @@ class AuditoriaLog(db.Model):
     entidade     = db.Column(db.String(100), nullable=False)
     entidade_id  = db.Column(db.Integer)
     descricao    = db.Column(db.String(500), nullable=False)
-    criado_em    = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em    = db.Column(db.DateTime, default=_utcnow)
 
 
 class BarbeariaCustomizacao(db.Model):
@@ -508,8 +512,8 @@ class BarbeariaCustomizacao(db.Model):
     imagem_capa_url            = db.Column(db.String(500))
     imagem_boas_vindas_url     = db.Column(db.String(500))
     fonte                      = db.Column(db.String(50), default='Inter')
-    criado_em             = db.Column(db.DateTime, default=datetime.utcnow)
-    atualizado_em         = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    criado_em             = db.Column(db.DateTime, default=_utcnow)
+    atualizado_em         = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 # ── P2: Novas tabelas ──────────────────────────────────────────────────────────
@@ -530,7 +534,7 @@ class ClienteNota(db.Model):
     tipo            = db.Column(db.String(30), nullable=False, default='observacao')
     # 'observacao' | 'alerta' | 'preferencia'
     conteudo        = db.Column(db.Text, nullable=False)
-    criado_em       = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em       = db.Column(db.DateTime, default=_utcnow)
 
 
 class FilaEspera(db.Model):
@@ -551,7 +555,7 @@ class FilaEspera(db.Model):
     status                = db.Column(db.String(20), nullable=False, default='aguardando')
     # 'aguardando' | 'chamado' | 'atendido' | 'cancelado'
     chamado_em            = db.Column(db.DateTime)  # quando o gestor chamou o cliente
-    criado_em             = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em             = db.Column(db.DateTime, default=_utcnow)
 
 
 class BarbeiroComissaoServico(db.Model):
@@ -572,8 +576,8 @@ class BarbeiroComissaoServico(db.Model):
     comissao_tipo        = db.Column(db.String(20), nullable=False, default='percentual')
     comissao_percentual  = db.Column(db.Numeric(5, 2), nullable=False, default=0)
     comissao_valor_fixo  = db.Column(db.Numeric(10, 2), nullable=False, default=0)
-    criado_em            = db.Column(db.DateTime, default=datetime.utcnow)
-    atualizado_em        = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    criado_em            = db.Column(db.DateTime, default=_utcnow)
+    atualizado_em        = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 # ── Configuração de Agendamento por Tenant (A3: regras como configuração) ──────
@@ -594,7 +598,7 @@ class ConfiguracaoAgendamento(db.Model):
     # Antecedência de lembretes (A3: configurável por tenant, não cravar constante)
     notif_antecedencia_cliente_min  = db.Column(db.Integer, nullable=False, default=30)
     notif_antecedencia_barbeiro_min = db.Column(db.Integer, nullable=False, default=15)
-    atualizado_em                   = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    atualizado_em                   = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 # ── Notificações in-app ────────────────────────────────────────────────────────
@@ -622,4 +626,4 @@ class Notificacao(db.Model):
     lida           = db.Column(db.Boolean, nullable=False, default=False)
     # lida=True só faz sentido para in_app; email/web_push usam enviada
     enviada        = db.Column(db.Boolean, nullable=False, default=False)
-    criado_em      = db.Column(db.DateTime, default=datetime.utcnow)
+    criado_em      = db.Column(db.DateTime, default=_utcnow)

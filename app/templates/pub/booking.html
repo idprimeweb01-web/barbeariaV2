@@ -237,11 +237,24 @@
       <!-- PIX (condicional) -->
       <div id="pixSection" style="display:none">
         <div class="pix-box">
-          <div class="pix-box-title">⚡ Pague via PIX — Copia e Cola</div>
-          <div class="pix-box-body">Abra o app do seu banco → Pix → Copia e Cola → cole o código abaixo. O agendamento é confirmado após o pagamento.</div>
+          <div class="pix-box-title">⚡ Pague via PIX</div>
+          <div class="pix-box-body">Escaneie o QR Code ou use o código Copia e Cola no app do seu banco. O agendamento é confirmado após o pagamento.</div>
         </div>
+
+        <!-- QR Code gerado via API pública -->
+        <div style="text-align:center;margin:14px 0">
+          <img id="pixQr" src="" alt="QR Code PIX"
+               style="width:200px;height:200px;border-radius:10px;border:1px solid var(--border);background:#f9f9f9">
+          <div style="font-size:11px;color:var(--muted);margin-top:6px">Escaneie com a câmera ou app do banco</div>
+        </div>
+
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Ou use o código Copia e Cola</div>
         <div class="pix-code" id="pixCode"></div>
         <button class="btn-copy" onclick="copiarPix()">📋 Copiar código PIX</button>
+
+        <div style="font-size:12px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.5">
+          Abra seu banco → Pix → Copia e Cola → cole o código acima.
+        </div>
       </div>
 
       <button class="btn-primary" onclick="reiniciar()">Fazer novo agendamento</button>
@@ -438,6 +451,14 @@ async function enterStep3() {
       el.innerHTML = '<div class="empty">Nenhum profissional disponível para os serviços selecionados.</div>';
       return;
     }
+
+    // Auto-skip: se só há 1 profissional, seleciona e avança direto
+    if (barbs.length === 1) {
+      _state.barbeiro = barbs[0];
+      enterStep4();
+      return;
+    }
+
     el.innerHTML = barbs.map(b => `
       <div class="sel-item" id="bar${b.id}" onclick="selecionarBarbeiro(${b.id})">
         <div class="bar-avatar">
@@ -616,7 +637,11 @@ function enterSuccess(r) {
   const pixSec = document.getElementById('pixSection');
   if (r.pix?.codigo_pix) {
     pixSec.style.display = '';
-    document.getElementById('pixCode').textContent = r.pix.codigo_pix;
+    const code = r.pix.codigo_pix;
+    document.getElementById('pixCode').textContent = code;
+    // QR Code gerado via API pública (sem dependência de biblioteca)
+    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(code);
+    document.getElementById('pixQr').src = qrUrl;
   } else {
     pixSec.style.display = 'none';
   }

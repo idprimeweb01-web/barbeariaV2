@@ -4,8 +4,9 @@ Princípio A1: a lógica opera sobre resource_id + intervalo de tempo,
 não sobre o conceito de "barbeiro". O recurso hoje é um Barbeiro;
 futuramente pode ser Sala, Equipamento etc. — sem mudar esta função.
 """
-from datetime import datetime, timedelta, time as time_t
+from datetime import datetime, timedelta, time as time_t, date as date_t
 from typing import Optional
+from app.utils.tz import naive_brasilia, hoje_brasilia
 
 
 def fim_agendamento(data_hora: datetime, duracao_minutos: int) -> datetime:
@@ -85,10 +86,18 @@ def gerar_slots(resource_id: int, data, duracao_necessaria: int) -> list[str]:
 
     pausas = PausaBarbeiro.query.filter_by(barbeiro_id=resource_id).all()
 
+    # Para hoje: descartar slots já passados (usando horário de Brasília)
+    agora = naive_brasilia() if data == hoje_brasilia() else None
+
     slots = []
     slot = abertura
 
     while slot + timedelta(minutes=duracao_necessaria) <= fechamento:
+        # Pula slots passados quando a data for hoje
+        if agora is not None and slot < agora:
+            slot += intervalo
+            continue
+
         slot_fim = slot + timedelta(minutes=duracao_necessaria)
         ocupado = False
 

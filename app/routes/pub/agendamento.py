@@ -6,6 +6,7 @@ Rotas públicas de agendamento (sem autenticação obrigatória).
 """
 from datetime import datetime, date
 from flask import Blueprint, request, jsonify
+from app.utils.tz import hoje_brasilia
 from app.extensions import db
 from app.models import (
     Barbearia, Barbeiro, Usuario, Cliente, Servico, BarbeiroServico,
@@ -82,7 +83,7 @@ def _resolver_plano(
     Retorna (cliente_plano_id, True) se coberto e dentro do limite.
     Retorna (None, False) caso contrário → serviço cobrado como avulso.
     """
-    ref = data_hora.date() if data_hora else date.today()
+    ref = data_hora.date() if data_hora else hoje_brasilia()
 
     assinaturas = (
         ClientePlano.query
@@ -139,8 +140,8 @@ def _criar_agendamento_core(
     """
     config = _get_config(barbearia_id)
 
-    # Verifica antecedência máxima
-    dias_ahead = (data_hora.date() - date.today()).days
+    # Verifica antecedência máxima (usa data de Brasília, não UTC do servidor)
+    dias_ahead = (data_hora.date() - hoje_brasilia()).days
     if dias_ahead < 0:
         raise APIError('Não é possível agendar no passado.')
     if dias_ahead > config.antecedencia_maxima_dias:
@@ -406,7 +407,7 @@ def slots_disponiveis(slug, barbeiro_id):
         raise APIError('Formato de data inválido. Use YYYY-MM-DD.')
 
     config = _get_config(b.id)
-    dias_ahead = (data - date.today()).days
+    dias_ahead = (data - hoje_brasilia()).days
     if dias_ahead < 0:
         raise APIError('Não é possível consultar datas passadas.')
     if dias_ahead > config.antecedencia_maxima_dias:
