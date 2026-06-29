@@ -10,7 +10,7 @@ from flask_jwt_extended import (
 )
 from werkzeug.security import check_password_hash
 from app.extensions import db
-from app.models import Usuario
+from app.models import Usuario, Barbearia
 
 views_bp = Blueprint('views', __name__)
 
@@ -141,17 +141,98 @@ def sair():
     return resp
 
 
-# ── Áreas placeholder (gestor/barbeiro) ──────────────────────────────────────
+# ── Contexto compartilhado para área do gestor ───────────────────────────────
 
-@views_bp.get('/gestor/')
+def _gestor_ctx():
+    bid = session.get('barbearia_id')
+    b   = db.session.get(Barbearia, bid) if bid else None
+    return {
+        'g_nome':   session.get('nome', 'Usuário'),
+        'g_perfil': session.get('perfil', ''),
+        'bk_slug':  b.slug if b else '',
+        'bk_nome':  (b.nome_exibicao or b.nome) if b else 'BarberOS',
+    }
+
+
+# ── Área do Gestor ────────────────────────────────────────────────────────────
+
 @views_bp.get('/gestor')
+@views_bp.get('/gestor/')
 @session_required('gestor', 'super_admin')
 def area_gestor():
-    return render_template('staff/placeholder.html',
-        area='do Gestor',
-        nome=session.get('nome', ''),
-        perfil=session.get('perfil', ''),
-    )
+    return redirect('/gestor/dashboard')
+
+
+@views_bp.get('/gestor/dashboard')
+@session_required('gestor', 'super_admin')
+def gestor_dashboard():
+    return render_template('gestor/dashboard.html', **_gestor_ctx())
+
+
+@views_bp.get('/gestor/barbeiros')
+@session_required('gestor', 'super_admin')
+def gestor_barbeiros():
+    return render_template('gestor/barbeiros.html', **_gestor_ctx())
+
+
+@views_bp.get('/gestor/servicos')
+@session_required('gestor', 'super_admin')
+def gestor_servicos():
+    return render_template('gestor/servicos.html', **_gestor_ctx())
+
+
+@views_bp.get('/gestor/produtos')
+@session_required('gestor', 'super_admin')
+def gestor_produtos():
+    return render_template('gestor/produtos.html', **_gestor_ctx())
+
+
+@views_bp.get('/gestor/agenda')
+@session_required('gestor', 'super_admin')
+def gestor_agenda():
+    return render_template('gestor/agenda.html', **_gestor_ctx())
+
+
+@views_bp.get('/gestor/clientes')
+@session_required('gestor', 'super_admin')
+def gestor_clientes():
+    return render_template('gestor/clientes.html', **_gestor_ctx())
+
+
+@views_bp.get('/gestor/relatorios')
+@session_required('gestor', 'super_admin')
+def gestor_relatorios():
+    return render_template('gestor/relatorios.html', **_gestor_ctx())
+
+
+@views_bp.get('/gestor/planos')
+@session_required('gestor', 'super_admin')
+def gestor_planos():
+    return render_template('gestor/planos.html', **_gestor_ctx())
+
+
+@views_bp.get('/gestor/vip')
+@session_required('gestor', 'super_admin')
+def gestor_vip():
+    return render_template('gestor/vip.html', **_gestor_ctx())
+
+
+@views_bp.get('/gestor/pix-approval')
+@session_required('gestor', 'super_admin')
+def gestor_pix_approval():
+    return render_template('gestor/pix_approval.html', **_gestor_ctx())
+
+
+@views_bp.get('/gestor/esqueci-senha')
+@session_required('gestor', 'super_admin')
+def gestor_esqueci_senha():
+    return render_template('gestor/esqueci_senha.html', **_gestor_ctx())
+
+
+@views_bp.get('/gestor/configuracoes/pix')
+@session_required('gestor', 'super_admin')
+def gestor_config_pix():
+    return render_template('gestor/config_pix.html', **_gestor_ctx())
 
 
 @views_bp.get('/barbeiro/')

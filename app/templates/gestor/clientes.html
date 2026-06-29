@@ -1,6 +1,10 @@
 {% extends "gestor/base.html" %}
 {% block title %}Clientes{% endblock %}
-{% block page_title %}Clientes{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Clientes</span>
+{% endblock %}
 
 {% block styles %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -264,10 +268,6 @@
       <button class="modal-close" onclick="fecharModal('modalEdicao')">×</button>
     </div>
     <form onsubmit="salvarEdicao(event)">
-      <div class="ef-field" style="display:flex;flex-direction:column;align-items:center;margin-bottom:18px">
-        <label style="align-self:flex-start">Foto</label>
-        <div id="wFotoCliente"></div>
-      </div>
       <div class="ef-field"><label>Nome *</label><input type="text" id="eNome" required></div>
       <div class="ef-field"><label>E-mail</label><input type="email" id="eEmail" placeholder="opcional"></div>
       <div class="ef-field"><label>Observações</label><textarea id="eObs" rows="3"></textarea></div>
@@ -276,6 +276,26 @@
         <button type="submit" id="btnSalvarEdicao" class="btn btn-primary" style="width:auto;padding:9px 24px">Salvar</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Modal Histórico -->
+<div class="modal-overlay" id="modalHistorico" onclick="if(event.target===this)fecharModal('modalHistorico')">
+  <div class="modal-box" style="max-width:580px">
+    <div class="modal-header">
+      <h3>Histórico — <span id="histNome"></span></h3>
+      <button class="modal-close" onclick="fecharModal('modalHistorico')">×</button>
+    </div>
+    <div id="histLoading" style="text-align:center;padding:32px;color:#555">Carregando…</div>
+    <div id="histConteudo" style="display:none">
+      <div style="display:flex;gap:20px;margin-bottom:14px;flex-wrap:wrap">
+        <div style="font-size:12px;color:#666">Visitas: <strong id="histVisitas" style="color:#ddd"></strong></div>
+        <div style="font-size:12px;color:#666">Total gasto: <strong id="histGasto" style="color:var(--cor-primaria)"></strong></div>
+        <div style="font-size:12px;color:#666">Última visita: <strong id="histUltima" style="color:#ddd"></strong></div>
+        <div style="font-size:12px;color:#666">Serviço favorito: <strong id="histFav" style="color:#ddd"></strong></div>
+      </div>
+      <div id="histTabela"></div>
+    </div>
   </div>
 </div>
 
@@ -297,7 +317,11 @@
   // ── Carregar ─────────────────────────────────────────────
   async function carregar(opts = {}) {
     try {
-      _dados = await api.clientes.listarAdmin(opts);
+      const params = new URLSearchParams();
+      if (opts.q)          params.set('q', opts.q);
+      if (opts.status)     params.set('status', opts.status);
+      if (opts.barbeiro_id) params.set('barbeiro_id', opts.barbeiro_id);
+      _dados = await Bos.get('/gestor/clientes?' + params.toString());
       renderMetrics(_dados.stats);
       renderChart(_dados.chart_novos);
       renderTabela(_dados.clientes);
@@ -407,7 +431,8 @@
         <td>
           <div class="td-actions">
             <button class="btn-icon" onclick="verPerfil(${c.id})">Ver</button>
-            <button class="btn-icon" onclick="abrirEdicaoDirecta(${c.id},'${esc(c.nome).replace(/'/g,"\\'")}','${esc(c.email||'')}','','${(c.foto||'').replace(/'/g,"\\'")}')">Editar</button>
+            <button class="btn-icon" onclick="verHistorico(${c.id},'${esc(c.nome).replace(/'/g,"\\'")}')">Histórico</button>
+            <button class="btn-icon" onclick="abrirEdicaoDirecta(${c.id},'${esc(c.nome).replace(/'/g,"\\'")}','${esc(c.email||'')}','')">Editar</button>
             <button class="btn-icon danger" onclick="desativar(${c.id},'${esc(c.nome).replace(/'/g,"\\'")}')">Desativar</button>
           </div>
         </td>
@@ -470,7 +495,7 @@
     const ids = [...document.querySelectorAll('.row-check:checked')].map(c => +c.dataset.id);
     if (!confirm(`Desativar ${ids.length} cliente(s)?`)) return;
     let erros = 0;
-    for (const id of ids) { try { await api.clientes.deletar(id); } catch { erros++; } }
+    for (const id of ids) { try { await Bos.patch('/gestor/clientes/' + id, {ativo: false}); } catch { erros++; } }
     toast(erros ? `${ids.length - erros} desativados, ${erros} com erro.` : `${ids.length} desativado(s).`,
           erros ? 'error' : 'success');
     cancelarSelecao();
@@ -481,7 +506,7 @@
   async function desativar(id, nome) {
     if (!confirm(`Desativar "${nome}"?`)) return;
     try {
-      await api.clientes.deletar(id);
+      await Bos.patch('/gestor/clientes/' + id, {ativo: false});
       toast('Cliente desativado.');
       fecharModal('modalPerfil');
       aplicarFiltros();
@@ -495,13 +520,13 @@
     document.getElementById('mpBody').innerHTML = '<div style="text-align:center;padding:24px;color:#555">Carregando…</div>';
     document.getElementById('btnAbrirEdicao').dataset.id = id;
     try {
-      const d = await api.clientes.perfil(id);
+      const d = await Bos.get('/gestor/clientes/' + id);
       const p = d.dados_pessoais;
       _editId = id;
       document.getElementById('mpTitulo').textContent = p.nome;
       document.getElementById('btnAbrirEdicao').onclick = () => {
         fecharModal('modalPerfil');
-        abrirEdicaoDirecta(id, p.nome, p.email || '', p.observacoes || '', p.foto || '');
+        abrirEdicaoDirecta(id, p.nome, p.email || '', p.observacoes || '');
       };
       document.getElementById('mpBody').innerHTML = `
         <div class="mp-stat-grid">
@@ -564,20 +589,11 @@
   function abrirEdicao() {
     abrirModal('modalEdicao');
   }
-  function abrirEdicaoDirecta(id, nome, email, obs, foto) {
+  function abrirEdicaoDirecta(id, nome, email, obs) {
     _editId = id;
     document.getElementById('eNome').value  = nome;
     document.getElementById('eEmail').value = email;
     document.getElementById('eObs').value   = obs;
-    uploadWidget.init('wFotoCliente', {
-      forma: 'circulo',
-      urlAtual: foto || null,
-      onUpload: async f => {
-        const r = await api.upload.cliente(id, f);
-        toast('Foto atualizada!', 'info');
-        return r.url;
-      },
-    });
     abrirModal('modalEdicao');
   }
   async function salvarEdicao(e) {
@@ -586,7 +602,7 @@
     const btn = document.getElementById('btnSalvarEdicao');
     btn.disabled = true; btn.textContent = 'Salvando…';
     try {
-      await api.clientes.editar(_editId, {
+      await Bos.patch('/gestor/clientes/' + _editId, {
         nome:        document.getElementById('eNome').value.trim(),
         email:       document.getElementById('eEmail').value.trim() || null,
         observacoes: document.getElementById('eObs').value.trim() || null,
@@ -619,7 +635,7 @@
   // ── Init ─────────────────────────────────────────────────
   (async () => {
     try {
-      const barbs = await api.barbeiros.listar();
+      const barbs = await Bos.get('/gestor/barbeiros');
       const sel = document.getElementById('fBarbeiro');
       barbs.forEach(b => {
         const o = document.createElement('option');
@@ -628,5 +644,43 @@
     } catch {}
     carregar();
   })();
+
+  async function verHistorico(id, nome) {
+    document.getElementById('histNome').textContent = nome;
+    document.getElementById('histLoading').style.display   = '';
+    document.getElementById('histConteudo').style.display  = 'none';
+    abrirModal('modalHistorico');
+    try {
+      const r = await Bos.get('/gestor/clientes/' + id + '/perfil');
+      document.getElementById('histLoading').style.display  = 'none';
+      document.getElementById('histConteudo').style.display = '';
+      document.getElementById('histVisitas').textContent = r.total_visitas ?? '—';
+      document.getElementById('histGasto').textContent   = fmtR(r.total_gasto);
+      document.getElementById('histFav').textContent     = r.servico_mais_feito || '—';
+      document.getElementById('histUltima').textContent  = r.ultima_visita
+        ? new Date(r.ultima_visita).toLocaleDateString('pt-BR') : '—';
+
+      const hist = r.historico || [];
+      document.getElementById('histTabela').innerHTML = hist.length ? `
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="color:#555;font-size:11px;text-transform:uppercase">
+            <th style="text-align:left;padding:6px 8px">Data</th>
+            <th style="text-align:left;padding:6px 8px">Serviço</th>
+            <th style="text-align:left;padding:6px 8px">Barbeiro</th>
+            <th style="text-align:right;padding:6px 8px">Valor</th>
+          </tr></thead>
+          <tbody>${hist.map(h => `
+            <tr style="border-top:1px solid #2a2a2a">
+              <td style="padding:8px;color:#888">${h.data ? new Date(h.data).toLocaleDateString('pt-BR') : '—'}</td>
+              <td style="padding:8px">${esc(h.servico || '—')}</td>
+              <td style="padding:8px;color:#888">${esc(h.barbeiro || '—')}</td>
+              <td style="padding:8px;text-align:right;color:var(--cor-primaria);font-weight:700">${fmtR(h.valor)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>` : '<div style="text-align:center;padding:24px;color:#555">Nenhum atendimento encontrado.</div>';
+    } catch(e) {
+      document.getElementById('histLoading').textContent = 'Erro: ' + e.message;
+    }
+  }
 </script>
 {% endblock %}

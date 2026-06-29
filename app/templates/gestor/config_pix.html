@@ -79,42 +79,42 @@
 <script>
 async function carregar() {
   try {
-    const c = await api.barbearia.configPix();
-    document.getElementById('fChave').value = c.chave_pix || '';
+    const c = await Bos.get('/gestor/barbearia/pix');
+    document.getElementById('fChave').value   = c.chave_pix || '';
     document.getElementById('fTitular').value = c.pix_nome_titular || '';
-    document.getElementById('fCidade').value = c.pix_cidade || '';
-    document.getElementById('fBanco').value = c.pix_banco || '';
+    document.getElementById('fCidade').value  = c.pix_cidade || '';
+    document.getElementById('fBanco').value   = c.pix_banco || '';
   } catch (e) { toast(e.message, 'error'); }
 }
 
 async function testarChave() {
   const chave = document.getElementById('fChave').value.trim();
-  const box = document.getElementById('testeResultado');
+  const box   = document.getElementById('testeResultado');
   if (!chave) { toast('Informe a chave PIX antes de testar.', 'error'); return; }
   try {
-    const r = await api.barbearia.testarChavePix(chave);
-    box.className = 'teste-resultado ' + (r.valida ? 'ok' : 'erro');
+    const r = await Bos.post('/gestor/barbearia/pix/testar', { chave_pix: chave });
+    box.className   = 'teste-resultado ' + (r.valida ? 'ok' : 'erro');
     box.textContent = (r.valida ? '✓ ' : '✕ ') + r.mensagem;
   } catch (e) {
-    box.className = 'teste-resultado erro';
+    box.className   = 'teste-resultado erro';
     box.textContent = e.message;
   }
 }
 
 async function salvar() {
-  const chave_pix = document.getElementById('fChave').value.trim();
+  const chave_pix    = document.getElementById('fChave').value.trim();
   const nome_titular = document.getElementById('fTitular').value.trim();
-  const cidade = document.getElementById('fCidade').value.trim();
-  const banco = document.getElementById('fBanco').value;
+  const cidade       = document.getElementById('fCidade').value.trim();
+  const banco        = document.getElementById('fBanco').value;
 
-  if (!chave_pix) { toast('Informe a chave PIX.', 'error'); return; }
+  if (!chave_pix)    { toast('Informe a chave PIX.', 'error'); return; }
   if (!nome_titular) { toast('Informe o nome do titular.', 'error'); return; }
-  if (!cidade) { toast('Informe a cidade.', 'error'); return; }
+  if (!cidade)       { toast('Informe a cidade.', 'error'); return; }
 
   const btn = document.getElementById('btnSalvar');
   btn.disabled = true;
   try {
-    await api.barbearia.salvarPix({ chave_pix, nome_titular, cidade, banco });
+    await Bos.patch('/gestor/barbearia/pix', { chave_pix, nome_titular, cidade, banco });
     toast('PIX configurado com sucesso.', 'success');
   } catch (e) {
     toast(e.message, 'error');

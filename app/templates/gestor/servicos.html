@@ -1,6 +1,10 @@
 {% extends "gestor/base.html" %}
 {% block title %}Serviços{% endblock %}
-{% block page_title %}Serviços{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Serviços</span>
+{% endblock %}
 
 {% block content %}
 <div class="section-header">
@@ -31,7 +35,6 @@
       <div class="field"><label>Descrição</label><textarea id="fDesc" rows="2" style="resize:vertical;padding:10px"></textarea></div>
       <div class="field"><label>Duração (minutos) *</label><input type="number" id="fDuracao" min="5" required></div>
       <div class="field"><label>Preço (R$) *</label><input type="number" id="fPreco" min="0" step="0.01" required></div>
-      <div class="field"><label>Foto</label><div id="wFotoSv"></div></div>
       <div class="field" id="wrAtivo" style="display:none">
         <label class="toggle-label">
           <input type="checkbox" id="fAtivo" checked>
@@ -55,7 +58,7 @@
 
   async function carregar() {
     try {
-      _todos = await api.servicos.listar();
+      _todos = await Bos.get('/gestor/servicos');
     } catch(e) {
       _todos = [];
       toast(e.message, 'error');
@@ -89,7 +92,6 @@
     document.getElementById('modalTitulo').textContent = 'Novo Serviço';
     document.getElementById('form').reset();
     document.getElementById('wrAtivo').style.display = 'none';
-    uploadWidget.init('wFotoSv', { forma: 'quadrado', urlAtual: null });
     abrirModal('modal');
   }
 
@@ -104,15 +106,6 @@
     document.getElementById('fPreco').value   = s.preco;
     document.getElementById('fAtivo').checked = s.ativo;
     document.getElementById('wrAtivo').style.display = '';
-    uploadWidget.init('wFotoSv', {
-      forma: 'quadrado',
-      urlAtual: s.foto,
-      onUpload: async f => {
-        const r = await api.upload.servico(id, f);
-        toast('Foto atualizada!', 'info');
-        return r.url;
-      },
-    });
     abrirModal('modal');
   }
 
@@ -121,23 +114,15 @@
     const btn = document.getElementById('btnSalvar');
     btn.disabled = true; btn.textContent = 'Salvando…';
     const dados = {
-      nome:             document.getElementById('fNome').value.trim(),
-      descricao:        document.getElementById('fDesc').value.trim(),
-      duracao_minutos:  parseInt(document.getElementById('fDuracao').value),
-      preco:            parseFloat(document.getElementById('fPreco').value),
+      nome:            document.getElementById('fNome').value.trim(),
+      descricao:       document.getElementById('fDesc').value.trim(),
+      duracao_minutos: parseInt(document.getElementById('fDuracao').value),
+      preco:           parseFloat(document.getElementById('fPreco').value),
     };
     if (_editId) dados.ativo = document.getElementById('fAtivo').checked;
     try {
-      let res;
-      if (_editId) res = await api.servicos.editar(_editId, dados);
-      else         res = await api.servicos.criar(dados);
-
-      const fotoFile = uploadWidget.getFile('wFotoSv');
-      if (fotoFile) {
-        const sid = _editId || res.servico?.id;
-        if (sid) await api.upload.servico(sid, fotoFile).catch(e => toast('Erro: ' + e.message, 'error'));
-      }
-
+      if (_editId) await Bos.patch('/gestor/servicos/' + _editId, dados);
+      else         await Bos.post('/gestor/servicos', dados);
       fecharModal('modal');
       toast(_editId ? 'Serviço atualizado!' : 'Serviço criado!');
       await carregar();
@@ -149,7 +134,7 @@
     const s = _todos.find(x => x.id === id);
     if (!confirm(`Desativar "${s?.nome}"?`)) return;
     try {
-      await api.servicos.deletar(id);
+      await Bos.patch('/gestor/servicos/' + id, { ativo: false });
       toast('Serviço desativado.');
       await carregar();
     } catch(e) { toast(e.message, 'error'); }

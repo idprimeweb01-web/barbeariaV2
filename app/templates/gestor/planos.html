@@ -1,6 +1,10 @@
 {% extends "gestor/base.html" %}
 {% block title %}Planos{% endblock %}
-{% block page_title %}Planos{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Planos</span>
+{% endblock %}
 
 {% block styles %}
 <style>
@@ -43,12 +47,12 @@
   <table class="data-table">
     <thead>
       <tr>
-        <th>Nome</th><th>Preço (R$)</th><th>Validade (dias)</th><th>Serviços</th>
-        <th>Clientes</th><th>Status</th><th>Ações</th>
+        <th>Nome</th><th>Preço (R$)</th><th>Serviços</th>
+        <th>Barbeiro</th><th>Status</th><th>Ações</th>
       </tr>
     </thead>
     <tbody id="planosTbody">
-      <tr><td colspan="7" style="text-align:center;color:#555;">Carregando…</td></tr>
+      <tr><td colspan="6" style="text-align:center;color:#555;">Carregando…</td></tr>
     </tbody>
   </table>
 </div>
@@ -101,6 +105,18 @@
     </div>
   </div>
 </div>
+
+<!-- Modal Assinantes -->
+<div class="modal-overlay" id="modalAssinantes" onclick="if(event.target===this)fecharModal('modalAssinantes')">
+  <div class="modal-box" style="max-width:560px">
+    <div class="modal-header">
+      <h3>Assinantes — <span id="assPlanoNome"></span></h3>
+      <button class="modal-close" onclick="fecharModal('modalAssinantes')">×</button>
+    </div>
+    <div id="assLoading" style="text-align:center;padding:32px;color:#555">Carregando…</div>
+    <div id="assLista" style="display:none"></div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -111,11 +127,11 @@ let barbeirosDisponiveis = [];
 let barbeirosVinculadosOriginal = [];
 
 async function carregarServicos() {
-  try { servicosDisponiveis = await api.servicos.listar(); } catch (e) { servicosDisponiveis = []; }
+  try { servicosDisponiveis = await Bos.get('/gestor/servicos'); } catch (e) { servicosDisponiveis = []; }
 }
 
 async function carregarBarbeiros() {
-  try { barbeirosDisponiveis = await api.barbeiros.listar(); } catch (e) { barbeirosDisponiveis = []; }
+  try { barbeirosDisponiveis = await Bos.get('/gestor/barbeiros'); } catch (e) { barbeirosDisponiveis = []; }
 }
 
 function renderizarCheckboxBarbeiros(selecionados = []) {
@@ -137,14 +153,14 @@ function barbeirosSelecionados() {
 }
 
 function renderizarCheckboxServicos(servicosAtuais = []) {
-  // servicosAtuais: [{id, limite_mensal}] já vinculados (limite_mensal null = ilimitado)
+  // servicosAtuais: [{servico_id, limite_uso_mensal, ...}] formato da API
   const box = document.getElementById('fServicos');
   if (!servicosDisponiveis.length) {
     box.innerHTML = '<div style="font-size:12px;color:#555;">Nenhum serviço cadastrado.</div>';
     return;
   }
   const mapaAtual = {};
-  servicosAtuais.forEach(s => { mapaAtual[s.id] = s.limite_mensal; });
+  servicosAtuais.forEach(s => { mapaAtual[s.servico_id] = s.limite_uso_mensal; });
 
   box.innerHTML = servicosDisponiveis.map(s => {
     const vinculado = s.id in mapaAtual;
@@ -172,9 +188,7 @@ function toggleIlimitado(servicoId) {
   row.querySelector('.input-limite').disabled = ilimitado;
 }
 
-function atualizarLinhaServico(servicoId) {
-  // placeholder de hook futuro — manter a linha visível mesmo desmarcada, sem ação extra por ora
-}
+function atualizarLinhaServico(servicoId) {}
 
 function servicosSelecionados() {
   return [...document.querySelectorAll('.servico-limite-row')]
@@ -189,35 +203,37 @@ function servicosSelecionados() {
 
 async function carregarPlanos() {
   try {
-    const lista = await api.planos.listar();
+    const lista = await Bos.get('/gestor/planos');
     renderizarPlanos(lista);
   } catch (e) {
     document.getElementById('planosTbody').innerHTML =
-      `<tr><td colspan="7" style="text-align:center;color:#f87171;">Erro: ${e.message}</td></tr>`;
+      `<tr><td colspan="6" style="text-align:center;color:#f87171;">Erro: ${e.message}</td></tr>`;
   }
 }
 
 function renderizarPlanos(lista) {
   const tbody = document.getElementById('planosTbody');
   if (!lista.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#555;">Nenhum plano cadastrado.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#555;">Nenhum plano cadastrado.</td></tr>';
     return;
   }
-  tbody.innerHTML = lista.map(p => `
+  tbody.innerHTML = lista.map(p => {
+    const barb = barbeirosDisponiveis.find(b => b.id === p.barbeiro_id);
+    return `
     <tr>
       <td>${p.nome}</td>
       <td>R$ ${p.preco_mensal.toFixed(2)}</td>
-      <td>${p.validade_dias ?? '—'}</td>
-      <td>${p.servicos.map(s => `${s.nome} (${s.limite_mensal == null ? '∞' : s.limite_mensal}x)`).join(', ') || '—'}</td>
-      <td>${p.total_clientes}</td>
+      <td>${(p.servicos||[]).map(s => `${s.nome} (${s.limite_uso_mensal == null ? '∞' : s.limite_uso_mensal}x)`).join(', ') || '—'}</td>
+      <td>${barb ? barb.nome : (p.is_plano_aberto ? 'Aberto' : '—')}</td>
       <td>${p.ativo ? '<span class="badge-green">ATIVO</span>' : '<span class="badge-gray">INATIVO</span>'}</td>
       <td class="td-actions">
         <button class="btn-icon" title="Editar" onclick="abrirModalEditar(${p.id})">✏️</button>
+        <button class="btn-icon" title="Assinantes" onclick="verAssinantes(${p.id},'${esc(p.nome)}')">👥</button>
         <button class="btn-icon" title="${p.ativo ? 'Inativar' : 'Ativar'}" onclick="toggleAtivo(${p.id}, ${p.ativo})">${p.ativo ? '🙈' : '👁️'}</button>
         <button class="btn-icon danger" title="Deletar" onclick="deletarPlano(${p.id})">🗑️</button>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
   window._planosCache = lista;
 }
 
@@ -241,37 +257,58 @@ function abrirModalEditar(id) {
   document.getElementById('modalPlanoTitulo').textContent = 'Editar Plano';
   document.getElementById('fNome').value = p.nome;
   document.getElementById('fPreco').value = p.preco_mensal;
-  document.getElementById('fValidade').value = p.validade_dias ?? '';
+  document.getElementById('fValidade').value = '';
   document.getElementById('fDescricao').value = p.descricao || '';
   document.getElementById('fAtivo').checked = p.ativo;
   renderizarCheckboxServicos(p.servicos || []);
-  barbeirosVinculadosOriginal = p.barbeiros_ids || [];
+  barbeirosVinculadosOriginal = p.barbeiro_id ? [p.barbeiro_id] : [];
   renderizarCheckboxBarbeiros(barbeirosVinculadosOriginal);
   document.getElementById('grupoBarbeiros').style.display = '';
   abrirModal('modalPlano');
 }
 
 async function salvarPlano() {
-  const nome     = document.getElementById('fNome').value.trim();
-  const preco    = parseFloat(document.getElementById('fPreco').value);
-  const validade = parseInt(document.getElementById('fValidade').value);
+  const nome      = document.getElementById('fNome').value.trim();
+  const preco     = parseFloat(document.getElementById('fPreco').value);
+  const validade  = parseInt(document.getElementById('fValidade').value) || 30;
   const descricao = document.getElementById('fDescricao').value.trim();
-  const ativo    = document.getElementById('fAtivo').checked;
-  const servicos = servicosSelecionados();
+  const ativo     = document.getElementById('fAtivo').checked;
+  const servicos  = servicosSelecionados();
 
   if (!nome) { toast('Informe o nome do plano.', 'error'); return; }
   if (isNaN(preco) || preco < 0) { toast('Informe um preço válido.', 'error'); return; }
-  if (isNaN(validade) || validade < 1) { toast('Informe a validade em dias.', 'error'); return; }
 
-  const payload = { nome, preco_mensal: preco, validade_dias: validade, descricao, ativo, servicos };
+  const payload = { nome, preco_mensal: preco, descricao, ativo };
   const btn = document.getElementById('btnSalvarPlano');
   btn.disabled = true;
   try {
     if (planoEmEdicao) {
-      await api.planos.editar(planoEmEdicao, payload);
+      await Bos.patch('/gestor/planos/' + planoEmEdicao, payload);
+      const detail = await Bos.get('/gestor/planos/' + planoEmEdicao);
+      const atuaisIds = (detail.servicos || []).map(s => s.servico_id);
+      const selIds = servicos.map(s => s.id);
+      await Promise.all([
+        ...servicos.filter(s => !atuaisIds.includes(s.id)).map(s =>
+          Bos.post('/gestor/planos/' + planoEmEdicao + '/servicos', {
+            servico_id: s.id, limite_uso_mensal: s.limite_mensal, dias_expiracao: validade,
+          }).catch(() => {})
+        ),
+        ...atuaisIds.filter(id => !selIds.includes(id)).map(sid =>
+          Bos.delete('/gestor/planos/' + planoEmEdicao + '/servicos/' + sid).catch(() => {})
+        ),
+      ]);
       await salvarVinculosBarbeiro(planoEmEdicao);
     } else {
-      await api.planos.criar(payload);
+      const resultado = await Bos.post('/gestor/planos', payload);
+      const novoId = resultado.id;
+      if (novoId && servicos.length) {
+        await Promise.all(servicos.map(s =>
+          Bos.post('/gestor/planos/' + novoId + '/servicos', {
+            servico_id: s.id, limite_uso_mensal: s.limite_mensal, dias_expiracao: validade,
+          }).catch(() => {})
+        ));
+      }
+      if (novoId) await salvarVinculosBarbeiro(novoId);
     }
     toast('Plano salvo.', 'success');
     fecharModal('modalPlano');
@@ -284,16 +321,13 @@ async function salvarPlano() {
 }
 
 async function salvarVinculosBarbeiro(planoId) {
-  const selecionados = barbeirosSelecionados();
-  const adicionar  = selecionados.filter(id => !barbeirosVinculadosOriginal.includes(id));
-  const remover    = barbeirosVinculadosOriginal.filter(id => !selecionados.includes(id));
-  for (const id of adicionar) await api.planos.vincularBarbeiro(planoId, id);
-  for (const id of remover)  await api.planos.desvincularBarbeiro(planoId, id);
+  const sel = barbeirosSelecionados();
+  await Bos.patch('/gestor/planos/' + planoId, { barbeiro_id: sel[0] || null });
 }
 
 async function toggleAtivo(id, ativoAtual) {
   try {
-    await api.planos.editar(id, { ativo: !ativoAtual });
+    await Bos.patch('/gestor/planos/' + id, { ativo: !ativoAtual });
     toast(ativoAtual ? 'Plano inativado.' : 'Plano ativado.', 'success');
     carregarPlanos();
   } catch (e) { toast(e.message, 'error'); }
@@ -302,7 +336,7 @@ async function toggleAtivo(id, ativoAtual) {
 async function deletarPlano(id) {
   if (!confirm('Deletar este plano permanentemente?')) return;
   try {
-    await api.planos.deletar(id);
+    await Bos.delete('/gestor/planos/' + id);
     toast('Plano deletado.', 'success');
     carregarPlanos();
   } catch (e) { toast(e.message, 'error'); }
@@ -312,5 +346,42 @@ async function deletarPlano(id) {
   await Promise.all([carregarServicos(), carregarBarbeiros()]);
   await carregarPlanos();
 })();
+
+async function verAssinantes(planoId, planoNome) {
+  document.getElementById('assPlanoNome').textContent = planoNome;
+  document.getElementById('assLoading').style.display = '';
+  document.getElementById('assLista').style.display   = 'none';
+  abrirModal('modalAssinantes');
+  try {
+    const r = await Bos.get('/gestor/planos/' + planoId + '/assinaturas');
+    const lista = Array.isArray(r) ? r : (r.assinaturas || r.clientes || []);
+    document.getElementById('assLoading').style.display = 'none';
+    const el = document.getElementById('assLista');
+    if (!lista.length) {
+      el.innerHTML = '<div style="text-align:center;padding:28px;color:#555">Nenhum assinante ativo.</div>';
+    } else {
+      el.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="color:#555;font-size:11px;text-transform:uppercase">
+            <th style="text-align:left;padding:6px 8px">Cliente</th>
+            <th style="text-align:left;padding:6px 8px">Telefone</th>
+            <th style="text-align:left;padding:6px 8px">Desde</th>
+            <th style="text-align:left;padding:6px 8px">Status</th>
+          </tr></thead>
+          <tbody>${lista.map(a => `
+            <tr style="border-top:1px solid #2a2a2a">
+              <td style="padding:8px">${esc(a.cliente_nome || a.nome || '—')}</td>
+              <td style="padding:8px;color:#666">${esc(a.telefone || '—')}</td>
+              <td style="padding:8px;color:#666">${a.data_inicio ? new Date(a.data_inicio).toLocaleDateString('pt-BR') : '—'}</td>
+              <td style="padding:8px"><span class="${a.ativo ? 'badge-green' : 'badge-gray'}">${a.ativo ? 'Ativo' : 'Inativo'}</span></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`;
+    }
+    el.style.display = '';
+  } catch(e) {
+    document.getElementById('assLoading').textContent = 'Erro: ' + e.message;
+  }
+}
 </script>
 {% endblock %}

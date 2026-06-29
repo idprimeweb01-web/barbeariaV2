@@ -1,387 +1,193 @@
 {% extends "gestor/base.html" %}
 {% block title %}Agenda{% endblock %}
-{% block page_title %}Configurar Agenda{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Agenda</span>
+{% endblock %}
 
 {% block styles %}
 <style>
-  /* ── Bloqueios calendar ─────────────────────────────────── */
-  .cal-nav {
-    background: none; border: 1px solid #333; color: #888;
-    border-radius: 8px; padding: 6px 14px; cursor: pointer;
-    font-size: 18px; font-family: inherit; transition: all .15s; line-height: 1;
-  }
-  .cal-nav:hover { border-color: var(--cor-primaria); color: var(--cor-primaria); }
+/* ── Toolbar ── */
+.ag-toolbar {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  background: #232323; border: 1px solid #2a2a2a; border-radius: 10px;
+  padding: 12px 16px; margin-bottom: 20px;
+}
+.ag-sel {
+  background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 7px;
+  color: #ccc; padding: 7px 10px; font-size: 13px; font-family: inherit;
+  outline: none; cursor: pointer;
+}
+.ag-sel:focus { border-color: var(--cor-primaria); }
+.ag-nav { display: flex; gap: 4px; align-items: center; }
+.ag-nav-btn {
+  background: #1a1a1a; border: 1px solid #2a2a2a; color: #888;
+  border-radius: 7px; padding: 6px 11px; cursor: pointer;
+  font-family: inherit; font-size: 15px; transition: all .15s;
+}
+.ag-nav-btn:hover { border-color: var(--cor-primaria); color: var(--cor-primaria); }
+.ag-date-lbl {
+  font-size: 13px; font-weight: 700; color: #ccc;
+  white-space: nowrap; min-width: 150px; text-align: center;
+}
+.ag-ml { margin-left: auto; }
 
-  .blk-dow-row {
-    display: grid; grid-template-columns: repeat(7, 1fr);
-    gap: 3px; margin-bottom: 3px;
-  }
-  .blk-dow-row > div {
-    text-align: center; font-size: 10px; font-weight: 700;
-    color: #555; padding: 5px 0; text-transform: uppercase; letter-spacing: .4px;
-  }
-  .blk-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-  .blk-day {
-    aspect-ratio: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    border-radius: 8px; cursor: pointer;
-    font-size: 13px; font-weight: 600; color: #aaa;
-    border: 1px solid transparent; transition: all .15s; min-height: 36px;
-    position: relative;
-  }
-  .blk-day:not(.blk-empty):not(.blk-past):hover {
-    background: rgba(255,255,255,.06); border-color: #444; color: #ddd;
-  }
-  .blk-empty  { cursor: default; }
-  .blk-past   { opacity: .35; cursor: default; }
-  .blk-hoje   { border-color: var(--cor-primaria) !important; color: var(--cor-primaria); }
-  .blk-parcial {
-    background: rgba(220,38,38,.1); border-color: rgba(220,38,38,.3); color: #fca5a5;
-  }
-  .blk-total  {
-    background: rgba(220,38,38,.22); border-color: rgba(220,38,38,.55); color: #f87171;
-  }
-  .blk-dot {
-    width: 5px; height: 5px; border-radius: 50%; background: currentColor; margin-top: 2px;
-  }
+/* ── Tabela ── */
+.ag-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ag-table th {
+  text-align: left; padding: 10px 12px; font-size: 11px;
+  font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: #444; border-bottom: 1px solid #2a2a2a;
+}
+.ag-table td { padding: 11px 12px; border-bottom: 1px solid #1e1e1e; vertical-align: middle; }
+.ag-table tr:last-child td { border-bottom: none; }
+.ag-table tr:hover td { background: rgba(255,255,255,.015); }
 
-  /* ── Wizard modal ───────────────────────────────────────── */
-  .wz-tipo-btn {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 8px; padding: 18px 10px; border-radius: 10px; cursor: pointer; font-family: inherit;
-    border: 1.5px solid #333; background: #1c1c1c; color: #888;
-    transition: all .15s; font-size: 13px; font-weight: 600; text-align: center;
-  }
-  .wz-tipo-btn:hover { border-color: var(--cor-primaria); color: var(--cor-primaria); background: rgba(186,117,23,.07); }
-  .wz-tipo-btn small { font-size: 10px; font-weight: 400; color: #555; margin-top: 2px; display: block; }
+.ag-hora  { font-weight: 700; color: var(--cor-primaria); font-size: 13px; white-space: nowrap; }
+.ag-nome  { font-weight: 600; color: #ddd; }
+.ag-serv  { font-size: 11px; color: #555; margin-top: 2px; }
+.ag-barb  { color: #888; font-size: 12px; }
+.ag-acoes { display: flex; gap: 6px; align-items: center; }
+.ag-btn {
+  background: none; border: 1px solid #2a2a2a; border-radius: 6px;
+  color: #666; font-size: 11px; padding: 4px 9px; cursor: pointer;
+  font-family: inherit; font-weight: 600; transition: all .15s; white-space: nowrap;
+}
+.ag-btn:hover        { border-color: var(--cor-primaria); color: var(--cor-primaria); }
+.ag-btn.pix:hover    { border-color: #22c55e; color: #4ade80; }
+.ag-btn.cancel:hover { border-color: #dc2626; color: #f87171; }
+.ag-btn:disabled     { opacity: .4; cursor: not-allowed; }
 
-  .wz-freq-opt {
-    display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px;
-    border-radius: 8px; border: 1.5px solid #2d2d2d; cursor: pointer;
-    transition: border-color .15s; margin-bottom: 6px;
-  }
-  .wz-freq-opt:has(input:checked) { border-color: var(--cor-primaria); background: rgba(186,117,23,.05); }
-  .wz-freq-opt input { accent-color: var(--cor-primaria); margin-top: 2px; flex-shrink: 0; }
-  .wz-freq-opt .wz-opt-title { font-size: 13px; font-weight: 600; color: #ddd; }
-  .wz-freq-opt .wz-opt-desc  { font-size: 11px; color: #666; margin-top: 2px; }
+/* ── Status badges ── */
+.st { border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; display: inline-block; }
+.st-agendado             { background: rgba(243,156,18,.12); color: #fbbf24; }
+.st-concluido            { background: rgba(34,197,94,.12);  color: #4ade80; }
+.st-cancelado            { background: rgba(220,38,38,.12);  color: #f87171; }
+.st-aguardando_pagamento { background: rgba(59,130,246,.12); color: #93c5fd; }
+.st-em_atendimento       { background: rgba(168,85,247,.12); color: #c084fc; }
 
-  .wz-exist-item {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 8px 0; border-bottom: 1px solid #252525; gap: 8px;
-  }
-  .wz-exist-item:last-child { border-bottom: none; }
-
-  @media (max-width: 480px) {
-    .blk-day { font-size: 11px; min-height: 32px; border-radius: 6px; }
-    .blk-dot { width: 4px; height: 4px; }
-    .blk-dow-row > div { font-size: 9px; }
-  }
+/* ── Modais ── */
+.modal-textarea {
+  width: 100%; padding: 10px; background: #1e1e1e; border: 1px solid #2d2d2d;
+  border-radius: 6px; color: #ccc; font-family: inherit; font-size: 13px;
+  resize: vertical; min-height: 80px; box-sizing: border-box; outline: none;
+}
+.modal-textarea:focus { border-color: var(--cor-primaria); }
 </style>
 {% endblock %}
 
 {% block content %}
-<!-- Tabs -->
-<div class="tabs" style="margin-bottom:20px">
-  <button class="tab active" id="tab-config"   onclick="mudarTab('config')">Configuração</button>
-  <button class="tab"        id="tab-grade"    onclick="mudarTab('grade')">Grade do Dia</button>
-  <button class="tab"        id="tab-bloqueios" onclick="mudarTab('bloqueios')">Bloqueios</button>
-  <button class="tab"        id="tab-solic"    onclick="mudarTab('solic')">
-    Solicitações<span id="solicBadge" style="display:none;background:#dc2626;color:#fff;border-radius:999px;padding:1px 7px;font-size:10px;font-weight:800;margin-left:5px;vertical-align:middle">0</span>
-  </button>
+
+<!-- ── Toolbar ── -->
+<div class="ag-toolbar">
+  <div class="ag-nav">
+    <button class="ag-nav-btn" onclick="navegarDia(-1)">‹</button>
+    <span class="ag-date-lbl" id="dateLbl"></span>
+    <button class="ag-nav-btn" onclick="navegarDia(1)">›</button>
+  </div>
+  <input type="date" class="ag-sel" id="inputData" onchange="setData(this.value)">
+  <select class="ag-sel" id="selBarbeiro" style="min-width:140px" onchange="carregar()">
+    <option value="">Todos barbeiros</option>
+  </select>
+  <select class="ag-sel" id="selStatus" style="min-width:140px" onchange="carregar()">
+    <option value="">Todos os status</option>
+    <option value="agendado">Agendado</option>
+    <option value="aguardando_pagamento">Aguardando PIX</option>
+    <option value="em_atendimento">Em atendimento</option>
+    <option value="concluido">Concluído</option>
+    <option value="cancelado">Cancelado</option>
+  </select>
+  <button class="btn btn-primary ag-ml" style="width:auto;padding:8px 16px;font-size:13px"
+          onclick="abrirNovoAg()">+ Agendar</button>
 </div>
 
-<!-- ══════════════════════════════════════════
-     TAB 1 — Configuração (existente)
-═══════════════════════════════════════════ -->
-<div id="painel-config">
-  <p style="color:#777;font-size:14px;margin-bottom:20px">
-    Configure o horário de trabalho de cada barbeiro e bloqueie horários específicos.
-  </p>
-  <div id="listaAgenda">
-    <div style="color:#555;font-size:14px">Carregando…</div>
-  </div>
+<!-- ── Tabela ── -->
+<div class="table-wrap">
+  <table class="ag-table">
+    <thead>
+      <tr>
+        <th>Hora</th>
+        <th>Status</th>
+        <th>Cliente / Serviço</th>
+        <th>Barbeiro</th>
+        <th>Valor</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody id="agTbody">
+      <tr><td colspan="6" style="text-align:center;padding:40px;color:#444">Carregando…</td></tr>
+    </tbody>
+  </table>
 </div>
 
-<!-- ══════════════════════════════════════════
-     TAB 2 — Grade do Dia (nova)
-═══════════════════════════════════════════ -->
-<div id="painel-grade" style="display:none">
-
-  <!-- Barbeiro selector + date nav -->
-  <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-    <select id="gradeSelect"
-      style="padding:9px 14px;background:#1f1f1f;border:1.5px solid #333;border-radius:10px;
-             color:#fff;font-family:inherit;font-size:14px;flex:1;min-width:180px;max-width:260px"
-      onchange="onBarbeiroChange()">
-      <option value="">Selecione o barbeiro…</option>
-    </select>
-    <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:220px">
-      <button class="cal-nav" onclick="gradeDiaAnterior()">‹</button>
-      <span id="gradeDiaLabel" style="flex:1;text-align:center;font-size:13px;font-weight:600;color:#ccc">—</span>
-      <button class="cal-nav" onclick="gradeDiaProximo()">›</button>
-      <button id="gradeHojeBtn"
-        style="background:none;border:1px solid rgba(186,117,23,.4);color:var(--cor-primaria);
-               border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;
-               font-family:inherit;white-space:nowrap;visibility:hidden"
-        onclick="gradeIrHoje()">Hoje</button>
-    </div>
-  </div>
-
-  <!-- Grade table -->
-  <div class="table-wrap">
-    <table class="data-table" id="gradeTable">
-      <thead>
-        <tr>
-          <th style="width:68px">Hora</th>
-          <th style="width:110px">Status</th>
-          <th>Cliente / Serviço</th>
-          <th style="width:110px">Ações</th>
-        </tr>
-      </thead>
-      <tbody id="gradeBody">
-        <tr><td colspan="4" style="text-align:center;padding:40px;color:#555;font-size:14px">
-          Selecione um barbeiro para ver a grade.
-        </td></tr>
-      </tbody>
-    </table>
-  </div>
-  <p id="gradeHint" style="text-align:center;font-size:11px;color:#444;margin-top:10px"></p>
-</div>
-
-<!-- ══════════════════════════════════════════
-     TAB 3 — Bloqueios
-═══════════════════════════════════════════ -->
-<div id="painel-bloqueios" style="display:none">
-  <p style="color:#777;font-size:14px;margin-bottom:16px">
-    Bloqueie dias ou horários para toda a barbearia. O bloqueio afeta todos os barbeiros.
-  </p>
-
-  <!-- Navegação de mês -->
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-    <button class="cal-nav" onclick="blkMesAnterior()">‹</button>
-    <span id="blkMesLabel" style="flex:1;text-align:center;font-size:15px;font-weight:700;color:#ddd">—</span>
-    <button class="cal-nav" onclick="blkMesProximo()">›</button>
-  </div>
-
-  <!-- Cabeçalho dias da semana -->
-  <div class="blk-dow-row">
-    <div>Seg</div><div>Ter</div><div>Qua</div>
-    <div>Qui</div><div>Sex</div><div>Sáb</div><div>Dom</div>
-  </div>
-
-  <!-- Grid do calendário -->
-  <div class="blk-cal-grid" id="blkCalGrid">
-    <div style="grid-column:1/-1;text-align:center;padding:40px;color:#555;font-size:14px">Carregando…</div>
-  </div>
-
-  <!-- Legenda -->
-  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:11px;color:#666">
-    <span style="display:flex;align-items:center;gap:5px">
-      <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:rgba(220,38,38,.22);border:1px solid rgba(220,38,38,.55)"></span>
-      Bloqueio total
-    </span>
-    <span style="display:flex;align-items:center;gap:5px">
-      <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:rgba(220,38,38,.1);border:1px solid rgba(220,38,38,.3)"></span>
-      Bloqueio parcial
-    </span>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     TAB 4 — Solicitações de Liberação
-═══════════════════════════════════════════ -->
-<div id="painel-solic" style="display:none">
-  <p style="color:#777;font-size:14px;margin-bottom:16px">
-    Solicitações dos barbeiros para liberar horários bloqueados.
-  </p>
-  <div id="solicConteudo">
-    <div style="text-align:center;padding:40px;color:#555;font-size:14px">Carregando…</div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     Modal Wizard — Criar/Ver Bloqueio
-═══════════════════════════════════════════ -->
-<div class="modal-overlay" id="modalWizard" onclick="if(event.target===this)fecharWizard()">
-  <div class="modal-box" style="max-width:430px">
+<!-- ── Modal Cancelar ── -->
+<div class="modal-overlay" id="modalCancelar" onclick="if(event.target===this)fecharModal('modalCancelar')">
+  <div class="modal-box" style="max-width:440px">
     <div class="modal-header">
-      <h3>Bloqueio — <span id="wzDiaLabel" style="color:var(--cor-primaria)"></span></h3>
-      <button class="modal-close" onclick="fecharWizard()">×</button>
+      <h3>Cancelar Agendamento</h3>
+      <button class="modal-close" onclick="fecharModal('modalCancelar')">✕</button>
     </div>
-
-    <!-- ── Step 1: Tipo ── -->
-    <div id="wzS1">
-      <p style="font-size:13px;color:#888;margin-bottom:14px">Qual tipo de bloqueio?</p>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <button class="wz-tipo-btn" onclick="wzEscolherTipo('dia_inteiro')">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
-            <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-            <line x1="9" y1="15" x2="15" y2="15"/>
-          </svg>
-          Dia Inteiro
-          <small>Nenhum horário disponível</small>
-        </button>
-        <button class="wz-tipo-btn" onclick="wzEscolherTipo('horario')">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/>
-            <polyline points="12 6 12 12 16 14"/>
-          </svg>
-          Horário Específico
-          <small>Bloqueia parte do dia</small>
-        </button>
-      </div>
+    <p style="font-size:13px;color:#888;margin-bottom:14px">
+      <strong id="cancelNomeCliente"></strong> — <span id="cancelServico"></span>
+    </p>
+    <div class="field">
+      <label>Motivo (opcional)</label>
+      <textarea class="modal-textarea" id="cancelMotivo" placeholder="Ex: Horário indisponível…"></textarea>
     </div>
-
-    <!-- ── Step 2: Horário ── -->
-    <div id="wzS2" style="display:none">
-      <p style="font-size:13px;color:#888;margin-bottom:14px">Selecione o período a bloquear:</p>
-      <div class="agenda-form-row">
-        <div class="field">
-          <label>Início *</label>
-          <input type="time" id="wzHoraIni" style="padding:12px 14px;background:#1f1f1f;border:1.5px solid #333;border-radius:10px;color:#fff;font-family:inherit;font-size:15px;width:100%">
-        </div>
-        <div class="field">
-          <label>Fim *</label>
-          <input type="time" id="wzHoraFim" style="padding:12px 14px;background:#1f1f1f;border:1.5px solid #333;border-radius:10px;color:#fff;font-family:inherit;font-size:15px;width:100%">
-        </div>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-top:6px">
-        <button class="btn btn-ghost" style="width:auto;padding:8px 16px;font-size:13px" onclick="wzGoStep(1)">← Voltar</button>
-        <button class="btn btn-primary" style="width:auto;padding:8px 20px;font-size:13px" onclick="wzAvancarHorario()">Próximo →</button>
-      </div>
-    </div>
-
-    <!-- ── Step 3: Recorrência + Confirmar ── -->
-    <div id="wzS3" style="display:none">
-      <p style="font-size:13px;color:#888;margin-bottom:12px">Com que frequência?</p>
-
-      <label class="wz-freq-opt">
-        <input type="radio" name="wzFreq" value="pontual" checked>
-        <div>
-          <div class="wz-opt-title">Apenas <span id="wzLblData"></span></div>
-          <div class="wz-opt-desc">Bloqueia somente esta data</div>
-        </div>
-      </label>
-      <label class="wz-freq-opt">
-        <input type="radio" name="wzFreq" value="dia_semana">
-        <div>
-          <div class="wz-opt-title">Todo <span id="wzLblSemana"></span></div>
-          <div class="wz-opt-desc">Repete pelos próximos 12 meses</div>
-        </div>
-      </label>
-      <label class="wz-freq-opt">
-        <input type="radio" name="wzFreq" value="data_especifica">
-        <div>
-          <div class="wz-opt-title">Todo dia <span id="wzLblDiaNum"></span></div>
-          <div class="wz-opt-desc">Repete mensalmente por 12 meses</div>
-        </div>
-      </label>
-
-      <div class="field" style="margin-top:14px">
-        <label>Motivo (opcional)</label>
-        <input type="text" id="wzMotivo" placeholder="Ex: Feriado, Folga, Manutenção…"
-          style="padding:12px 14px;background:#1f1f1f;border:1.5px solid #333;border-radius:10px;
-                 color:#fff;font-family:inherit;font-size:14px;width:100%">
-      </div>
-
-      <div style="display:flex;justify-content:space-between;margin-top:14px">
-        <button class="btn btn-ghost" style="width:auto;padding:8px 16px;font-size:13px" id="btnWzVoltar" onclick="wzVoltarStep3()">← Voltar</button>
-        <button class="btn btn-primary" style="width:auto;padding:8px 22px;font-size:13px" id="btnWzSalvar" onclick="wzSalvar()">Confirmar →</button>
-      </div>
-    </div>
-
-    <!-- ── Bloqueios existentes neste dia ── -->
-    <div id="wzExistentes" style="display:none">
-      <div style="border-top:1px solid #2d2d2d;margin-top:18px;padding-top:14px">
-        <div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">
-          Bloqueios existentes neste dia
-        </div>
-        <div id="wzListaExist"></div>
-      </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modalCancelar')">Voltar</button>
+      <button id="btnConfCancelar" style="width:auto;padding:9px 18px;background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.35);color:#f87171;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;font-family:inherit"
+              onclick="confirmarCancelar()">Cancelar agendamento</button>
     </div>
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════
-     Modal bloquear horários (tab Config)
-═══════════════════════════════════════════ -->
-<div class="modal-overlay" id="modalBloquear" onclick="if(event.target===this)fecharModal('modalBloquear')">
-  <div class="modal-box">
+<!-- ── Modal Aprovar PIX ── -->
+<div class="modal-overlay" id="modalPix" onclick="if(event.target===this)fecharModal('modalPix')">
+  <div class="modal-box" style="max-width:400px">
     <div class="modal-header">
-      <h3>Bloquear Horário — <span id="bNomeBarbeiro"></span></h3>
-      <button class="modal-close" onclick="fecharModal('modalBloquear')">×</button>
+      <h3>Aprovar Pagamento PIX</h3>
+      <button class="modal-close" onclick="fecharModal('modalPix')">✕</button>
     </div>
-    <form id="formBloquear" onsubmit="salvarBloqueio(event)">
-      <div class="agenda-form-row">
-        <div class="field"><label>Data início *</label><input type="datetime-local" id="bInicio" required></div>
-        <div class="field"><label>Data fim *</label><input type="datetime-local" id="bFim" required></div>
-      </div>
-      <div class="field">
-        <label>Motivo</label>
-        <select id="bMotivo" style="padding:13px 16px;background:#1f1f1f;border:1.5px solid #333;border-radius:10px;color:#fff;font-family:inherit;font-size:15px;width:100%">
-          <option value="">Selecione…</option>
-          <option>Almoço</option><option>Folga</option><option>Pausa</option>
-          <option>Feriado</option><option>Outro</option>
-        </select>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modalBloquear')">Cancelar</button>
-        <button type="submit" class="btn btn-primary" id="btnBloquear" style="width:auto;padding:9px 24px">Bloquear</button>
-      </div>
-    </form>
+    <p style="font-size:14px;color:#aaa;margin-bottom:6px">
+      Cliente: <strong id="pixNomeCliente" style="color:#ddd"></strong>
+    </p>
+    <p style="font-size:14px;color:#aaa;margin-bottom:20px">
+      Valor: <strong id="pixValor" style="color:var(--cor-primaria)"></strong>
+    </p>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modalPix')">Cancelar</button>
+      <button class="btn btn-primary" style="width:auto;padding:9px 24px" id="btnConfPix" onclick="confirmarPix()">✓ Confirmar Aprovação</button>
+    </div>
   </div>
 </div>
 
-<!-- ══════════════════════════════════════════
-     Modal +Agendar (tab Grade)
-═══════════════════════════════════════════ -->
-<div class="modal-overlay" id="modalAgendar" onclick="if(event.target===this)fecharModal('modalAgendar')">
+<!-- ── Modal Novo Agendamento ── -->
+<div class="modal-overlay" id="modalNovoAg" onclick="if(event.target===this)fecharModal('modalNovoAg')">
   <div class="modal-box">
     <div class="modal-header">
       <h3>Novo Agendamento</h3>
-      <button class="modal-close" onclick="fecharModal('modalAgendar')">×</button>
+      <button class="modal-close" onclick="fecharModal('modalNovoAg')">✕</button>
     </div>
-    <div id="mSlotInfo"
-      style="background:rgba(186,117,23,.1);border:1px solid rgba(186,117,23,.25);
-             border-radius:8px;padding:10px 14px;margin-bottom:12px;
-             font-size:13px;font-weight:600;color:var(--cor-primaria)">—</div>
-    <div id="mTempoRestante" style="display:none;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:12px;font-weight:600;color:#4ade80"></div>
-    <form id="formAgendar" onsubmit="confirmarAgendamento(event)">
-      <div class="field"><label>Nome do cliente *</label>
-        <input type="text" id="mNome" placeholder="Nome completo" autocomplete="off" required></div>
-      <div class="field"><label>Telefone / WhatsApp *</label>
-        <input type="tel" id="mTel" placeholder="(xx) xxxxx-xxxx" autocomplete="off" required></div>
-      <div class="field">
-        <label>Serviço *</label>
-        <select id="mSv" style="padding:13px 16px;background:#1f1f1f;border:1.5px solid #333;border-radius:10px;color:#fff;font-family:inherit;font-size:15px;width:100%" required>
-          <option value="">Selecione o serviço…</option>
-        </select>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modalAgendar')">Cancelar</button>
-        <button type="submit" class="btn btn-primary" id="btnConfirmar" style="width:auto;padding:9px 24px">Confirmar</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Modal: confirmar cancelamento (grade) -->
-<div class="modal-overlay" id="modalCancelarGrade" onclick="if(event.target===this)fecharModal('modalCancelarGrade')">
-  <div class="modal-box" style="max-width:420px">
-    <div class="modal-header">
-      <h3>Cancelar agendamento</h3>
-      <button class="modal-close" onclick="fecharModal('modalCancelarGrade')">×</button>
+    <div class="field">
+      <label>Barbeiro *</label>
+      <select id="naBarbeiro" onchange="carregarServBarb()">
+        <option value="">Selecione…</option>
+      </select>
     </div>
-    <div id="mCancelInfoG" style="font-size:14px;color:#ccc;margin-bottom:8px">—</div>
-    <div id="mCancelTempoG" style="font-size:12px;margin-bottom:18px"></div>
+    <div class="field">
+      <label>Serviço *</label>
+      <select id="naServico"><option value="">— Selecione o barbeiro —</option></select>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Nome do cliente *</label><input type="text" id="naNome" placeholder="João Silva"></div>
+      <div class="field"><label>Telefone *</label><input type="tel" id="naTelefone" placeholder="(11) 99999-9999"></div>
+    </div>
+    <div class="field"><label>Data e hora *</label><input type="datetime-local" id="naDataHora"></div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" style="width:auto;padding:9px 16px" onclick="fecharModal('modalCancelarGrade')">Fechar</button>
-      <button class="btn" id="btnSoCancelarG"
-        style="width:auto;padding:9px 16px;background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.35);color:#f87171;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;font-family:inherit"
-        onclick="confirmarApenasCancelarG()">Só cancelar</button>
-      <button class="btn btn-primary" id="btnCancelarReagendarG" style="width:auto;padding:9px 16px"
-        onclick="confirmarCancelarReagendarG()">Cancelar e Reagendar</button>
+      <button class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modalNovoAg')">Cancelar</button>
+      <button class="btn btn-primary" style="width:auto;padding:9px 24px" id="btnSalvarAg" onclick="salvarNovoAg()">Agendar</button>
     </div>
   </div>
 </div>
@@ -389,721 +195,204 @@
 
 {% block scripts %}
 <script>
-  // ══════════════════════════════════════════════
-  // Tab switcher
-  // ══════════════════════════════════════════════
-  function mudarTab(tab) {
-    document.getElementById('painel-config').style.display    = tab === 'config'    ? '' : 'none';
-    document.getElementById('painel-grade').style.display     = tab === 'grade'     ? '' : 'none';
-    document.getElementById('painel-bloqueios').style.display = tab === 'bloqueios' ? '' : 'none';
-    document.getElementById('painel-solic').style.display     = tab === 'solic'     ? '' : 'none';
-    document.getElementById('tab-config').classList.toggle('active',    tab === 'config');
-    document.getElementById('tab-grade').classList.toggle('active',     tab === 'grade');
-    document.getElementById('tab-bloqueios').classList.toggle('active', tab === 'bloqueios');
-    document.getElementById('tab-solic').classList.toggle('active',     tab === 'solic');
-    if (tab === 'grade'     && !_gradeIniciada) iniciarGrade();
-    if (tab === 'bloqueios' && !_blkIniciado)   iniciarBloqueios();
-    if (tab === 'solic')                         carregarSolicitacoes();
-  }
+let _data    = new Date().toISOString().split('T')[0];
+let _barbs   = [];
+let _cancelId = null;
+let _pixId    = null;
 
-  // ══════════════════════════════════════════════
-  // TAB 1 — Configuração (código original)
-  // ══════════════════════════════════════════════
-  let _barbeiros = [];
-  let _barbBloquearId = null;
-
-  async function carregar() {
-    try { _barbeiros = await api.agenda.listar(); }
-    catch(e) { toast(e.message, 'error'); _barbeiros = []; }
-    renderLista();
-    preencherSelectGrade();
-  }
-
-  function renderLista() {
-    const el = document.getElementById('listaAgenda');
-    if (!_barbeiros.length) {
-      el.innerHTML = '<div class="empty-state"><p>Nenhum barbeiro ativo encontrado.</p></div>';
-      return;
-    }
-    el.innerHTML = _barbeiros.map(b => {
-      const c = b.configuracao || {};
-      return `
-      <div class="agenda-card" id="card-${b.barbeiro_id}">
-        <div class="agenda-card-header">
-          ${fotoEl(b.foto, b.nome)}
-          <div>
-            <div class="agenda-card-name">${esc(b.nome)}</div>
-            <div style="font-size:12px;color:#666">Comissão: ${b.comissao_percentual}%</div>
-          </div>
-        </div>
-        <div class="agenda-form-row">
-          <div class="field">
-            <label>Horário abertura</label>
-            <input type="time" id="ab-${b.barbeiro_id}" value="${c.horario_abertura || '08:00'}">
-          </div>
-          <div class="field">
-            <label>Horário fechamento</label>
-            <input type="time" id="fe-${b.barbeiro_id}" value="${c.horario_fechamento || '18:00'}">
-          </div>
-        </div>
-        <div style="margin-bottom:12px">
-          <div class="field">
-            <label>Intervalo entre atendimentos</label>
-            <select id="iv-${b.barbeiro_id}" style="padding:13px 16px;background:#1f1f1f;border:1.5px solid #333;border-radius:10px;color:#fff;font-family:inherit;font-size:15px;width:100%">
-              <option value="30"  ${(c.intervalo_minutos||60)==30 ?'selected':''}>30 minutos</option>
-              <option value="40"  ${(c.intervalo_minutos||60)==40 ?'selected':''}>40 minutos</option>
-              <option value="60"  ${(c.intervalo_minutos||60)==60 ?'selected':''}>1 hora</option>
-              <option value="90"  ${(c.intervalo_minutos||60)==90 ?'selected':''}>1h 30min</option>
-            </select>
-          </div>
-        </div>
-        <div class="agenda-actions">
-          <button class="btn btn-primary" style="width:auto;padding:9px 20px;font-size:13px"
-            onclick="salvarAgenda(${b.barbeiro_id})">Salvar configuração</button>
-        </div>
-      </div>
-    `}).join('');
-  }
-
-  function fotoEl(url, nome) {
-    if (url) return `<div class="foto-avatar" style="width:42px;height:42px"><img src="${url}" alt="${esc(nome)}"></div>`;
-    return `<div class="foto-avatar" style="width:42px;height:42px;font-size:16px">${esc(nome.charAt(0).toUpperCase())}</div>`;
-  }
-
-  async function salvarAgenda(barbeiro_id) {
-    const dados = {
-      horario_abertura:   document.getElementById(`ab-${barbeiro_id}`).value,
-      horario_fechamento: document.getElementById(`fe-${barbeiro_id}`).value,
-      intervalo_minutos:  parseInt(document.getElementById(`iv-${barbeiro_id}`).value),
-    };
-    try {
-      await api.agenda.atualizar(barbeiro_id, dados);
-      toast('Agenda salva!');
-      await carregar();
-    } catch(e) { toast(e.message, 'error'); }
-  }
-
-  function abrirBloquear(id, nome) {
-    _barbBloquearId = id;
-    document.getElementById('bNomeBarbeiro').textContent = nome;
-    document.getElementById('formBloquear').reset();
-    abrirModal('modalBloquear');
-  }
-
-  async function salvarBloqueio(e) {
-    e.preventDefault();
-    const btn = document.getElementById('btnBloquear');
-    btn.disabled = true; btn.textContent = 'Bloqueando…';
-    const dados = {
-      data_hora_inicio: document.getElementById('bInicio').value,
-      data_hora_fim:    document.getElementById('bFim').value,
-      motivo:           document.getElementById('bMotivo').value,
-    };
-    try {
-      await api.agenda.bloquear(_barbBloquearId, dados);
-      fecharModal('modalBloquear');
-      toast('Horário bloqueado!');
-    } catch(err) { toast(err.message, 'error'); }
-    finally { btn.disabled = false; btn.textContent = 'Bloquear'; }
-  }
-
-  // ══════════════════════════════════════════════
-  // TAB 2 — Grade do Dia
-  // ══════════════════════════════════════════════
-  const MESES  = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-  const SEMANA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-
-  let _gradeIniciada = false;
-  let _gradeBarbeiroId  = null;
-  let _gradeData        = _gradeHoje();
-  let _gradeConfig      = null;
-  let _gradeServicos    = [];
-  let _gradeAgs         = [];
-  let _slotModal        = null;
-
-  // cancel state
-  let _cancelAgId          = null;
-  let _cancelSlot          = null;
-  let _cancelDataHora      = null;
-  let _cancelDuracao       = 0;
-  let _cancelCliente       = '';
-  let _cancelTempoRestante = 0;
-  let _cancelReagendar     = false;
-
-  function _gradeHoje() { return new Date().toISOString().split('T')[0]; }
-
-  function _gradeFmtLabel(ds) {
-    const d  = new Date(ds + 'T12:00:00');
-    const eh = ds === _gradeHoje();
-    const base = `${String(d.getDate()).padStart(2,'0')} ${MESES[d.getMonth()]} ${d.getFullYear()} — ${SEMANA[d.getDay()]}`;
-    return eh ? `Hoje, ${base}` : base;
-  }
-
-  function _gradeAddDias(ds, n) {
-    const d = new Date(ds + 'T12:00:00');
-    d.setDate(d.getDate() + n);
-    return d.toISOString().split('T')[0];
-  }
-
-  function gradeDiaAnterior() { _gradeIrDia(_gradeAddDias(_gradeData, -1)); }
-  function gradeDiaProximo()  { _gradeIrDia(_gradeAddDias(_gradeData,  1)); }
-  function gradeIrHoje()      { _gradeIrDia(_gradeHoje()); }
-
-  function _gradeIrDia(ds) {
-    _gradeData = ds;
-    document.getElementById('gradeDiaLabel').textContent = _gradeFmtLabel(ds);
-    document.getElementById('gradeHojeBtn').style.visibility = ds === _gradeHoje() ? 'hidden' : 'visible';
-    if (_gradeBarbeiroId) carregarGrade();
-  }
-
-  function preencherSelectGrade() {
-    const sel = document.getElementById('gradeSelect');
-    const val = sel.value;
-    sel.innerHTML = '<option value="">Selecione o barbeiro…</option>' +
-      _barbeiros.map(b => `<option value="${b.barbeiro_id}">${esc(b.nome)}</option>`).join('');
-    if (val) sel.value = val;
-  }
-
-  function onBarbeiroChange() {
-    const sel = document.getElementById('gradeSelect');
-    _gradeBarbeiroId = sel.value ? parseInt(sel.value) : null;
-    if (_gradeBarbeiroId) carregarGrade();
-    else {
-      document.getElementById('gradeBody').innerHTML =
-        `<tr><td colspan="4" style="text-align:center;padding:40px;color:#555;font-size:14px">Selecione um barbeiro para ver a grade.</td></tr>`;
-    }
-  }
-
-  function iniciarGrade() {
-    _gradeIniciada = true;
-    document.getElementById('gradeDiaLabel').textContent = _gradeFmtLabel(_gradeData);
-    if (_barbeiros.length) {
-      _gradeBarbeiroId = _barbeiros[0].barbeiro_id;
-      document.getElementById('gradeSelect').value = _gradeBarbeiroId;
-      carregarGrade();
-    }
-  }
-
-  async function carregarGrade() {
-    if (!_gradeBarbeiroId) return;
-    document.getElementById('gradeBody').innerHTML =
-      `<tr><td colspan="4" style="text-align:center;padding:32px;color:#555;font-size:14px">Carregando…</td></tr>`;
-    try {
-      const d = await api.agenda.grade(_gradeBarbeiroId, _gradeData);
-      _gradeConfig   = d.config;
-      _gradeServicos = d.servicos;
-      _gradeAgs      = d.agendamentos;
-      renderGrade();
-      const h = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
-      document.getElementById('gradeHint').textContent = `Atualizado às ${h}`;
-    } catch(e) {
-      toast(e.message, 'error');
-      document.getElementById('gradeBody').innerHTML =
-        `<tr><td colspan="4" style="text-align:center;padding:32px;color:#777;font-size:14px">${esc(e.message)}</td></tr>`;
-    }
-  }
-
-  function _gerarSlots() {
-    if (!_gradeConfig) return [];
-    const [ah, am] = _gradeConfig.horario_abertura.split(':').map(Number);
-    const [fh, fm] = _gradeConfig.horario_fechamento.split(':').map(Number);
-    const iv = _gradeConfig.intervalo_minutos, fim = fh * 60 + fm;
-    const slots = [];
-    let cur = ah * 60 + am;
-    while (cur + iv <= fim) {
-      slots.push(`${String(Math.floor(cur/60)).padStart(2,'0')}:${String(cur%60).padStart(2,'0')}`);
-      cur += iv;
-    }
-    return slots;
-  }
-
-  function renderGrade() {
-    const body  = document.getElementById('gradeBody');
-    const slots = _gerarSlots();
-    if (!slots.length) {
-      body.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:40px;color:#555;font-size:14px">
-        Agenda não configurada para este barbeiro.</td></tr>`;
-      return;
-    }
-    const agora   = new Date();
-    const hojeStr = _gradeHoje();
-    const minNow  = agora.getHours() * 60 + agora.getMinutes();
-    const isDataPassada = _gradeData < hojeStr;
-    const bannerPassado = isDataPassada
-      ? `<tr><td colspan="4" style="text-align:center;padding:9px 16px;background:rgba(220,38,38,.07);border-bottom:1px solid #2d2d2d">
-           <span style="font-size:12px;color:#f87171;font-weight:600">Data passada — não é possível agendar</span>
-         </td></tr>`
-      : '';
-    body.innerHTML = bannerPassado + slots.map(slot => {
-      const [sh, sm] = slot.split(':').map(Number);
-      const minSlot  = sh * 60 + sm;
-      const ag = _gradeAgs.find(a => a.data_hora.slice(11,16) === slot && a.status !== 'cancelado');
-      const isPast  = isDataPassada || (_gradeData === hojeStr && minSlot + (_gradeConfig?.intervalo_minutos||60) <= minNow);
-      const isNow   = !isDataPassada && _gradeData === hojeStr && minNow >= minSlot && minNow < minSlot + (_gradeConfig?.intervalo_minutos||60);
-      if (ag) return _rowAgendado(slot, ag, isPast);
-      return _rowLivre(slot, isPast, isNow);
-    }).join('');
-  }
-
-  function _rowLivre(slot, isPast, isNow) {
-    const rowStyle = isNow ? 'background:rgba(186,117,23,.04);' : isPast ? 'opacity:.5;' : '';
-    const btn = isPast
-      ? `<button style="opacity:.3;cursor:default;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.2);color:#4ade80;border-radius:7px;padding:5px 10px;font-size:12px;font-weight:700;font-family:inherit" disabled>+ Agendar</button>`
-      : `<button onclick="abrirModalAgendar('${slot}')"
-           style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.25);color:#4ade80;
-                  border-radius:7px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;
-                  font-family:inherit;transition:all .15s"
-           onmouseover="this.style.background='rgba(34,197,94,.2)'"
-           onmouseout="this.style.background='rgba(34,197,94,.1)'">+ Agendar</button>`;
-    return `<tr style="${rowStyle}">
-      <td style="font-size:15px;font-weight:800;color:#fff;white-space:nowrap">${slot}</td>
-      <td><span class="badge-green">Livre</span></td>
-      <td style="color:#555;font-size:13px">—</td>
-      <td>${btn}</td>
-    </tr>`;
-  }
-
-  function _rowAgendado(slot, ag, isPast) {
-    const rowStyle = (ag.status === 'concluido' || isPast) ? 'opacity:.55;' : '';
-    let badge, acoes = '';
-    if (ag.status === 'concluido') {
-      badge = `<span class="badge-gray">Concluído</span>`;
-    } else if (ag.em_atendimento) {
-      badge = `<span style="background:rgba(59,130,246,.15);color:#60a5fa;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:700">Em atend.</span>`;
-    } else {
-      badge = `<span style="background:rgba(186,117,23,.15);color:var(--cor-primaria);border-radius:999px;padding:2px 9px;font-size:11px;font-weight:700">Agendado</span>`;
-      if (!isPast) acoes = `<button onclick="abrirModalCancelarGestor(${ag.id},'${slot}','${ag.data_hora}',${ag.duracao_minutos},'${esc(ag.cliente)}')"
-        style="background:none;border:1px solid rgba(220,38,38,.4);color:#f87171;border-radius:7px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s;white-space:nowrap"
-        onmouseover="this.style.background='rgba(220,38,38,.1)'"
-        onmouseout="this.style.background='none'">Cancelar</button>`;
-    }
-    const svs    = ag.servicos?.length ? ag.servicos : [{nome: ag.servico, subtotal: ag.servico_preco}];
-    const svLine = svs.length === 1
-      ? esc(svs[0].nome)
-      : svs.map(s=>esc(s.nome)).join(' + ');
-    const total  = ag.total != null ? ag.total : ag.servico_preco;
-    const pdBadge = ag.produtos?.length
-      ? ` <span style="font-size:9px;background:rgba(186,117,23,.15);color:var(--cor-primaria);border-radius:4px;padding:1px 4px">+${ag.produtos.length}🛍</span>`
-      : '';
-    const clienteInfo = `
-      <div style="font-weight:600;color:#ddd;font-size:13px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(ag.cliente)}">${esc(ag.cliente)}</div>
-      <div style="font-size:11px;color:#666;margin-top:1px">${svLine}${pdBadge} · R$${Number(total).toFixed(2)}</div>`;
-    return `<tr style="${rowStyle}">
-      <td style="font-size:15px;font-weight:800;color:#fff;white-space:nowrap">${slot}</td>
-      <td>${badge}</td>
-      <td>${clienteInfo}</td>
-      <td>${acoes}</td>
-    </tr>`;
-  }
-
-  // ── Cancel flow (grade) ───────────────────────────────────────
-  function _calcTempoRestante(dataHoraStr, duracaoMin) {
-    const inicio  = new Date(dataHoraStr);
-    const fimSlot = new Date(inicio.getTime() + duracaoMin * 60000);
-    return Math.floor((fimSlot - new Date()) / 60000);
-  }
-
-  function abrirModalCancelarGestor(agId, slot, dataHora, duracao, cliente) {
-    _cancelAgId          = agId;
-    _cancelSlot          = slot;
-    _cancelDataHora      = dataHora;
-    _cancelDuracao       = duracao;
-    _cancelCliente       = cliente;
-    _cancelTempoRestante = _calcTempoRestante(dataHora, duracao);
-
-    document.getElementById('mCancelInfoG').textContent =
-      `Cancelar agendamento de ${cliente} às ${slot}?`;
-
-    const tempo = document.getElementById('mCancelTempoG');
-    const btnCR = document.getElementById('btnCancelarReagendarG');
-    if (_cancelTempoRestante > 0) {
-      tempo.textContent   = `⏱ ${_cancelTempoRestante} min restantes — é possível reagendar.`;
-      tempo.style.color   = '#4ade80';
-      btnCR.style.display = '';
-    } else {
-      tempo.textContent   = 'Horário já passou — só é possível cancelar.';
-      tempo.style.color   = '#f87171';
-      btnCR.style.display = 'none';
-    }
-    abrirModal('modalCancelarGrade');
-  }
-
-  async function confirmarApenasCancelarG() {
-    const btn = document.getElementById('btnSoCancelarG');
-    btn.disabled = true; btn.textContent = '…';
-    try {
-      await api.agenda.cancelar(_cancelAgId);
-      fecharModal('modalCancelarGrade');
-      toast('Agendamento cancelado.');
-      await carregarGrade();
-    } catch(e) { toast(e.message, 'error'); }
-    finally { btn.disabled = false; btn.textContent = 'Só cancelar'; }
-  }
-
-  async function confirmarCancelarReagendarG() {
-    if (_cancelTempoRestante <= 0) { await confirmarApenasCancelarG(); return; }
-    const btn = document.getElementById('btnCancelarReagendarG');
-    btn.disabled = true; btn.textContent = '…';
-    try {
-      await api.agenda.cancelar(_cancelAgId);
-      fecharModal('modalCancelarGrade');
-      await carregarGrade();
-      _cancelReagendar = true;
-      abrirModalAgendar(_cancelSlot, _cancelTempoRestante);
-    } catch(e) { toast(e.message, 'error'); }
-    finally { btn.disabled = false; btn.textContent = 'Cancelar e Reagendar'; }
-  }
-
-  // ── Modal +Agendar ────────────────────────────────────────────
-  function abrirModalAgendar(slot, tempoRestante = null) {
-    _slotModal       = slot;
-    _cancelReagendar = tempoRestante !== null;
-    _cancelTempoRestante = tempoRestante ?? 0;
-
-    const d = new Date(_gradeData + 'T12:00:00');
-    const barb = _barbeiros.find(b => b.barbeiro_id === _gradeBarbeiroId);
-    document.getElementById('mSlotInfo').textContent =
-      `${barb ? barb.nome + ' · ' : ''}${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} às ${slot}`;
-
-    const divTempo = document.getElementById('mTempoRestante');
-    if (_cancelReagendar && tempoRestante > 0) {
-      divTempo.textContent = `⏱ ${tempoRestante} min disponíveis neste horário`;
-      divTempo.style.display = '';
-    } else {
-      divTempo.style.display = 'none';
-    }
-
-    document.getElementById('mNome').value = '';
-    document.getElementById('mTel').value  = '';
-    const sel = document.getElementById('mSv');
-    if (!_gradeServicos.length) {
-      sel.innerHTML = `<option value="">Nenhum serviço vinculado</option>`;
-    } else {
-      sel.innerHTML = `<option value="">Selecione o serviço…</option>` +
-        _gradeServicos.map(s =>
-          `<option value="${s.id}">${esc(s.nome)} · ${s.duracao_minutos}min · R$${s.preco.toFixed(2)}</option>`
-        ).join('');
-    }
-    abrirModal('modalAgendar');
-    setTimeout(() => document.getElementById('mNome').focus(), 100);
-  }
-
-  async function confirmarAgendamento(e) {
-    e.preventDefault();
-    // Valida duração do serviço vs tempo restante (reagendamento)
-    if (_cancelReagendar && _cancelTempoRestante > 0) {
-      const svId = parseInt(document.getElementById('mSv').value);
-      const sv   = _gradeServicos.find(s => s.id === svId);
-      if (sv && sv.duracao_minutos > _cancelTempoRestante) {
-        toast(`Não há tempo suficiente: serviço precisa de ${sv.duracao_minutos}min, restam ${_cancelTempoRestante}min.`, 'error');
-        return;
-      }
-    }
-    const btn = document.getElementById('btnConfirmar');
-    btn.disabled = true; btn.textContent = 'Salvando…';
-    const dados = {
-      barbeiro_id: _gradeBarbeiroId,
-      nome:        document.getElementById('mNome').value.trim(),
-      telefone:    document.getElementById('mTel').value.trim(),
-      servico_id:  parseInt(document.getElementById('mSv').value),
-      data_hora:   `${_gradeData}T${_slotModal}`,
-    };
-    try {
-      await api.agenda.agendarManual(dados);
-      fecharModal('modalAgendar');
-      _cancelReagendar = false;
-      toast('Agendamento criado!');
-      await carregarGrade();
-    } catch(err) { toast(err.message, 'error'); }
-    finally { btn.disabled = false; btn.textContent = 'Confirmar'; }
-  }
-
-  // ══════════════════════════════════════════════
-  // Shared util
-  // ══════════════════════════════════════════════
-  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-  carregar();
-
-  // ══════════════════════════════════════════════
-  // TAB 3 — Bloqueios
-  // ══════════════════════════════════════════════
-  const MESES_FULL  = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
-                        'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  // weekday JS: 0=Dom, 1=Seg…6=Sáb → índice para exibição
-  const DIAS_SEMANA_NOME = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira',
-                             'Quinta-feira','Sexta-feira','Sábado'];
-
-  let _blkIniciado = false;
-  let _blkMes = 0, _blkAno = 0;
-
-  // ── Wizard state ────────────────────────────────────────────
-  let _wzData = null, _wzTipo = null;  // _wzTipo: 'dia_inteiro' | 'horario'
-
-  function iniciarBloqueios() {
-    _blkIniciado = true;
-    const agora  = new Date();
-    _blkMes = agora.getMonth() + 1;
-    _blkAno = agora.getFullYear();
-    carregarBloqueiosMes();
-  }
-
-  function blkMesAnterior() {
-    _blkMes--;
-    if (_blkMes < 1) { _blkMes = 12; _blkAno--; }
-    carregarBloqueiosMes();
-  }
-  function blkMesProximo() {
-    _blkMes++;
-    if (_blkMes > 12) { _blkMes = 1; _blkAno++; }
-    carregarBloqueiosMes();
-  }
-
-  async function carregarBloqueiosMes() {
-    document.getElementById('blkMesLabel').textContent = `${MESES_FULL[_blkMes-1]} ${_blkAno}`;
-    const grid = document.getElementById('blkCalGrid');
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:32px;color:#555;font-size:14px">Carregando…</div>';
-    try {
-      const dados = await api.agenda.bloqueiosMes(_blkMes, _blkAno);
-      renderCalBloqueios(dados);
-    } catch(e) {
-      grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:32px;color:#f87171;font-size:13px">${esc(e.message)}</div>`;
-      toast(e.message, 'error');
-    }
-  }
-
-  function renderCalBloqueios(dados) {
-    const hojeStr = new Date().toISOString().split('T')[0];
-    let html = '';
-
-    // Python weekday: 0=Seg, 6=Dom → offset de células vazias (semana começa Seg)
-    const offset = dados.primeiro_dia_semana;
-    for (let i = 0; i < offset; i++) html += '<div class="blk-day blk-empty"></div>';
-
-    dados.dias.forEach(dia => {
-      const isHoje = dia.data === hojeStr;
-      const isPast = dia.data < hojeStr;
-      let cls = 'blk-day';
-      if (isPast)                      cls += ' blk-past';
-      else if (dia.dia_inteiro_bloqueado) cls += ' blk-total';
-      else if (dia.tem_bloqueio)          cls += ' blk-parcial';
-      if (isHoje)                      cls += ' blk-hoje';
-
-      const dot = dia.tem_bloqueio ? '<div class="blk-dot"></div>' : '';
-
-      if (isPast) {
-        html += `<div class="${cls}"><span>${dia.dia}</span>${dot}</div>`;
-      } else {
-        html += `<div class="${cls}" onclick="abrirWizardBloqueio('${dia.data}', ${JSON.stringify(dia.bloqueios).replace(/"/g,'&quot;')})">
-                   <span>${dia.dia}</span>${dot}
-                 </div>`;
-      }
+// ── Boot ──────────────────────────────────────────────────
+(async function() {
+  document.getElementById('inputData').value = _data;
+  atualizarLabel();
+  try {
+    _barbs = await Bos.get('/gestor/barbeiros?ativo=true');
+    const sel = document.getElementById('selBarbeiro');
+    _barbs.forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.id; o.textContent = b.nome; sel.appendChild(o);
     });
+    popularBarbSelect('naBarbeiro');
+  } catch {}
+  carregar();
+})();
 
-    document.getElementById('blkCalGrid').innerHTML = html;
+function atualizarLabel() {
+  const d = new Date(_data + 'T12:00:00');
+  document.getElementById('dateLbl').textContent =
+    d.toLocaleDateString('pt-BR', {weekday:'long', day:'2-digit', month:'long'});
+}
+
+function navegarDia(delta) {
+  const d = new Date(_data + 'T12:00:00');
+  d.setDate(d.getDate() + delta);
+  _data = d.toISOString().split('T')[0];
+  document.getElementById('inputData').value = _data;
+  atualizarLabel();
+  carregar();
+}
+
+function setData(val) { _data = val; atualizarLabel(); carregar(); }
+
+// ── Carregar agendamentos ─────────────────────────────────
+async function carregar() {
+  const tb = document.getElementById('agTbody');
+  tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:#444">Carregando…</td></tr>';
+
+  const p = new URLSearchParams({ data: _data });
+  const bid = document.getElementById('selBarbeiro').value;
+  const st  = document.getElementById('selStatus').value;
+  if (bid) p.set('barbeiro_id', bid);
+  if (st)  p.set('status', st);
+
+  try {
+    const ags = await Bos.get('/gestor/agendamentos?' + p);
+    renderTabela(Array.isArray(ags) ? ags : []);
+  } catch(e) {
+    tb.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:#f87171">Erro: ${esc(e.message)}</td></tr>`;
   }
+}
 
-  // ── Wizard: abrir ────────────────────────────────────────────
-  function abrirWizardBloqueio(data, bloqueiosExistentes) {
-    _wzData  = data;
-    _wzTipo  = null;
+function renderTabela(ags) {
+  const tb = document.getElementById('agTbody');
+  if (!ags.length) {
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:40px;color:#444">Nenhum agendamento para este dia.</td></tr>';
+    return;
+  }
+  tb.innerHTML = ags.map(ag => {
+    const hora = ag.inicio
+      ? new Date(ag.inicio).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})
+      : '—';
+    const sv  = ag.servicos?.[0]?.nome || '—';
+    const cli = ag.cliente?.nome || '—';
+    const barb = ag.barbeiro?.nome || '—';
+    const val  = fmtR(ag.valor_total);
+    const podeAprovar  = ag.status === 'aguardando_pagamento';
+    const podeCancelar = !['cancelado','concluido'].includes(ag.status);
 
-    // Labels dinâmicos
-    const d   = new Date(data + 'T12:00:00');
-    const dd  = String(d.getDate()).padStart(2,'0');
-    const mm  = String(d.getMonth()+1).padStart(2,'0');
-    const aaaa = d.getFullYear();
-    document.getElementById('wzDiaLabel').textContent  = `${dd}/${mm}/${aaaa}`;
-    document.getElementById('wzLblData').textContent   = `${dd}/${mm}/${aaaa}`;
-    document.getElementById('wzLblSemana').textContent = DIAS_SEMANA_NOME[d.getDay()];
-    document.getElementById('wzLblDiaNum').textContent = String(d.getDate());
-
-    // Limpa campos
-    document.getElementById('wzHoraIni').value = '';
-    document.getElementById('wzHoraFim').value = '';
-    document.getElementById('wzMotivo').value  = '';
-    document.querySelector('input[name="wzFreq"][value="pontual"]').checked = true;
-
-    // Bloqueios existentes
-    const existDiv  = document.getElementById('wzExistentes');
-    const listaDiv  = document.getElementById('wzListaExist');
-    if (bloqueiosExistentes && bloqueiosExistentes.length) {
-      listaDiv.innerHTML = bloqueiosExistentes.map(b => `
-        <div class="wz-exist-item">
-          <div>
-            <span style="font-size:13px;color:#ccc;font-weight:600">
-              ${b.dia_inteiro ? 'Dia inteiro' : `${esc(b.hora_inicio)} – ${esc(b.hora_fim)}`}
-            </span>
-            ${b.motivo ? `<span style="font-size:11px;color:#666;margin-left:8px">${esc(b.motivo)}</span>` : ''}
-          </div>
-          <button onclick="removerBloqueioWz(${b.id})"
-            style="background:none;border:1px solid rgba(220,38,38,.35);color:#f87171;border-radius:6px;
-                   padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;
-                   white-space:nowrap;transition:all .15s"
-            onmouseover="this.style.background='rgba(220,38,38,.12)'"
-            onmouseout="this.style.background='none'">Remover</button>
+    return `<tr>
+      <td><span class="ag-hora">${hora}</span></td>
+      <td><span class="st st-${ag.status}">${stLabel(ag.status)}</span></td>
+      <td>
+        <div class="ag-nome">${esc(cli)}</div>
+        <div class="ag-serv">${esc(sv)}</div>
+      </td>
+      <td><span class="ag-barb">${esc(barb)}</span></td>
+      <td style="color:var(--cor-primaria);font-weight:700">${val}</td>
+      <td>
+        <div class="ag-acoes">
+          ${podeAprovar ? `<button class="ag-btn pix" onclick="abrirPix(${ag.id},'${esc(cli).replace(/'/g,"\\'")}',${ag.valor_total})">✓ PIX</button>` : ''}
+          ${podeCancelar ? `<button class="ag-btn cancel" onclick="abrirCancelar(${ag.id},'${esc(cli).replace(/'/g,"\\'")}','${esc(sv).replace(/'/g,"\\'")}')">✕ Cancelar</button>` : ''}
         </div>
-      `).join('');
-      existDiv.style.display = '';
-    } else {
-      existDiv.style.display = 'none';
-    }
+      </td>
+    </tr>`;
+  }).join('');
+}
 
-    wzGoStep(1);
-    abrirModal('modalWizard');
+function stLabel(s) {
+  return {
+    agendado:'Agendado', concluido:'Concluído', cancelado:'Cancelado',
+    aguardando_pagamento:'Aguard. PIX', em_atendimento:'Em atend.',
+  }[s] || s;
+}
+
+// ── Aprovar PIX ───────────────────────────────────────────
+function abrirPix(id, nome, valor) {
+  _pixId = id;
+  document.getElementById('pixNomeCliente').textContent = nome;
+  document.getElementById('pixValor').textContent = fmtR(valor);
+  abrirModal('modalPix');
+}
+
+async function confirmarPix() {
+  const btn = document.getElementById('btnConfPix');
+  btn.disabled = true; btn.textContent = 'Aprovando…';
+  try {
+    await Bos.put('/gestor/agendamentos/' + _pixId + '/aprovar', {});
+    toast('PIX aprovado! Agendamento confirmado.', 'success');
+    fecharModal('modalPix');
+    carregar();
+  } catch(e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = '✓ Confirmar Aprovação'; }
+}
+
+// ── Cancelar ──────────────────────────────────────────────
+function abrirCancelar(id, nome, servico) {
+  _cancelId = id;
+  document.getElementById('cancelNomeCliente').textContent = nome;
+  document.getElementById('cancelServico').textContent     = servico;
+  document.getElementById('cancelMotivo').value            = '';
+  abrirModal('modalCancelar');
+}
+
+async function confirmarCancelar() {
+  const btn    = document.getElementById('btnConfCancelar');
+  const motivo = document.getElementById('cancelMotivo').value.trim();
+  btn.disabled = true; btn.textContent = 'Cancelando…';
+  try {
+    await Bos.put('/gestor/agendamentos/' + _cancelId + '/cancelar', motivo ? {motivo} : {});
+    toast('Agendamento cancelado.', 'success');
+    fecharModal('modalCancelar');
+    carregar();
+  } catch(e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = 'Cancelar agendamento'; }
+}
+
+// ── Novo Agendamento ──────────────────────────────────────
+function popularBarbSelect(id) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  _barbs.forEach(b => {
+    const o = document.createElement('option');
+    o.value = b.id; o.textContent = b.nome; sel.appendChild(o);
+  });
+}
+
+async function carregarServBarb() {
+  const bid = document.getElementById('naBarbeiro').value;
+  const sel = document.getElementById('naServico');
+  if (!bid) { sel.innerHTML = '<option value="">— Selecione o barbeiro —</option>'; return; }
+  sel.innerHTML = '<option value="">Carregando…</option>';
+  try {
+    const det = await Bos.get('/gestor/barbeiros/' + bid);
+    sel.innerHTML = '<option value="">Selecione o serviço…</option>';
+    (det.servicos || []).forEach(s => {
+      const o = document.createElement('option');
+      o.value = s.id;
+      o.textContent = `${s.nome} — ${s.duracao_minutos}min · ${fmtR(s.preco)}`;
+      sel.appendChild(o);
+    });
+  } catch { sel.innerHTML = '<option value="">Erro ao carregar</option>'; }
+}
+
+function abrirNovoAg() {
+  document.getElementById('naBarbeiro').value = '';
+  document.getElementById('naServico').innerHTML = '<option value="">— Selecione o barbeiro —</option>';
+  document.getElementById('naNome').value     = '';
+  document.getElementById('naTelefone').value = '';
+  document.getElementById('naDataHora').value = _data + 'T09:00';
+  abrirModal('modalNovoAg');
+}
+
+async function salvarNovoAg() {
+  const btn = document.getElementById('btnSalvarAg');
+  const dados = {
+    barbeiro_id: parseInt(document.getElementById('naBarbeiro').value),
+    servico_id:  parseInt(document.getElementById('naServico').value),
+    nome:        document.getElementById('naNome').value.trim(),
+    telefone:    document.getElementById('naTelefone').value.trim(),
+    data_hora:   document.getElementById('naDataHora').value,
+  };
+  if (!dados.barbeiro_id || !dados.servico_id || !dados.nome || !dados.telefone || !dados.data_hora) {
+    toast('Preencha todos os campos obrigatórios.', 'error'); return;
   }
-
-  function fecharWizard() { fecharModal('modalWizard'); }
-
-  function wzGoStep(s) {
-    document.getElementById('wzS1').style.display = s === 1 ? '' : 'none';
-    document.getElementById('wzS2').style.display = s === 2 ? '' : 'none';
-    document.getElementById('wzS3').style.display = s === 3 ? '' : 'none';
-  }
-
-  function wzEscolherTipo(tipo) {
-    _wzTipo = tipo;
-    if (tipo === 'dia_inteiro') wzGoStep(3);
-    else                        wzGoStep(2);
-  }
-
-  function wzAvancarHorario() {
-    const ini = document.getElementById('wzHoraIni').value;
-    const fim = document.getElementById('wzHoraFim').value;
-    if (!ini || !fim) { toast('Informe início e fim do horário.', 'error'); return; }
-    if (fim <= ini)   { toast('"Fim" deve ser após o "Início".', 'error'); return; }
-    wzGoStep(3);
-  }
-
-  function wzVoltarStep3() {
-    if (_wzTipo === 'dia_inteiro') wzGoStep(1);
-    else                           wzGoStep(2);
-  }
-
-  async function wzSalvar() {
-    const freq = document.querySelector('input[name="wzFreq"]:checked').value;
-    const dados = {
-      data:        _wzData,
-      dia_inteiro: _wzTipo === 'dia_inteiro',
-      hora_inicio: _wzTipo === 'horario' ? document.getElementById('wzHoraIni').value : null,
-      hora_fim:    _wzTipo === 'horario' ? document.getElementById('wzHoraFim').value : null,
-      tipo:        freq === 'pontual' ? 'pontual' : 'recorrente',
-      padrao:      freq === 'pontual' ? null : freq,
-      motivo:      document.getElementById('wzMotivo').value.trim() || null,
-    };
-    const btn = document.getElementById('btnWzSalvar');
-    btn.disabled = true; btn.textContent = 'Salvando…';
-    try {
-      const r = await api.agenda.bloqueiosCriar(dados);
-      fecharWizard();
-      const label = freq === 'pontual' ? 'Bloqueio criado!' :
-                    freq === 'dia_semana' ? `${r.total} bloqueio(s) criado(s) para as próximas semanas!` :
-                    `${r.total} bloqueio(s) criado(s) para os próximos meses!`;
-      toast(label);
-      await carregarBloqueiosMes();
-    } catch(e) {
-      toast(e.message, 'error');
-    } finally {
-      btn.disabled = false; btn.textContent = 'Confirmar →';
-    }
-  }
-
-  async function removerBloqueioWz(id) {
-    try {
-      const r = await api.agenda.bloqueiosRemover(id);
-      toast(r.mensagem || 'Bloqueio removido.');
-      fecharWizard();
-      await carregarBloqueiosMes();
-    } catch(e) {
-      toast(e.message, 'error');
-    }
-  }
-
-  // ══════════════════════════════════════════════
-  // TAB 4 — Solicitações de Liberação
-  // ══════════════════════════════════════════════
-  const MESES_ABR = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-  const DIAS_PT   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-
-  async function carregarSolicitacoes() {
-    const cont = document.getElementById('solicConteudo');
-    cont.innerHTML = '<div style="text-align:center;padding:32px;color:#555;font-size:14px">Carregando…</div>';
-    try {
-      const lista = await api.agenda.solicitacoesLib('pendente');
-      // Atualiza badge
-      const badge = document.getElementById('solicBadge');
-      if (lista.length) { badge.textContent = lista.length; badge.style.display = ''; }
-      else               badge.style.display = 'none';
-      renderSolicitacoes(lista, cont);
-    } catch(e) {
-      cont.innerHTML = `<div style="text-align:center;padding:32px;color:#f87171;font-size:13px">${esc(e.message)}</div>`;
-    }
-  }
-
-  function renderSolicitacoes(lista, cont) {
-    if (!lista.length) {
-      cont.innerHTML = `<div class="empty-state"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".3"><path d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg><p>Nenhuma solicitação pendente</p></div>`;
-      return;
-    }
-    cont.innerHTML = `
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Barbeiro</th>
-              <th>Data</th>
-              <th>Horário</th>
-              <th>Motivo</th>
-              <th>Solicitado em</th>
-              <th style="width:140px">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${lista.map(s => {
-              const d = new Date(s.data + 'T12:00:00');
-              const fmtData = `${String(d.getDate()).padStart(2,'0')} ${MESES_ABR[d.getMonth()]} ${d.getFullYear()} — ${DIAS_PT[d.getDay()]}`;
-              const fmtHora = s.dia_inteiro ? '<span class="badge-red">Dia inteiro</span>' : `${esc(s.hora_inicio)} – ${esc(s.hora_fim)}`;
-              const ds = new Date(s.data_solicitacao);
-              const fmtSolic = `${String(ds.getDate()).padStart(2,'0')}/${String(ds.getMonth()+1).padStart(2,'0')} ${String(ds.getHours()).padStart(2,'0')}:${String(ds.getMinutes()).padStart(2,'0')}`;
-              return `<tr>
-                <td style="font-weight:600;color:#ddd">${esc(s.barbeiro_nome)}</td>
-                <td style="font-size:13px;color:#aaa;white-space:nowrap">${fmtData}</td>
-                <td style="font-size:13px">${fmtHora}</td>
-                <td style="font-size:13px;color:#888;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.motivo || '')}">${esc(s.motivo || '—')}</td>
-                <td style="font-size:12px;color:#666;white-space:nowrap">${fmtSolic}</td>
-                <td>
-                  <div class="td-actions">
-                    <button class="btn-icon" style="border-color:rgba(34,197,94,.3);color:#4ade80"
-                      onclick="responderSolic(${s.id},'aprovado')">✓ Aprovar</button>
-                    <button class="btn-icon danger"
-                      onclick="responderSolic(${s.id},'rejeitado')">✗ Rejeitar</button>
-                  </div>
-                </td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>`;
-  }
-
-  async function responderSolic(id, status) {
-    try {
-      await api.agenda.responderLiberacao(id, { status });
-      const msg = status === 'aprovado' ? 'Solicitação aprovada! Bloqueio removido para o barbeiro.' : 'Solicitação rejeitada.';
-      toast(msg, status === 'aprovado' ? 'success' : 'info');
-      await carregarSolicitacoes();
-    } catch(e) {
-      toast(e.message, 'error');
-    }
-  }
-
-  // Carrega badge ao iniciar a página
-  (async () => {
-    try {
-      const lista = await api.agenda.solicitacoesLib('pendente');
-      const badge = document.getElementById('solicBadge');
-      if (lista.length) { badge.textContent = lista.length; badge.style.display = ''; }
-    } catch {}
-  })();
+  btn.disabled = true; btn.textContent = 'Salvando…';
+  try {
+    await Bos.post('/gestor/agenda/agendamento-manual', dados);
+    toast('Agendamento criado!', 'success');
+    fecharModal('modalNovoAg');
+    carregar();
+  } catch(e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = 'Agendar'; }
+}
 </script>
 {% endblock %}

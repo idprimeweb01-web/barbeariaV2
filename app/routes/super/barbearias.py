@@ -51,6 +51,16 @@ def _fmt_barbearia(b):
         'pix_cidade':      b.pix_cidade,
         'pix_banco':       b.pix_banco,
         'criado_em':       b.criado_em.isoformat() if b.criado_em else None,
+        # Endereço e contato público
+        'rua':             b.rua,
+        'numero':          b.numero,
+        'complemento':     b.complemento,
+        'bairro':          b.bairro,
+        'cidade':          b.cidade,
+        'estado':          b.estado,
+        'cep':             b.cep,
+        'telefone_contato': b.telefone_contato,
+        'instagram':       b.instagram,
     }
 
 
@@ -120,8 +130,25 @@ def criar_barbearia():
     if Usuario.query.filter_by(email=gestor_email).first():
         raise APIError(f'Email "{gestor_email}" já está em uso.', 409)
 
+    # Campos opcionais de endereço/contato
+    def _opt(k): return (dados.get(k) or '').strip() or None
+    rua              = _opt('rua')
+    numero           = _opt('numero')
+    complemento      = _opt('complemento')
+    bairro           = _opt('bairro')
+    cidade           = _opt('cidade')
+    estado           = (_opt('estado') or '')[:2].upper() or None
+    cep              = _opt('cep')
+    telefone_contato = _opt('telefone_contato')
+    instagram        = _opt('instagram')
+
     # Bloco atômico — tudo ou nada
-    barbearia = Barbearia(nome=nome, slug=slug, nome_exibicao=nome_exibicao, ativo=True)
+    barbearia = Barbearia(
+        nome=nome, slug=slug, nome_exibicao=nome_exibicao, ativo=True,
+        rua=rua, numero=numero, complemento=complemento,
+        bairro=bairro, cidade=cidade, estado=estado,
+        cep=cep, telefone_contato=telefone_contato, instagram=instagram,
+    )
     db.session.add(barbearia)
     db.session.flush()  # obtém barbearia.id sem commitar
 
@@ -216,9 +243,15 @@ def editar_barbearia(barbearia_id):
             raise APIError(f'Slug "{slug}" já está em uso.', 409)
         b.slug = slug
 
-    for campo in ('url_agendamento', 'chave_pix', 'pix_nome_titular', 'pix_cidade', 'pix_banco'):
+    for campo in ('url_agendamento', 'chave_pix', 'pix_nome_titular', 'pix_cidade', 'pix_banco',
+                  'rua', 'numero', 'complemento', 'bairro', 'cidade', 'cep',
+                  'telefone_contato', 'instagram'):
         if campo in dados:
             setattr(b, campo, (dados[campo] or '').strip() or None)
+
+    if 'estado' in dados:
+        v = (dados['estado'] or '').strip().upper()
+        b.estado = v[:2] or None
 
     db.session.commit()
     return jsonify({'mensagem': 'Barbearia atualizada.', 'barbearia': _fmt_barbearia(b)}), 200

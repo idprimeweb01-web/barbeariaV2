@@ -1,135 +1,291 @@
 {% extends "gestor/base.html" %}
 {% block title %}Dashboard{% endblock %}
-{% block page_title %}Dashboard{% endblock %}
+{% block breadcrumb %}
+<span class="breadcrumb-current">Dashboard</span>
+{% endblock %}
 
 {% block styles %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ── Cards principais ── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.kpi-card {
+  background: #232323;
+  border: 1px solid #2d2d2d;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.kpi-val {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--cor-primaria);
+  line-height: 1;
+}
+.kpi-sub {
+  font-size: 12px;
+  color: #444;
+}
+
+/* Card Top Serviços inline */
+.kpi-list { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+.kpi-list-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #aaa;
+}
+.kpi-list-row strong { color: #ddd; font-weight: 600; }
+
+/* Card PIX */
+.kpi-pix { border-color: rgba(243,156,18,.3); }
+.kpi-pix .kpi-val { color: #fcd34d; }
+.kpi-pix-btn {
+  margin-top: 4px;
+  background: none;
+  border: 1px solid rgba(243,156,18,.4);
+  border-radius: 6px;
+  color: #f59e0b;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  width: fit-content;
+  transition: all .15s;
+}
+.kpi-pix-btn:hover { background: rgba(243,156,18,.1); }
+
+/* ── Linha secundária ── */
+.dash-row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.info-card {
+  background: #232323;
+  border: 1px solid #2d2d2d;
+  border-radius: 12px;
+  padding: 18px;
+}
+.info-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 14px;
+}
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 0;
+  border-bottom: 1px solid #1e1e1e;
+  font-size: 13px;
+}
+.info-row:last-child { border-bottom: none; }
+.info-row-name { color: #bbb; }
+.info-row-val  { color: var(--cor-primaria); font-weight: 700; }
+.info-row-val.danger { color: #f87171; }
+
+.dash-loading { text-align: center; padding: 60px; color: #444; }
+
+@media (max-width: 680px) { .dash-row2 { grid-template-columns: 1fr; } }
+</style>
 {% endblock %}
 
 {% block content %}
-<div id="loading" style="color:#666;font-size:14px;padding:20px 0">Carregando métricas…</div>
+<div class="dash-loading" id="loadEl">Carregando…</div>
 
-<!-- Métricas -->
-<div class="metrics-grid" id="metricsGrid" style="display:none">
-  <div class="metric-card">
-    <div class="metric-label">Barbeiros</div>
-    <div class="metric-value" id="mBarbeiros">—</div>
-    <div class="metric-sub">ativos</div>
-  </div>
-  <div class="metric-card">
-    <div class="metric-label">Serviços</div>
-    <div class="metric-value" id="mServicos">—</div>
-    <div class="metric-sub">ativos</div>
-  </div>
-  <div class="metric-card">
-    <div class="metric-label">Produtos</div>
-    <div class="metric-value" id="mProdutos">—</div>
-    <div class="metric-sub">em estoque</div>
-  </div>
-  <div class="metric-card">
-    <div class="metric-label">Agendamentos Hoje</div>
-    <div class="metric-value" id="mAgendamentos">—</div>
-    <div class="metric-sub">pendentes</div>
-  </div>
-</div>
+<div id="dashConteudo" style="display:none">
 
-<!-- Solicitações de senha -->
-<div id="alertSenha" style="display:none;margin-bottom:20px">
-  <div class="alert alert-error" style="justify-content:space-between;align-items:center">
-    <span>
-      <strong id="alertSenhaQtd">0</strong> solicitação(ões) de redefinição de senha pendente(s).
-    </span>
-    <a href="/gestor/esqueci-senha" class="btn btn-secondary" style="width:auto;padding:8px 16px;font-size:13px;margin-left:16px">Ver solicitações</a>
-  </div>
-</div>
+  <!-- ── 4 cards principais ── -->
+  <div class="kpi-grid">
 
-<!-- Gráfico -->
-<div class="chart-wrap" id="chartWrap" style="display:none">
-  <div class="chart-title">Faturamento — últimos 7 dias</div>
-  <canvas id="chartReceita" height="100"></canvas>
+    <!-- Card 1: Agendamentos hoje -->
+    <div class="kpi-card">
+      <div class="kpi-label">📅 Agendamentos Hoje</div>
+      <div class="kpi-val" id="dAgendados">—</div>
+      <div class="kpi-sub" id="dConcluidos"></div>
+    </div>
+
+    <!-- Card 2: Top 3 serviços -->
+    <div class="kpi-card">
+      <div class="kpi-label">✂️ Top Serviços do Mês</div>
+      <div class="kpi-list" id="topServicos">
+        <div style="color:#444;font-size:12px">Sem dados</div>
+      </div>
+    </div>
+
+    <!-- Card 3: PIX pendentes -->
+    <div class="kpi-card kpi-pix" id="pixCard" style="display:none">
+      <div class="kpi-label">⚡ PIX Pendentes</div>
+      <div class="kpi-val" id="dPix">0</div>
+      <button class="kpi-pix-btn" onclick="location.href='/gestor/agenda'">Ver na Agenda →</button>
+    </div>
+
+    <!-- Card 4: Receita do mês -->
+    <div class="kpi-card">
+      <div class="kpi-label">💰 Receita do Mês</div>
+      <div class="kpi-val" id="dReceita">—</div>
+      <div class="kpi-sub" id="dTicket"></div>
+    </div>
+
+  </div>
+
+  <!-- ── Linha 2: Gráfico 7 dias + Estoque crítico ── -->
+  <div class="dash-row2">
+
+    <div class="info-card">
+      <div class="info-title">📈 Receita — últimos 7 dias</div>
+      <canvas id="chartReceita" height="180"></canvas>
+    </div>
+
+    <div class="info-card">
+      <div class="info-title">⚠️ Estoque Crítico</div>
+      <div id="estoqueLista">
+        <div style="color:#444;font-size:13px">Sem alertas ✓</div>
+      </div>
+    </div>
+
+  </div>
+
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  let chart;
+(async function() {
+  try {
+    // ── Dados do dashboard ──
+    const d = await Bos.get('/gestor/dashboard');
 
-  function fmtData(iso) {
-    const [,m,d] = iso.split('-');
-    return `${d}/${m}`;
-  }
+    document.getElementById('loadEl').style.display = 'none';
+    document.getElementById('dashConteudo').style.display = '';
 
-  async function carregar() {
-    try {
-      const d = await api.metricas();
-      document.getElementById('loading').style.display = 'none';
+    // Card 1 — Agendamentos
+    const agd = d.hoje?.agendamentos_agendados ?? 0;
+    const conc = d.hoje?.agendamentos_concluidos ?? 0;
+    document.getElementById('dAgendados').textContent  = agd;
+    document.getElementById('dConcluidos').textContent = `${conc} concluído${conc !== 1 ? 's' : ''} hoje`;
 
-      // Métricas
-      document.getElementById('mBarbeiros').textContent   = d.total_barbeiros;
-      document.getElementById('mServicos').textContent    = d.total_servicos;
-      document.getElementById('mProdutos').textContent    = d.total_produtos;
-      document.getElementById('mAgendamentos').textContent = d.agendamentos_hoje;
-      document.getElementById('metricsGrid').style.display = '';
+    // Card 2 — Top Serviços (key pode ter acento: top_serviços)
+    const topKey = Object.keys(d).find(k => k.startsWith('top_')) || '';
+    const top    = (topKey ? d[topKey] : []) || [];
+    const topEl  = document.getElementById('topServicos');
+    topEl.innerHTML = top.length
+      ? top.slice(0, 3).map((s, i) => `
+          <div class="kpi-list-row">
+            <span>${i + 1}. <strong>${esc(s.nome || '—')}</strong></span>
+            <span>${s.quantidade}×</span>
+          </div>`).join('')
+      : '<div style="color:#444;font-size:12px">Nenhum serviço ainda</div>';
 
-      // Badge sidebar
-      if (d.sol_pendentes > 0) {
-        const b = document.getElementById('sidebar-badge');
-        b.textContent = d.sol_pendentes; b.style.display = '';
-      }
-
-      // Alerta senha
-      if (d.sol_pendentes > 0) {
-        document.getElementById('alertSenhaQtd').textContent = d.sol_pendentes;
-        document.getElementById('alertSenha').style.display = '';
-      }
-
-      // Gráfico
-      document.getElementById('chartWrap').style.display = '';
-      const labels  = d.receita_7dias.map(r => fmtData(r.data));
-      const valores = d.receita_7dias.map(r => r.receita);
-
-      const ctx = document.getElementById('chartReceita').getContext('2d');
-      chart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels,
-          datasets: [{
-            label: 'Receita (R$)',
-            data: valores,
-            backgroundColor: 'rgba(186,117,23,.35)',
-            borderColor: '#BA7517',
-            borderWidth: 2,
-            borderRadius: 6,
-          }],
-        },
-        options: {
-          responsive: true,
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                label: ctx => `R$ ${ctx.parsed.y.toFixed(2)}`,
-              },
-            },
-          },
-          scales: {
-            x: { grid: { color: '#2d2d2d' }, ticks: { color: '#777' } },
-            y: {
-              grid: { color: '#2d2d2d' }, ticks: { color: '#777' },
-              beginAtZero: true,
-              ticks: {
-                callback: v => `R$${v}`,
-                color: '#777',
-              },
-            },
-          },
-        },
-      });
-    } catch(e) {
-      document.getElementById('loading').textContent = 'Erro ao carregar: ' + e.message;
+    // Card 3 — PIX
+    const pix = d.pendentes_pix || 0;
+    if (pix > 0) {
+      document.getElementById('dPix').textContent = pix;
+      document.getElementById('pixCard').style.display = '';
     }
-  }
 
-  carregar();
+    // Card 4 — Receita
+    const rec = d.mes?.receita ?? 0;
+    const tk  = d.mes?.ticket_medio ?? 0;
+    document.getElementById('dReceita').textContent = fmtR(rec);
+    document.getElementById('dTicket').textContent  = 'ticket médio ' + fmtR(tk);
+
+    // Estoque crítico
+    const est = d.estoque_critico || [];
+    document.getElementById('estoqueLista').innerHTML = est.length
+      ? est.slice(0, 8).map(p => `
+          <div class="info-row">
+            <span class="info-row-name">${esc(p.nome)}</span>
+            <span class="info-row-val danger">${p.estoque} un.</span>
+          </div>`).join('')
+      : '<div style="color:#444;font-size:13px">Sem alertas ✓</div>';
+
+    // ── Gráfico 7 dias ──
+    await carregarChart7Dias();
+
+  } catch(e) {
+    document.getElementById('loadEl').textContent = 'Erro ao carregar: ' + e.message;
+  }
+})();
+
+async function carregarChart7Dias() {
+  const hoje = new Date();
+  const datas = [];
+  const labels = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(hoje);
+    d.setDate(d.getDate() - i);
+    datas.push(d.toISOString().split('T')[0]);
+    labels.push(d.toLocaleDateString('pt-BR', {weekday: 'short', day:'2-digit'}));
+  }
+  const de  = datas[0];
+  const ate = datas[6];
+
+  try {
+    const r   = await Bos.get('/gestor/relatorios/agendamentos?de=' + de + '&ate=' + ate);
+    const rows = r.dados || [];
+
+    const porDia = {};
+    datas.forEach(dt => porDia[dt] = 0);
+    rows.forEach(row => {
+      if (row.status !== 'concluido') return;
+      // data no formato dd/mm/yyyy HH:MM
+      let dt = row.data || '';
+      if (dt.includes('/')) {
+        const [dpart] = dt.split(' ');
+        const [dd, mm, yyyy] = dpart.split('/');
+        dt = `${yyyy}-${mm}-${dd}`;
+      }
+      if (porDia.hasOwnProperty(dt)) {
+        porDia[dt] += parseFloat(row.valor_total || 0);
+      }
+    });
+
+    const valores = datas.map(dt => porDia[dt]);
+    new Chart(document.getElementById('chartReceita'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          data: valores,
+          backgroundColor: 'rgba(243,156,18,.25)',
+          borderColor: '#f39c12',
+          borderWidth: 2,
+          borderRadius: 4,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: c => fmtR(c.parsed.y) } },
+        },
+        scales: {
+          x: { grid: { color: '#1e1e1e' }, ticks: { color: '#555', font: { size: 10 } } },
+          y: { grid: { color: '#1e1e1e' }, ticks: { color: '#555', callback: v => fmtR(v) }, beginAtZero: true },
+        },
+      },
+    });
+  } catch { /* sem dados, gráfico fica vazio */ }
+}
 </script>
 {% endblock %}

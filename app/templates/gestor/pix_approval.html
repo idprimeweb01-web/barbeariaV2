@@ -90,7 +90,7 @@ let solicitacaoEmEdicao = null;
 
 async function carregarSolicitacoes() {
   try {
-    const solicitacoes = await api.features.pixPendentes();
+    const solicitacoes = await Bos.get('/gestor/planos/solicitacoes?status=pendente');
     renderizarSolicitacoes(solicitacoes);
   } catch (e) {
     document.getElementById('pixList').innerHTML = `<div class="pix-empty">❌ Erro: ${e.message}</div>`;
@@ -107,30 +107,33 @@ function renderizarSolicitacoes(solicitacoes) {
     return;
   }
 
-  document.getElementById('pixList').innerHTML = solicitacoes.map(s => `
+  document.getElementById('pixList').innerHTML = solicitacoes.map(s => {
+    const clienteNome = s.cliente?.nome || '?';
+    const planoNome   = s.plano?.nome || '—';
+    return `
     <div class="pix-card">
       <div class="pix-left">
-        <div class="pix-avatar">${(s.cliente_nome || '?').charAt(0).toUpperCase()}</div>
+        <div class="pix-avatar">${clienteNome.charAt(0).toUpperCase()}</div>
         <div class="pix-info">
-          <div class="pix-nome">${s.cliente_nome} — ${s.plano_nome}</div>
-          <div class="pix-meta">#${s.id} • ${new Date(s.criado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+          <div class="pix-nome">${clienteNome} — ${planoNome}</div>
+          <div class="pix-meta">#${s.id} • ${new Date(s.criado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</div>
           <div class="pix-valor">R$ ${parseFloat(s.valor).toFixed(2)}</div>
-          ${s.comprovante_url ? `<a class="pix-comprovante" href="${s.comprovante_url}" target="_blank">Ver comprovante</a>` : `<span class="pix-comprovante" style="color:#fbbf24">💵 Pagamento no local</span>`}
+          <span class="pix-comprovante" style="color:#fbbf24">💵 Pagamento via PIX</span>
         </div>
       </div>
       <div class="pix-actions">
         <button class="btn-pix btn-aprovar" onclick="aprovarSolicitacao(${s.id}, this)">✓ Aprovar</button>
         <button class="btn-pix btn-rejeitar" onclick="abrirModalRejeicao(${s.id})">✕ Rejeitar</button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 async function aprovarSolicitacao(id, btn) {
   if (!confirm('Aprovar esta solicitação?')) return;
   btn.disabled = true;
   try {
-    await api.features.pixAprovar(id);
+    await Bos.put('/gestor/planos/solicitacoes/' + id + '/aprovar', {});
     toast('Solicitação aprovada.', 'success');
     carregarSolicitacoes();
   } catch (e) {
@@ -158,7 +161,7 @@ async function confirmarRejeicao() {
   const btn = document.getElementById('btnConfirmarRejeicao');
   btn.disabled = true;
   try {
-    await api.features.pixRejeitar(solicitacaoEmEdicao, motivo);
+    await Bos.put('/gestor/planos/solicitacoes/' + solicitacaoEmEdicao + '/rejeitar', { motivo });
     toast('Solicitação rejeitada.', 'success');
     fecharModal('modalRejeicao');
     carregarSolicitacoes();

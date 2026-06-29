@@ -1,6 +1,10 @@
 {% extends "gestor/base.html" %}
 {% block title %}Produtos{% endblock %}
-{% block page_title %}Produtos{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Produtos</span>
+{% endblock %}
 
 {% block content %}
 <div class="section-header">
@@ -31,7 +35,6 @@
       <div class="field"><label>Categoria</label><input type="text" id="fCategoria" placeholder="ex: Pomadas, Óleos…"></div>
       <div class="field"><label>Preço (R$) *</label><input type="number" id="fPreco" min="0" step="0.01" required></div>
       <div class="field"><label>Estoque</label><input type="number" id="fEstoque" min="0" value="0"></div>
-      <div class="field"><label>Foto</label><div id="wFotoPd"></div></div>
       <div class="field" id="wrAtivo" style="display:none">
         <label class="toggle-label">
           <input type="checkbox" id="fAtivo" checked>
@@ -44,6 +47,30 @@
         <button type="submit" class="btn btn-primary" id="btnSalvar" style="width:auto;padding:9px 24px">Salvar</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Modal ajuste de estoque -->
+<div class="modal-overlay" id="modalEstoque" onclick="if(event.target===this)fecharModal('modalEstoque')">
+  <div class="modal-box" style="max-width:400px">
+    <div class="modal-header">
+      <h3>Ajustar Estoque</h3>
+      <button class="modal-close" onclick="fecharModal('modalEstoque')">×</button>
+    </div>
+    <p style="font-size:13px;color:#888;margin-bottom:14px" id="esProdNome"></p>
+    <div class="field"><label>Estoque atual</label>
+      <input type="number" id="esAtual" readonly style="background:#111;color:#888">
+    </div>
+    <div class="field"><label>Quantidade a ajustar</label>
+      <input type="number" id="esQtd" placeholder="Ex: 10 (entrada) ou -5 (saída)" step="1">
+    </div>
+    <div class="field"><label>Motivo (opcional)</label>
+      <input type="text" id="esMotivo" placeholder="Ex: Reposição, Uso em atendimento…">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modalEstoque')">Cancelar</button>
+      <button class="btn btn-primary" style="width:auto;padding:9px 24px" onclick="confirmarEstoque()" id="btnConfEs">Aplicar</button>
+    </div>
   </div>
 </div>
 
@@ -73,7 +100,7 @@
   let _editId = null;
 
   async function carregar() {
-    try { _todos = await api.produtos.listar(); }
+    try { _todos = await Bos.get('/gestor/produtos'); }
     catch(e) { _todos = []; toast(e.message, 'error'); }
     renderTabela();
   }
@@ -94,6 +121,7 @@
         <td>${p.ativo ? '<span class="badge-green">Ativo</span>' : '<span class="badge-gray">Inativo</span>'}</td>
         <td><div class="td-actions">
           <button class="btn-icon" onclick="editarModal(${p.id})">Editar</button>
+          <button class="btn-icon" onclick="abrirEstoque(${p.id},'${esc(p.nome)}',${p.quantidade_estoque})">Estoque</button>
           ${p.ativo ? `<button class="btn-icon danger" onclick="abrirDel(${p.id},'${esc(p.nome)}')">Remover</button>` : ''}
         </div></td>
       </tr>
@@ -116,7 +144,6 @@
     document.getElementById('modalTitulo').textContent = 'Novo Produto';
     document.getElementById('form').reset();
     document.getElementById('wrAtivo').style.display = 'none';
-    uploadWidget.init('wFotoPd', { forma: 'quadrado', urlAtual: null });
     abrirModal('modal');
   }
 
@@ -131,15 +158,6 @@
     document.getElementById('fEstoque').value   = p.quantidade_estoque;
     document.getElementById('fAtivo').checked   = p.ativo;
     document.getElementById('wrAtivo').style.display = '';
-    uploadWidget.init('wFotoPd', {
-      forma: 'quadrado',
-      urlAtual: p.foto,
-      onUpload: async f => {
-        const r = await api.upload.produto(id, f);
-        toast('Foto atualizada!', 'info');
-        return r.url;
-      },
-    });
     abrirModal('modal');
   }
 
@@ -155,16 +173,8 @@
     };
     if (_editId) dados.ativo = document.getElementById('fAtivo').checked;
     try {
-      let res;
-      if (_editId) res = await api.produtos.editar(_editId, dados);
-      else         res = await api.produtos.criar(dados);
-
-      const fotoFile = uploadWidget.getFile('wFotoPd');
-      if (fotoFile) {
-        const pid = _editId || res.produto.id;
-        await api.upload.produto(pid, fotoFile).catch(e => toast('Foto: ' + e.message, 'error'));
-      }
-
+      if (_editId) await Bos.patch('/gestor/produtos/' + _editId, dados);
+      else         await Bos.post('/gestor/produtos', dados);
       fecharModal('modal');
       toast(_editId ? 'Produto atualizado!' : 'Produto criado!');
       await carregar();
@@ -182,7 +192,7 @@
     const btn = document.getElementById('btnConfDel');
     btn.disabled = true; btn.textContent = '…';
     try {
-      await api.produtos.deletar(_delId);
+      await Bos.patch('/gestor/produtos/' + _delId, { ativo: false });
       fecharModal('modalDel');
       toast('Produto desativado.');
       await carregar();
@@ -190,7 +200,31 @@
     finally { btn.disabled = false; btn.textContent = 'Desativar'; }
   }
 
-  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  let _esId = null;
+  function abrirEstoque(id, nome, atual) {
+    _esId = id;
+    document.getElementById('esProdNome').textContent = nome;
+    document.getElementById('esAtual').value  = atual;
+    document.getElementById('esQtd').value    = '';
+    document.getElementById('esMotivo').value = '';
+    abrirModal('modalEstoque');
+  }
+  async function confirmarEstoque() {
+    const btn = document.getElementById('btnConfEs');
+    const qtd = parseInt(document.getElementById('esQtd').value);
+    if (!qtd) { toast('Informe a quantidade.', 'error'); return; }
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      await Bos.post('/gestor/produtos/' + _esId + '/ajustar-estoque', {
+        quantidade: qtd,
+        motivo: document.getElementById('esMotivo').value.trim() || null,
+      });
+      toast('Estoque atualizado!', 'success');
+      fecharModal('modalEstoque');
+      await carregar();
+    } catch(e) { toast(e.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Aplicar'; }
+  }
 
   carregar();
 </script>

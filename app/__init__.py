@@ -150,6 +150,12 @@ def create_app(config=None):
     from .routes.gestor.auditoria import gestor_auditoria_bp
     app.register_blueprint(gestor_auditoria_bp)
 
+    from .routes.gestor.clientes import gestor_clientes_bp
+    app.register_blueprint(gestor_clientes_bp)
+
+    from .routes.gestor.barbearia import gestor_barbearia_bp
+    app.register_blueprint(gestor_barbearia_bp)
+
     from .routes.cliente.notificacoes import cliente_notif_bp
     app.register_blueprint(cliente_notif_bp)
 

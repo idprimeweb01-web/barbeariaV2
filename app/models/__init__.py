@@ -29,6 +29,16 @@ class Barbearia(db.Model):
     billing_proximo_vencimento = db.Column(db.Date)
     billing_status            = db.Column(db.String(20), nullable=False, default='em_dia')
     # em_dia | atrasado | suspenso
+    # ── Endereço e contato público ─────────────────────────────────────────────
+    rua              = db.Column(db.String(200))
+    numero           = db.Column(db.String(10))
+    complemento      = db.Column(db.String(100))
+    bairro           = db.Column(db.String(100))
+    cidade           = db.Column(db.String(100))
+    estado           = db.Column(db.String(2))
+    cep              = db.Column(db.String(9))
+    telefone_contato = db.Column(db.String(20))
+    instagram        = db.Column(db.String(100))
 
 
 # ── Usuários ───────────────────────────────────────────────────────────────────
@@ -219,6 +229,19 @@ class HorarioBloqueado(TenantMixin, db.Model):
     data_hora_inicio = db.Column(db.DateTime, nullable=False)
     data_hora_fim    = db.Column(db.DateTime, nullable=False)
     motivo           = db.Column(db.String(100))
+
+
+class PausaBarbeiro(db.Model):
+    """Pausas diárias recorrentes de um barbeiro (almoço, café, etc.)."""
+    __tablename__ = 'pausa_barbeiro'
+
+    id           = db.Column(db.Integer, primary_key=True)
+    barbearia_id = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False)
+    barbeiro_id  = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=False, index=True)
+    hora_inicio  = db.Column(db.Time, nullable=False)
+    hora_fim     = db.Column(db.Time, nullable=False)
+    descricao    = db.Column(db.String(50))
+    criado_em    = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 # ── Atendimento / Caixa ────────────────────────────────────────────────────────

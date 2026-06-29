@@ -3,267 +3,289 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BarberOS — {% block title %}Painel{% endblock %}</title>
+  <title>{% block title %}Painel{% endblock %} — Gestor</title>
   <link rel="stylesheet" href="/static/css/style.css">
   <script>
-    (function(){try{var t=JSON.parse(localStorage.getItem('barberos_barbearia_tema'));if(t){var r=document.documentElement.style;if(t.cor_primaria)r.setProperty('--cor-primaria',t.cor_primaria);if(t.cor_fundo)r.setProperty('--cor-fundo',t.cor_fundo);if(t.cor_card)r.setProperty('--cor-card',t.cor_card);if(t.fonte)r.setProperty('--fonte',"'"+t.fonte+"', sans-serif");}}catch(e){}}());
+    (function(){try{var t=JSON.parse(localStorage.getItem('bos_tema'));if(t){var r=document.documentElement.style;if(t.cor_primaria)r.setProperty('--cor-primaria',t.cor_primaria);if(t.cor_fundo)r.setProperty('--cor-fundo',t.cor_fundo);if(t.cor_card)r.setProperty('--cor-card',t.cor_card);if(t.fonte)r.setProperty('--fonte',"'"+t.fonte+"', sans-serif");}}catch(e){}}());
   </script>
   {% block styles %}{% endblock %}
   <style>
+    :root { --cor-primaria: #f39c12; --cor-primaria-hover: #e67e22; }
+
     /* ── Shell ──────────────────────────────────────────────── */
     body { display: flex; margin: 0; }
     .app-shell { display: flex; width: 100%; min-height: 100vh; }
 
     /* ── Sidebar ─────────────────────────────────────────────── */
     .sidebar {
-      width: 230px; flex-shrink: 0;
-      background: #1f1f1f; border-right: 1px solid #2d2d2d;
+      width: 220px; flex-shrink: 0;
+      background: #1c1c1c; border-right: 1px solid #2a2a2a;
       display: flex; flex-direction: column;
       position: fixed; left: 0; top: 0; height: 100vh;
       z-index: 200; transition: transform .25s;
     }
     .sidebar-brand {
-      padding: 20px 20px 16px;
-      font-size: 20px; font-weight: 700;
-      border-bottom: 1px solid #2d2d2d;
+      padding: 18px 18px 14px;
+      border-bottom: 1px solid #2a2a2a;
+      display: flex; align-items: center; gap: 10px;
     }
-    .sidebar-brand a { color: #fff; text-decoration: none; }
-    .sidebar-brand span { color: var(--cor-primaria); }
-    .sidebar-nav { flex: 1; padding: 8px 0; overflow-y: auto; }
+    .sidebar-logo {
+      width: 30px; height: 30px; border-radius: 8px;
+      background: var(--cor-primaria); display: flex; align-items: center;
+      justify-content: center; flex-shrink: 0;
+    }
+    .sidebar-logo svg { color: #1a1a1a; }
+    .sidebar-brand-text { flex: 1; min-width: 0; }
+    .sidebar-brand-name { font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sidebar-brand-sub  { font-size: 10px; color: #555; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+
+    .sidebar-nav { flex: 1; padding: 6px 0; overflow-y: auto; }
+    .nav-sep { height: 1px; background: #2a2a2a; margin: 8px 12px; }
     .nav-link {
       display: flex; align-items: center; gap: 10px;
-      padding: 11px 20px; color: #888; text-decoration: none;
-      font-size: 14px; font-weight: 500;
+      padding: 10px 16px; color: #666; text-decoration: none;
+      font-size: 13px; font-weight: 500;
       border-left: 3px solid transparent;
-      transition: all .15s;
+      transition: all .15s; white-space: nowrap;
     }
-    .nav-link:hover { color: #ddd; background: rgba(255,255,255,.04); }
-    .nav-link.active { color: var(--cor-primaria); background: rgba(186,117,23,.1); border-left-color: var(--cor-primaria); }
-    .nav-link svg { flex-shrink: 0; }
-    .nav-section { padding: 16px 20px 4px; font-size: 10px; font-weight: 700; color: #555; letter-spacing: 1px; text-transform: uppercase; }
+    .nav-link:hover { color: #ccc; background: rgba(255,255,255,.04); }
+    .nav-link.active { color: var(--cor-primaria); background: rgba(243,156,18,.08); border-left-color: var(--cor-primaria); }
+    .nav-link svg { flex-shrink: 0; opacity: .8; }
+    .nav-link.active svg { opacity: 1; }
+    .nav-badge {
+      margin-left: auto; background: #dc2626; color: #fff;
+      border-radius: 999px; padding: 1px 6px; font-size: 10px; font-weight: 800;
+    }
+
     .sidebar-footer {
-      padding: 14px 16px; border-top: 1px solid #2d2d2d;
+      padding: 12px 14px; border-top: 1px solid #2a2a2a;
       display: flex; align-items: center; gap: 10px;
     }
     .user-avatar {
-      width: 34px; height: 34px; border-radius: 50%;
-      background: rgba(186,117,23,.2); border: 1.5px solid rgba(186,117,23,.4);
+      width: 32px; height: 32px; border-radius: 50%;
+      background: rgba(243,156,18,.15); border: 1.5px solid rgba(243,156,18,.3);
       display: flex; align-items: center; justify-content: center;
-      font-size: 14px; font-weight: 700; color: var(--cor-primaria);
-      flex-shrink: 0;
+      font-size: 13px; font-weight: 700; color: var(--cor-primaria); flex-shrink: 0;
     }
     .sidebar-user-info { flex: 1; min-width: 0; }
-    .sidebar-user-name { font-size: 13px; font-weight: 600; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .sidebar-user-role { font-size: 11px; color: #666; }
+    .sidebar-user-name { font-size: 12px; font-weight: 600; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sidebar-user-role { font-size: 10px; color: #555; }
     .btn-logout {
-      background: none; border: none; color: #555; cursor: pointer;
+      background: none; border: none; color: #444; cursor: pointer;
       padding: 4px; transition: color .15s; border-radius: 6px;
       display: flex; align-items: center;
     }
     .btn-logout:hover { color: #dc2626; }
 
     /* ── Main area ───────────────────────────────────────────── */
-    .app-main { margin-left: 230px; flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+    .app-main { margin-left: 220px; flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+
     .app-header {
-      height: 56px; background: #1f1f1f; border-bottom: 1px solid #2d2d2d;
-      padding: 0 16px 0 20px; display: flex; align-items: center; gap: 10px;
+      height: 52px; background: #1c1c1c; border-bottom: 1px solid #2a2a2a;
+      padding: 0 20px 0 16px; display: flex; align-items: center; gap: 8px;
       position: sticky; top: 0; z-index: 100;
     }
-    .hamburger { display: none; background: none; border: none; color: #888; cursor: pointer; padding: 4px; align-items: center; flex-shrink: 0; }
+    .hamburger { display: none; background: none; border: none; color: #666; cursor: pointer; padding: 4px; align-items: center; flex-shrink: 0; }
     .hamburger:hover { color: #ccc; }
-    .page-title { font-size: 16px; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    /* Status toggle */
-    .hdr-status {
-      display: flex; align-items: center; gap: 6px;
-      background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.25);
-      border-radius: 20px; padding: 5px 12px;
-      font-size: 11px; font-weight: 800; letter-spacing: .3px;
-      color: #4ade80; cursor: pointer; font-family: inherit;
-      transition: all .2s; white-space: nowrap; flex-shrink: 0;
-    }
-    .hdr-status.fechado { background: rgba(220,38,38,.1); border-color: rgba(220,38,38,.3); color: #f87171; }
-    .hdr-status:disabled { opacity: .6; cursor: wait; }
-    .hdr-dot {
-      width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0;
-      animation: hdr-pulse 2s infinite;
-    }
-    .hdr-status.fechado .hdr-dot { animation: none; opacity: .8; }
-    @keyframes hdr-pulse { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+    /* Breadcrumb */
+    .breadcrumb { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; overflow: hidden; }
+    .breadcrumb a { font-size: 13px; color: #555; text-decoration: none; white-space: nowrap; }
+    .breadcrumb a:hover { color: #aaa; }
+    .breadcrumb-sep { font-size: 12px; color: #3a3a3a; flex-shrink: 0; }
+    .breadcrumb-current { font-size: 13px; font-weight: 600; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    /* Header right items */
-    .hdr-username {
-      font-size: 12px; color: #666; white-space: nowrap;
-      overflow: hidden; text-overflow: ellipsis; max-width: 110px; flex-shrink: 1;
-    }
+    .hdr-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .hdr-username { font-size: 12px; color: #555; white-space: nowrap; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
     .hdr-logout {
-      background: none; border: none; color: #555; cursor: pointer;
+      background: none; border: none; color: #444; cursor: pointer;
       padding: 6px; border-radius: 6px; display: flex; align-items: center;
-      transition: color .15s; flex-shrink: 0;
+      transition: color .15s;
     }
     .hdr-logout:hover { color: #dc2626; }
 
-    .app-content { flex: 1; padding: 24px; }
-
-    /* ── Booking banner ─────────────────────────────────────── */
+    /* Link de agendamento */
     .bk-bar {
-      background: rgba(186,117,23,.06); border-bottom: 1px solid rgba(186,117,23,.12);
-      padding: 6px 24px; display: flex; align-items: center; gap: 10px;
+      background: rgba(243,156,18,.05); border-bottom: 1px solid rgba(243,156,18,.1);
+      padding: 5px 20px; display: flex; align-items: center; gap: 10px;
     }
-    .bk-label { font-size: 11px; color: #666; font-weight: 600; white-space: nowrap; }
+    .bk-label { font-size: 11px; color: #555; font-weight: 600; white-space: nowrap; }
     .bk-link  { font-size: 12px; font-weight: 700; color: var(--cor-primaria); text-decoration: none; }
     .bk-link:hover { text-decoration: underline; }
     .bk-copy  {
-      background: none; border: 1px solid rgba(186,117,23,.3); color: var(--cor-primaria);
+      background: none; border: 1px solid rgba(243,156,18,.3); color: var(--cor-primaria);
       border-radius: 6px; padding: 2px 8px; font-size: 10px; font-weight: 700;
       cursor: pointer; font-family: inherit;
     }
-    .bk-copy:hover { background: rgba(186,117,23,.1); }
+    .bk-copy:hover { background: rgba(243,156,18,.1); }
 
-    /* ── Page section ────────────────────────────────────────── */
+    /* ── App content ─────────────────────────────────────────── */
+    .app-content { flex: 1; padding: 22px 24px; }
+
+    /* ── Section header ──────────────────────────────────────── */
     .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-    .section-title { font-size: 18px; font-weight: 700; }
+    .section-title  { font-size: 17px; font-weight: 700; }
 
-    /* ── Cards grid ──────────────────────────────────────────── */
-    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 14px; margin-bottom: 24px; }
-    .metric-card {
-      background: #242424; border: 1px solid #2d2d2d; border-radius: 10px;
-      padding: 18px 20px; display: flex; flex-direction: column; gap: 6px;
+    /* ── Buttons ─────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 18px; border-radius: 8px; border: none;
+      font-size: 13px; font-weight: 700; font-family: inherit;
+      cursor: pointer; transition: all .15s; text-decoration: none;
     }
-    .metric-label { font-size: 12px; color: #777; font-weight: 500; text-transform: uppercase; letter-spacing: .4px; }
-    .metric-value { font-size: 30px; font-weight: 700; color: var(--cor-primaria); line-height: 1; }
-    .metric-sub   { font-size: 12px; color: #555; }
+    .btn-primary { background: var(--cor-primaria); color: #1a1a1a; }
+    .btn-primary:hover { background: var(--cor-primaria-hover); }
+    .btn-ghost  { background: none; border: 1px solid #333; color: #aaa; }
+    .btn-ghost:hover { border-color: #555; color: #ddd; }
+    .btn-danger { background: rgba(220,38,38,.12); border: 1px solid rgba(220,38,38,.3); color: #f87171; }
+    .btn-danger:hover { background: rgba(220,38,38,.2); }
+    .btn:disabled { opacity: .5; cursor: wait; }
 
-    /* ── Table ───────────────────────────────────────────────── */
-    .table-wrap { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; overflow: hidden; }
-    .data-table { width: 100%; border-collapse: collapse; }
-    .data-table th {
-      padding: 11px 16px; text-align: left; font-size: 11px; font-weight: 700;
-      color: #666; text-transform: uppercase; letter-spacing: .5px;
-      background: #1e1e1e; border-bottom: 1px solid #2d2d2d;
-    }
-    .data-table td { padding: 12px 16px; font-size: 14px; border-bottom: 1px solid #252525; vertical-align: middle; }
-    .data-table tbody tr:last-child td { border-bottom: none; }
-    .data-table tbody tr:hover { background: rgba(255,255,255,.02); }
-    .td-actions { display: flex; gap: 6px; }
-
-    /* ── Foto / Avatar ───────────────────────────────────────── */
-    .foto-avatar {
-      width: 34px; height: 34px; border-radius: 50%; object-fit: cover;
-      background: #333; display: inline-flex; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 600; color: #777; overflow: hidden; flex-shrink: 0;
-    }
-    .foto-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
-
-    /* ── Badges ──────────────────────────────────────────────── */
-    .badge-red  { background: rgba(220,38,38,.15); color: #f87171; border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; }
-    .badge-green{ background: rgba(34,197,94,.12);  color: #4ade80; border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; }
-    .badge-gray { background: rgba(255,255,255,.07);color: #777;    border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; }
-    .badge-num  { background: #dc2626; color: #fff; border-radius: 999px; padding: 1px 7px; font-size: 11px; font-weight: 800; display: inline-block; }
-
-    /* ── Action buttons ──────────────────────────────────────── */
     .btn-icon {
-      background: none; border: 1px solid #333; color: #888; border-radius: 7px;
+      background: none; border: 1px solid #2d2d2d; color: #777; border-radius: 7px;
       padding: 5px 10px; cursor: pointer; font-size: 12px; font-family: inherit;
       transition: all .15s; display: inline-flex; align-items: center; gap: 4px;
     }
     .btn-icon:hover { border-color: var(--cor-primaria); color: var(--cor-primaria); }
     .btn-icon.danger:hover { border-color: #dc2626; color: #dc2626; }
 
+    /* ── Metric cards ────────────────────────────────────────── */
+    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px,1fr)); gap: 14px; margin-bottom: 24px; }
+    .metric-card {
+      background: #242424; border: 1px solid #2d2d2d; border-radius: 10px;
+      padding: 18px 20px; display: flex; flex-direction: column; gap: 6px;
+    }
+    .metric-label { font-size: 11px; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+    .metric-value { font-size: 28px; font-weight: 800; color: var(--cor-primaria); line-height: 1; }
+    .metric-sub   { font-size: 12px; color: #555; }
+    .metric-icon  { font-size: 18px; margin-bottom: 4px; }
+
+    /* ── Table ───────────────────────────────────────────────── */
+    .table-wrap { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; overflow: hidden; }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th {
+      padding: 10px 16px; text-align: left; font-size: 11px; font-weight: 700;
+      color: #555; text-transform: uppercase; letter-spacing: .5px;
+      background: #1e1e1e; border-bottom: 1px solid #2d2d2d;
+    }
+    .data-table td { padding: 12px 16px; font-size: 13px; border-bottom: 1px solid #222; vertical-align: middle; }
+    .data-table tbody tr:last-child td { border-bottom: none; }
+    .data-table tbody tr:hover { background: rgba(255,255,255,.02); }
+    .td-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    /* ── Form fields ─────────────────────────────────────────── */
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 11px; color: #777; font-weight: 700; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .3px; }
+    .field input, .field select, .field textarea {
+      width: 100%; padding: 9px 12px; background: #1e1e1e; border: 1px solid #2d2d2d;
+      border-radius: 6px; color: #ddd; font-family: inherit; font-size: 13px;
+      outline: none; box-sizing: border-box; transition: border-color .2s;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--cor-primaria); }
+    .field select option { background: #1e1e1e; }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    /* ── Foto / Avatar ───────────────────────────────────────── */
+    .foto-avatar {
+      width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+      background: #2d2d2d; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: #666; overflow: hidden; flex-shrink: 0;
+    }
+    .foto-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+
+    /* ── Badges ──────────────────────────────────────────────── */
+    .badge { border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .badge-green  { background: rgba(34,197,94,.12);  color: #4ade80; }
+    .badge-orange { background: rgba(243,156,18,.12); color: #fbbf24; }
+    .badge-red    { background: rgba(220,38,38,.12);  color: #f87171; }
+    .badge-gray   { background: rgba(255,255,255,.07);color: #666;    }
+    .badge-blue   { background: rgba(59,130,246,.12); color: #93c5fd; }
+    .badge-num    { background: #dc2626; color: #fff; border-radius: 999px; padding: 1px 6px; font-size: 10px; font-weight: 800; }
+
     /* ── Modal ───────────────────────────────────────────────── */
     .modal-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,.65);
+      position: fixed; inset: 0; background: rgba(0,0,0,.7);
       display: none; align-items: center; justify-content: center;
       z-index: 1000; padding: 20px;
     }
     .modal-overlay.visible { display: flex; }
     .modal-box {
-      background: #242424; border: 1px solid #333; border-radius: 12px;
+      background: #232323; border: 1px solid #2d2d2d; border-radius: 12px;
       padding: 24px; width: 100%; max-width: 480px;
       max-height: 90vh; overflow-y: auto;
     }
+    .modal-box-lg { max-width: 600px; }
     .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
     .modal-header h3 { font-size: 15px; font-weight: 700; }
-    .modal-close { background: none; border: none; color: #666; font-size: 22px; cursor: pointer; line-height: 1; padding: 0; }
+    .modal-close { background: none; border: none; color: #555; font-size: 22px; cursor: pointer; line-height: 1; padding: 0; }
     .modal-close:hover { color: #fff; }
     .modal-footer { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
 
     /* ── Toggle switch ───────────────────────────────────────── */
-    .toggle-label { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; color: #ccc; }
+    .toggle-label { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; color: #bbb; }
     .toggle-label input[type=checkbox] { display: none; }
     .toggle-track {
-      width: 40px; height: 22px; background: #444; border-radius: 22px;
+      width: 38px; height: 21px; background: #3a3a3a; border-radius: 21px;
       position: relative; transition: background .2s; flex-shrink: 0;
     }
     .toggle-track::after {
       content: ''; position: absolute; top: 3px; left: 3px;
-      width: 16px; height: 16px; background: #fff; border-radius: 50%;
-      transition: transform .2s;
+      width: 15px; height: 15px; background: #666; border-radius: 50%;
+      transition: transform .2s, background .2s;
     }
     .toggle-label input:checked + .toggle-track { background: var(--cor-primaria); }
-    .toggle-label input:checked + .toggle-track::after { transform: translateX(18px); }
+    .toggle-label input:checked + .toggle-track::after { transform: translateX(17px); background: #1a1a1a; }
 
-    /* ── Checkboxes list ─────────────────────────────────────── */
-    .check-list { display: flex; flex-direction: column; gap: 8px; max-height: 180px; overflow-y: auto; padding: 4px 0; }
-    .check-item { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #ccc; cursor: pointer; }
-    .check-item input[type=checkbox] { accent-color: var(--cor-primaria); width: 16px; height: 16px; cursor: pointer; }
+    /* ── Check list ──────────────────────────────────────────── */
+    .check-list { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; padding: 2px 0; }
+    .check-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #ccc; cursor: pointer; }
+    .check-item input[type=checkbox] { accent-color: var(--cor-primaria); width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
+
+    /* ── Tabs ────────────────────────────────────────────────── */
+    .tabs { display: flex; gap: 2px; margin-bottom: 18px; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 4px; width: fit-content; }
+    .tab { padding: 7px 16px; border-radius: 6px; border: none; background: none; color: #666; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
+    .tab.active { background: var(--cor-primaria); color: #1a1a1a; }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
 
     /* ── Toast ───────────────────────────────────────────────── */
     #toasts { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; }
     .toast {
-      padding: 12px 16px; border-radius: 8px; font-size: 14px; font-weight: 500;
-      min-width: 220px; box-shadow: 0 4px 16px rgba(0,0,0,.4);
+      padding: 12px 16px; border-radius: 8px; font-size: 13px; font-weight: 500;
+      min-width: 220px; box-shadow: 0 4px 20px rgba(0,0,0,.5);
       animation: tIn .2s ease; pointer-events: none;
     }
     .toast.t-success { background: #14532d; border: 1px solid #16a34a; color: #bbf7d0; }
     .toast.t-error   { background: #7f1d1d; border: 1px solid #dc2626; color: #fecaca; }
-    .toast.t-info    { background: rgba(186,117,23,.15); border: 1px solid #BA7517; color: #fbbf24; }
+    .toast.t-info    { background: rgba(243,156,18,.12); border: 1px solid #f39c12; color: #fcd34d; }
     @keyframes tIn  { from { transform: translateX(110%); opacity:0; } to { transform: translateX(0); opacity:1; } }
     @keyframes tOut { to   { transform: translateX(110%); opacity:0; } }
     .toast.out { animation: tOut .2s ease forwards; }
 
-    /* ── Cards para agenda ───────────────────────────────────── */
-    .agenda-card { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; padding: 20px; margin-bottom: 14px; }
-    .agenda-card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
-    .agenda-card-name   { font-size: 15px; font-weight: 600; }
-    .agenda-form-row    { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-    .agenda-form-row-3  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-    .agenda-actions     { display: flex; gap: 8px; margin-top: 14px; }
-
-    /* ── Tabs ────────────────────────────────────────────────── */
-    .tabs { display: flex; gap: 4px; margin-bottom: 16px; background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 8px; padding: 4px; width: fit-content; }
-    .tab { padding: 7px 18px; border-radius: 6px; border: none; background: none; color: #777; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
-    .tab.active { background: var(--cor-primaria); color: #fff; }
-
     /* ── Empty state ─────────────────────────────────────────── */
-    .empty-state { text-align: center; padding: 48px 20px; color: #555; }
-    .empty-state svg { margin-bottom: 12px; opacity: .4; }
-    .empty-state p   { font-size: 14px; }
+    .empty-state { text-align: center; padding: 48px 20px; color: #444; }
+    .empty-state p { font-size: 14px; }
 
-    /* ── Chart container ─────────────────────────────────────── */
-    .chart-wrap { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; padding: 20px; }
-    .chart-title { font-size: 14px; font-weight: 600; color: #aaa; margin-bottom: 14px; }
+    /* ── Chart ───────────────────────────────────────────────── */
+    .chart-wrap { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; padding: 18px; }
+    .chart-title { font-size: 13px; font-weight: 600; color: #888; margin-bottom: 14px; }
 
     /* ── Responsive ──────────────────────────────────────────── */
     @media (max-width: 768px) {
       .sidebar { transform: translateX(-100%); }
-      .sidebar.open { transform: none; box-shadow: 4px 0 24px rgba(0,0,0,.5); }
+      .sidebar.open { transform: none; box-shadow: 6px 0 24px rgba(0,0,0,.6); }
       .app-main { margin-left: 0; }
       .hamburger { display: flex; }
       .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 199; display: none; }
       .sidebar-overlay.visible { display: block; }
       .metrics-grid { grid-template-columns: 1fr 1fr; }
-      .agenda-form-row, .agenda-form-row-3 { grid-template-columns: 1fr; }
+      .field-row { grid-template-columns: 1fr; }
     }
     @media (max-width: 480px) {
       .app-content { padding: 16px 12px; }
-      .app-header { padding: 0 10px 0 12px; gap: 7px; }
       .metrics-grid { grid-template-columns: 1fr; }
       .section-header { flex-direction: column; align-items: flex-start; gap: 10px; }
       .table-wrap { overflow-x: auto; }
-      .bk-bar { flex-wrap: wrap; padding: 8px 12px; gap: 6px; }
-      #hdrStatusLabel { display: none; }
-      .hdr-status { padding: 5px 8px; }
       .hdr-username { display: none; }
     }
   </style>
@@ -272,89 +294,140 @@
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
 <div class="app-shell">
-  <!-- Sidebar -->
+  <!-- ── Sidebar ── -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
-      <a href="/gestor/dashboard" id="sidebarBrand">BarberOS</a>
+      <div class="sidebar-logo">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="m14.5 2.5-9 9"/><path d="m7.5 4.5 7 7"/><path d="m2 22 6-2 10-10-4-4L4 16l-2 6z"/>
+        </svg>
+      </div>
+      <div class="sidebar-brand-text">
+        <div class="sidebar-brand-name" id="sidebarBrandName">{{ bk_nome }}</div>
+        <div class="sidebar-brand-sub">Gestor</div>
+      </div>
     </div>
+
     <nav class="sidebar-nav">
       <a href="/gestor/dashboard" class="nav-link" data-path="/gestor/dashboard">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
         Dashboard
       </a>
+      <a href="/gestor/agenda" class="nav-link" data-path="/gestor/agenda">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        Agenda
+      </a>
       <a href="/gestor/barbeiros" class="nav-link" data-path="/gestor/barbeiros">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        Barbeiros
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        Funcionários
       </a>
       <a href="/gestor/servicos" class="nav-link" data-path="/gestor/servicos">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14.5 2.5-9 9"/><path d="m7.5 4.5 7 7"/><path d="m2 22 6-2 10-10-4-4L4 16l-2 6z"/></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+          <path d="M4.93 4.93a10 10 0 0 0 0 14.14"/>
+        </svg>
         Serviços
       </a>
       <a href="/gestor/produtos" class="nav-link" data-path="/gestor/produtos">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+        </svg>
         Produtos
       </a>
-      <a href="/gestor/agenda" class="nav-link" data-path="/gestor/agenda">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        Agenda
-      </a>
-      <a href="/gestor/clientes" class="nav-link" data-path="/gestor/clientes">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        Clientes
-      </a>
-      <a href="/gestor/relatorios" class="nav-link" data-path="/gestor/relatorios">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        Relatórios
-      </a>
-      <div class="nav-section">Plataforma</div>
-      <a href="/gestor/planos" class="nav-link" data-path="/gestor/planos" id="nav-planos" style="display:none">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14.5 2.5-9 9"/><path d="m7.5 4.5 7 7"/><path d="m2 22 6-2 10-10-4-4L4 16l-2 6z"/></svg>
+      <a href="/gestor/planos" class="nav-link" data-path="/gestor/planos">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
         Planos
       </a>
-      <a href="/gestor/vip" class="nav-link" data-path="/gestor/vip" id="nav-vip" style="display:none">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 8.5 22 9.5 17 14.5 18.5 21.5 12 18 5.5 21.5 7 14.5 2 9.5 9 8.5 12 2"/></svg>
-        VIP + Brindes
+      <a href="/gestor/relatorios" class="nav-link" data-path="/gestor/relatorios">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+          <line x1="6" y1="20" x2="6" y2="14"/>
+        </svg>
+        Relatórios
       </a>
+      <a href="/gestor/clientes" class="nav-link" data-path="/gestor/clientes">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+        Clientes
+      </a>
+
+      <div class="nav-sep"></div>
+
       <a href="/gestor/pix-approval" class="nav-link" data-path="/gestor/pix-approval" id="nav-pix" style="display:none">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
-        Compras (PIX)
-      </a>
-      <a href="/gestor/esqueci-senha" class="nav-link" data-path="/gestor/esqueci-senha" id="nav-senha">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        Redefinições
-        <span class="badge-num" id="sidebar-badge" style="display:none;margin-left:auto">0</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
+        </svg>
+        Aprovar PIX
+        <span class="nav-badge" id="sidebar-badge" style="display:none">0</span>
       </a>
       <a href="/gestor/configuracoes/pix" class="nav-link" data-path="/gestor/configuracoes/pix">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><path d="M6 15h2"/></svg>
-        Configurar PIX
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
+        </svg>
+        Config. PIX
       </a>
     </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-avatar" id="userInitial">G</div>
+      <div class="sidebar-user-info">
+        <div class="sidebar-user-name" id="sidebarUserName">{{ g_nome }}</div>
+        <div class="sidebar-user-role">Gestor</div>
+      </div>
+      <button class="btn-logout" onclick="Bos.logout()" title="Sair">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
+    </div>
   </aside>
 
-  <!-- Main -->
+  <!-- ── Main ── -->
   <div class="app-main">
     <header class="app-header">
       <button class="hamburger" onclick="toggleSidebar()">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
       </button>
-      <span class="page-title">{% block page_title %}Painel{% endblock %}</span>
-      <!-- Status da barbearia -->
-      <button class="hdr-status" id="hdrStatus" onclick="toggleStatus()" title="Clique para abrir/fechar a barbearia">
-        <span class="hdr-dot"></span>
-        <span id="hdrStatusLabel">ABERTO</span>
-      </button>
-      <!-- Usuário + logout -->
-      <span class="hdr-username" id="headerName"></span>
-      <button class="hdr-logout" onclick="api.logout()" title="Sair">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      </button>
+      <nav class="breadcrumb">
+        {% block breadcrumb %}
+        <span class="breadcrumb-current">{% block page_title %}Painel{% endblock %}</span>
+        {% endblock %}
+      </nav>
+      <div class="hdr-right">
+        <span class="hdr-username">{{ g_nome }}</span>
+        <button class="hdr-logout" onclick="Bos.logout()" title="Sair">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
+      </div>
     </header>
 
-    <div class="bk-bar" id="bkBar" style="display:none">
-      <span class="bk-label">📅 Link de Agendamento:</span>
-      <a class="bk-link" id="bkLink" href="#" target="_blank">—</a>
-      <button class="bk-copy" onclick="copiarLinkBk()" title="Copiar">Copiar</button>
+    {% if bk_slug %}
+    <div class="bk-bar">
+      <span class="bk-label">📅 Link:</span>
+      <a class="bk-link" href="/b/{{ bk_slug }}/" target="_blank">/b/{{ bk_slug }}/</a>
+      <button class="bk-copy" onclick="copiarLinkBk()">Copiar</button>
     </div>
+    {% endif %}
+
     <main class="app-content">
       {% block content %}{% endblock %}
     </main>
@@ -362,22 +435,21 @@
 </div>
 
 <div id="toasts"></div>
-
-<script src="/static/js/api.js"></script>
-<script src="/static/js/upload-widget.js"></script>
+<script src="/static/js/bos.js"></script>
 <script>
-  // ── Auth guard ─────────────────────────────────────────────
-  (function() {
-    const u = api.getUser();
-    if (!u || !api.getToken()) { window.location.href = '/login'; return; }
-    if (!['gestor','super_admin'].includes(u.perfil)) { window.location.href = '/login'; return; }
-    document.getElementById('headerName').textContent = u.nome || 'Usuário';
-  })();
-
   // ── Active nav ─────────────────────────────────────────────
-  document.querySelectorAll('.nav-link[data-path]').forEach(a => {
-    if (window.location.pathname === a.dataset.path) a.classList.add('active');
-  });
+  (function(){
+    const path = window.location.pathname;
+    document.querySelectorAll('.nav-link[data-path]').forEach(a => {
+      if (path === a.dataset.path || (a.dataset.path !== '/gestor/dashboard' && path.startsWith(a.dataset.path))) {
+        a.classList.add('active');
+      }
+    });
+    // Iniciais do usuário
+    const nome = document.getElementById('sidebarUserName')?.textContent || '';
+    const init = document.getElementById('userInitial');
+    if (init && nome) init.textContent = nome.charAt(0).toUpperCase();
+  })();
 
   // ── Toast ──────────────────────────────────────────────────
   function toast(msg, tipo = 'success') {
@@ -385,15 +457,17 @@
     d.className = `toast t-${tipo}`;
     d.textContent = msg;
     document.getElementById('toasts').appendChild(d);
-    setTimeout(() => d.classList.add('out'), 2600);
-    setTimeout(() => d.remove(), 2900);
+    setTimeout(() => d.classList.add('out'), 2800);
+    setTimeout(() => d.remove(), 3100);
   }
 
-  // ── Modal ──────────────────────────────────────────────────
+  // ── Modal helpers ──────────────────────────────────────────
   function abrirModal(id)  { document.getElementById(id).classList.add('visible'); }
   function fecharModal(id) { document.getElementById(id).classList.remove('visible'); }
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.visible').forEach(m => m.classList.remove('visible'));
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.visible').forEach(m => m.classList.remove('visible'));
+    }
   });
 
   // ── Sidebar mobile ─────────────────────────────────────────
@@ -409,105 +483,66 @@
     a.addEventListener('click', () => { if (window.innerWidth <= 768) closeSidebar(); });
   });
 
-  // ── Status da barbearia (toggle header) ───────────────────
-  let _statusAberta = true;
-
-  async function carregarStatus() {
-    try {
-      const d = await api.barbearia.status();
-      _statusAberta = d.aberta;
-      _renderStatus();
-    } catch {}
+  // ── Tabs helper ────────────────────────────────────────────
+  function switchTab(tabId, panePrefix) {
+    document.querySelectorAll(`[data-tab-group="${panePrefix}"]`).forEach(t => t.classList.remove('active'));
+    document.querySelectorAll(`[data-pane-group="${panePrefix}"]`).forEach(p => p.classList.remove('active'));
+    document.querySelector(`[data-tab-group="${panePrefix}"][data-tab="${tabId}"]`)?.classList.add('active');
+    document.querySelector(`[data-pane-group="${panePrefix}"][data-pane="${tabId}"]`)?.classList.add('active');
   }
 
-  function _renderStatus() {
-    const btn = document.getElementById('hdrStatus');
-    const lbl = document.getElementById('hdrStatusLabel');
-    if (_statusAberta) {
-      btn.classList.remove('fechado');
-      lbl.textContent = 'ABERTO';
-    } else {
-      btn.classList.add('fechado');
-      lbl.textContent = 'FECHADO';
-    }
-  }
+  // ── Escape HTML ────────────────────────────────────────────
+  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-  async function toggleStatus() {
-    const novo = !_statusAberta;
-    const btn  = document.getElementById('hdrStatus');
-    btn.disabled = true;
-    try {
-      await api.barbearia.setStatus(novo);
-      _statusAberta = novo;
-      _renderStatus();
-      toast(novo ? '🟢 Barbearia marcada como ABERTA' : '🔴 Barbearia marcada como FECHADA', novo ? 'success' : 'info');
-    } catch(e) { toast(e.message, 'error'); }
-    finally { btn.disabled = false; }
-  }
-
-  carregarStatus();
-
-  // ── Carrega badge de solicitações pendentes ────────────────
-  async function carregarBadge() {
-    try {
-      const d = await api.metricas();
-      const n = d.sol_pendentes || 0;
-      const b = document.getElementById('sidebar-badge');
-      if (n > 0) { b.textContent = n; b.style.display = ''; }
-    } catch {}
-  }
-  carregarBadge();
-
-  // ── Mostra itens de nav conforme features ativas ────────────
+  // ── Badge PIX + features ───────────────────────────────────
   (async function() {
     try {
-      const f = await api.features.minhaBarbearia();
-      window.features = f;
-      if (f.planos)        document.getElementById('nav-planos').style.display = '';
-      if (f.vip_brindes)   document.getElementById('nav-vip').style.display = '';
-      if (f.pix_integrado) document.getElementById('nav-pix').style.display = '';
-    } catch (e) { /* silencioso */ }
+      const [dash, lista] = await Promise.all([
+        Bos.get('/gestor/dashboard'),
+        Bos.get('/gestor/features'),
+      ]);
+      const n = dash?.pendentes_pix || 0;
+      const badge = document.getElementById('sidebar-badge');
+      if (n > 0 && badge) { badge.textContent = n; badge.style.display = ''; }
+
+      const f = {};
+      (lista || []).forEach(x => { f[x.nome] = x.ativo; });
+      window._features = f;
+      if (f.pix_integrado) {
+        const navPix = document.getElementById('nav-pix');
+        if (navPix) navPix.style.display = '';
+      }
+    } catch {}
   })();
 
-  // ── Tema da barbearia ──────────────────────────────────────
+  // ── Tema ───────────────────────────────────────────────────
   (async function() {
-    const KEY = 'barberos_barbearia_tema';
-    function _applyTheme(t) {
+    const KEY = 'bos_tema';
+    function _apply(t) {
+      if (!t) return;
       const r = document.documentElement.style;
       if (t.cor_primaria) r.setProperty('--cor-primaria', t.cor_primaria);
-      if (t.cor_fundo)    r.setProperty('--cor-fundo',    t.cor_fundo);
-      if (t.cor_card)     r.setProperty('--cor-card',     t.cor_card);
-      if (t.fonte)        r.setProperty('--fonte', "'" + t.fonte + "', sans-serif");
-      if (t.nome_exibicao) {
-        const el = document.getElementById('sidebarBrand');
-        if (el) el.textContent = t.nome_exibicao;
-        document.title = t.nome_exibicao + ' — ' + (document.title.split(' — ')[1] || '').trim();
-      }
+      if (t.cor_fundo)    r.setProperty('--cor-fundo', t.cor_fundo);
+      if (t.cor_card)     r.setProperty('--cor-card', t.cor_card);
+      if (t.fonte)        r.setProperty('--fonte', `'${t.fonte}', sans-serif`);
     }
-    try { _applyTheme(JSON.parse(localStorage.getItem(KEY)) || {}); } catch {}
+    try { _apply(JSON.parse(localStorage.getItem(KEY))); } catch {}
     try {
-      const t = await api.barbearia.tema();
-      localStorage.setItem(KEY, JSON.stringify(t));
-      _applyTheme(t);
+      const t = await Bos.get('/gestor/barbearia/tema');
+      if (t) { localStorage.setItem(KEY, JSON.stringify(t)); _apply(t); }
     } catch {}
   })();
 
-  // ── Booking banner ─────────────────────────────────────────
-  (async function() {
-    try {
-      const d = await api.barbeiro.urlAgendamento();
-      const bar  = document.getElementById('bkBar');
-      const link = document.getElementById('bkLink');
-      const href = d.url.startsWith('http') ? d.url : location.origin + d.url;
-      link.href        = href;
-      link.textContent = d.url;
-      bar.style.display = '';
-    } catch(e) { /* silencioso */ }
-  })();
-
+  // ── Copiar link ────────────────────────────────────────────
   function copiarLinkBk() {
-    const link = document.getElementById('bkLink');
+    const link = document.querySelector('.bk-link');
+    if (!link) return;
     navigator.clipboard?.writeText(link.href).then(() => toast('Link copiado!', 'info'));
+  }
+
+  // ── Formatar moeda ─────────────────────────────────────────
+  function fmtR(v) {
+    return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
   }
 </script>
 {% block scripts %}{% endblock %}

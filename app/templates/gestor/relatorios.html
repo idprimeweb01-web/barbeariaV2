@@ -1,6 +1,10 @@
 {% extends "gestor/base.html" %}
 {% block title %}Relatórios{% endblock %}
-{% block page_title %}Relatórios{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Relatórios</span>
+{% endblock %}
 
 {% block styles %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -97,6 +101,10 @@
     </select>
   </div>
   <button class="btn-carregar" onclick="carregar()">Carregar</button>
+  <div style="margin-left:auto;display:flex;gap:6px">
+    <button class="btn btn-ghost" style="width:auto;padding:7px 12px;font-size:12px" onclick="exportar('excel')" title="Exportar Excel">↓ Excel</button>
+    <button class="btn btn-ghost" style="width:auto;padding:7px 12px;font-size:12px" onclick="exportar('pdf')" title="Exportar PDF">↓ PDF</button>
+  </div>
 </div>
 
 <!-- Loading -->
@@ -176,18 +184,18 @@
 
 {% block scripts %}
 <script>
-  let _tipo  = 'mes';
+  let _tipo  = 'dia';
   let _chart = null;
 
   // ── Init ────────────────────────────────────────────────
   (async () => {
     document.getElementById('inputData').value = new Date().toISOString().split('T')[0];
     try {
-      const barbs = await api.agenda.listar();
+      const barbs = await Bos.get('/gestor/barbeiros?ativo=true');
       const sel   = document.getElementById('selBarbeiro');
       barbs.forEach(b => {
         const o = document.createElement('option');
-        o.value = b.barbeiro_id; o.textContent = esc(b.nome);
+        o.value = b.nome; o.textContent = esc(b.nome);
         sel.appendChild(o);
       });
     } catch {}
@@ -201,19 +209,43 @@
     carregar();
   }
 
+  function getRange(tipo, dataStr) {
+    const d = new Date(dataStr + 'T12:00:00');
+    let de, ate;
+    if (tipo === 'dia') {
+      de = ate = dataStr;
+    } else if (tipo === 'semana') {
+      const dow = d.getDay();
+      const diffToMon = (dow === 0 ? -6 : 1 - dow);
+      const mon = new Date(d); mon.setDate(d.getDate() + diffToMon);
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+      de  = mon.toISOString().split('T')[0];
+      ate = sun.toISOString().split('T')[0];
+    } else if (tipo === 'mes') {
+      const y = d.getFullYear(), m = d.getMonth();
+      de  = `${y}-${String(m+1).padStart(2,'0')}-01`;
+      ate = new Date(y, m+1, 0).toISOString().split('T')[0];
+    } else {
+      de  = `${d.getFullYear()}-01-01`;
+      ate = `${d.getFullYear()}-12-31`;
+    }
+    return { de, ate };
+  }
+
   // ── Carregar dados ──────────────────────────────────────
   async function carregar() {
-    const data      = document.getElementById('inputData').value || new Date().toISOString().split('T')[0];
-    const barbeiro  = document.getElementById('selBarbeiro').value;
-    const params    = new URLSearchParams({ tipo: _tipo, data });
-    if (barbeiro) params.append('barbeiro_id', barbeiro);
+    const dataStr = document.getElementById('inputData').value || new Date().toISOString().split('T')[0];
+    const { de, ate } = getRange(_tipo, dataStr);
+    const params = new URLSearchParams({ de, ate });
 
-    document.getElementById('relLoading').style.display   = '';
-    document.getElementById('relConteudo').style.display  = 'none';
+    document.getElementById('relLoading').style.display  = '';
+    document.getElementById('relConteudo').style.display = 'none';
+    document.getElementById('relLoading').textContent    = 'Carregando…';
 
     try {
-      const d = await api.get(`/admin/relatorios/periodo?${params}`);
-      renderTudo(d);
+      const resp = await Bos.get('/gestor/relatorios/agendamentos?' + params);
+      const barbeiroFiltro = document.getElementById('selBarbeiro').value;
+      renderTudo(resp, barbeiroFiltro, de, ate);
       document.getElementById('relLoading').style.display  = 'none';
       document.getElementById('relConteudo').style.display = '';
     } catch(e) {
@@ -222,38 +254,48 @@
   }
 
   // ── Render ──────────────────────────────────────────────
-  function renderTudo(d) {
+  function renderTudo(resp, barbeiroFiltro, de, ate) {
     const fmtR = v => 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
 
+    // Filtro de barbeiro client-side (por nome)
+    let dados = resp.dados || [];
+    if (barbeiroFiltro) dados = dados.filter(r => r.barbeiro === barbeiroFiltro);
+
+    const concluidos = dados.filter(r => r.status === 'concluido');
+    const cancelados = dados.filter(r => r.status === 'cancelado');
+    const faturamento = concluidos.reduce((s, r) => s + (r.valor_total || 0), 0);
+    const ticket = concluidos.length ? faturamento / concluidos.length : 0;
+
     // Cards
-    document.getElementById('cFat').textContent    = fmtR(d.faturamento.total);
-    const vp = d.faturamento.variacao_pct;
-    document.getElementById('cFatVar').innerHTML   = vp != null
-      ? `<span class="${vp >= 0 ? 'var-pos' : 'var-neg'}">${vp >= 0 ? '▲' : '▼'} ${Math.abs(vp)}%</span> vs período anterior`
-      : 'Sem período anterior';
+    document.getElementById('cFat').textContent    = fmtR(faturamento);
+    document.getElementById('cFatVar').textContent = '';
+    document.getElementById('cAts').textContent    = dados.length;
+    document.getElementById('cConc').textContent   = `✓ ${concluidos.length}`;
+    document.getElementById('cCanc').textContent   = `✗ ${cancelados.length}`;
+    document.getElementById('cTicket').textContent = fmtR(ticket);
+    document.getElementById('cPeriodo').innerHTML  = `${de}<br>→ ${ate}`;
 
-    document.getElementById('cAts').textContent    = d.atendimentos.concluidos + d.atendimentos.cancelados;
-    document.getElementById('cConc').textContent   = `✓ ${d.atendimentos.concluidos}`;
-    document.getElementById('cCanc').textContent   = `✗ ${d.atendimentos.cancelados}`;
-    document.getElementById('cTicket').textContent = fmtR(d.ticket_medio);
-    document.getElementById('cPeriodo').textContent = `${d.periodo.inicio}\n→ ${d.periodo.fim}`;
-
-    // Gráfico
-    const labels = d.receita_grafico.map(x => {
-      const dt = new Date(x.data + 'T12:00:00');
-      return d.receita_grafico_fmt === 'mes'
-        ? dt.toLocaleDateString('pt-BR', {month:'short', year:'2-digit'})
-        : dt.toLocaleDateString('pt-BR', {day:'2-digit', month:'short'});
+    // Gráfico: faturamento por dia
+    const porDia = {};
+    concluidos.forEach(r => {
+      const p = (r.data || '').split(' ')[0]; // 'dd/mm/yyyy'
+      const parts = p.split('/');
+      if (parts.length === 3) {
+        const key = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        porDia[key] = (porDia[key] || 0) + (r.valor_total || 0);
+      }
     });
-    const vals = d.receita_grafico.map(x => x.receita);
+    const sortedKeys = Object.keys(porDia).sort();
+    const chartLabels = sortedKeys.map(k => { const [, m, d] = k.split('-'); return `${d}/${m}`; });
+    const chartVals   = sortedKeys.map(k => porDia[k]);
 
     if (_chart) _chart.destroy();
     _chart = new Chart(document.getElementById('chartRel'), {
       type: 'bar',
       data: {
-        labels,
+        labels: chartLabels,
         datasets: [{
-          label: 'Faturamento', data: vals,
+          label: 'Faturamento', data: chartVals,
           backgroundColor: 'rgba(186,117,23,.35)',
           borderColor: '#BA7517', borderWidth: 2, borderRadius: 5,
         }]
@@ -268,55 +310,71 @@
       }
     });
 
-    // Estoque baixo
-    const alertEl = document.getElementById('alertEstoque');
-    if (d.estoque_baixo.length) {
-      document.getElementById('chipsEstoque').innerHTML = d.estoque_baixo.map(p =>
-        `<span class="estoque-chip">${esc(p.nome)} (${p.estoque})</span>`
-      ).join('');
-      alertEl.style.display = '';
-    } else {
-      alertEl.style.display = 'none';
-    }
+    // Estoque baixo — não disponível neste endpoint
+    document.getElementById('alertEstoque').style.display = 'none';
 
-    // Barbeiros
-    document.getElementById('tBarbeiros').innerHTML = d.barbeiros.length
-      ? d.barbeiros.map(b => `<tr>
+    // Por barbeiro
+    const porBarbeiro = {};
+    concluidos.forEach(r => {
+      const b = r.barbeiro || '—';
+      if (!porBarbeiro[b]) porBarbeiro[b] = { nome: b, atendimentos: 0, receita: 0 };
+      porBarbeiro[b].atendimentos++;
+      porBarbeiro[b].receita += r.valor_total || 0;
+    });
+    const barbsArr = Object.values(porBarbeiro).sort((a, b) => b.receita - a.receita);
+    document.getElementById('tBarbeiros').innerHTML = barbsArr.length
+      ? barbsArr.map(b => `<tr>
           <td><div style="font-weight:600">${esc(b.nome)}</div>
-              <div style="font-size:11px;color:#666">${b.atendimentos} atend. · comissão ${b.comissao_pct}%</div></td>
-          <td><div>${fmtR(b.receita)}</div>
-              <div style="font-size:11px;color:#888">comissão ${fmtR(b.comissao)}</div></td>
+              <div style="font-size:11px;color:#666">${b.atendimentos} atend.</div></td>
+          <td>${fmtR(b.receita)}</td>
         </tr>`).join('')
       : `<tr><td colspan="2" class="rel-empty">Sem dados no período</td></tr>`;
 
-    // Serviços top
-    document.getElementById('tServicos').innerHTML = d.servicos_top.length
-      ? d.servicos_top.map((s, i) => `<tr>
+    // Por serviço
+    const porServico = {};
+    concluidos.forEach(r => {
+      const s = r.servico || '—';
+      if (!porServico[s]) porServico[s] = { nome: s, quantidade: 0, receita: 0 };
+      porServico[s].quantidade++;
+      porServico[s].receita += r.valor_total || 0;
+    });
+    const svArr = Object.values(porServico).sort((a, b) => b.quantidade - a.quantidade).slice(0, 10);
+    document.getElementById('tServicos').innerHTML = svArr.length
+      ? svArr.map((s, i) => `<tr>
           <td><span style="color:#555;margin-right:8px">${i+1}.</span>${esc(s.nome)}
               <span style="font-size:11px;color:#666;margin-left:6px">${s.quantidade}×</span></td>
           <td>${fmtR(s.receita)}</td>
         </tr>`).join('')
       : `<tr><td colspan="2" class="rel-empty">Sem dados</td></tr>`;
 
-    // Clientes
-    document.getElementById('tClientes').innerHTML = d.clientes_top.length
-      ? d.clientes_top.map(c => `<tr>
+    // Por cliente
+    const porCliente = {};
+    concluidos.forEach(r => {
+      const c = r.cliente || '—';
+      if (!porCliente[c]) porCliente[c] = { nome: c, visitas: 0, gasto: 0 };
+      porCliente[c].visitas++;
+      porCliente[c].gasto += r.valor_total || 0;
+    });
+    const cliArr = Object.values(porCliente).sort((a, b) => b.gasto - a.gasto).slice(0, 10);
+    document.getElementById('tClientes').innerHTML = cliArr.length
+      ? cliArr.map(c => `<tr>
           <td><div style="font-weight:600">${esc(c.nome)}</div>
               <div style="font-size:11px;color:#666">${c.visitas} visita${c.visitas !== 1 ? 's' : ''}</div></td>
           <td>${fmtR(c.gasto)}</td>
         </tr>`).join('')
       : `<tr><td colspan="2" class="rel-empty">Sem dados</td></tr>`;
 
-    // Produtos top
-    document.getElementById('tProdutos').innerHTML = d.produtos_top.length
-      ? d.produtos_top.map((p, i) => `<tr>
-          <td><span style="color:#555;margin-right:8px">${i+1}.</span>${esc(p.nome)}
-              <span style="font-size:11px;color:#666;margin-left:6px">${p.quantidade}×</span></td>
-          <td>${fmtR(p.receita)}</td>
-        </tr>`).join('')
-      : `<tr><td colspan="2" class="rel-empty">Sem dados</td></tr>`;
+    // Produtos — não disponível neste endpoint
+    document.getElementById('tProdutos').innerHTML = `<tr><td colspan="2" class="rel-empty">Dados não disponíveis</td></tr>`;
   }
 
   function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  function exportar(fmt) {
+    const dataEl = document.getElementById('inputData').value || new Date().toISOString().split('T')[0];
+    const {de, ate} = getRange(_tipo, dataEl);
+    const url = `/api/v1/gestor/relatorios/agendamentos/${fmt === 'pdf' ? 'pdf' : 'excel'}?de=${de}&ate=${ate}`;
+    window.open(url, '_blank');
+  }
 </script>
 {% endblock %}

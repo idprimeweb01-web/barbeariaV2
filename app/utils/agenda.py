@@ -48,7 +48,7 @@ def gerar_slots(resource_id: int, data, duracao_necessaria: int) -> list[str]:
     Retorna lista de horários disponíveis ('HH:MM') para o recurso na data dada.
     Considera ConfiguracaoAgenda do barbeiro, agendamentos existentes e horários bloqueados.
     """
-    from app.models import ConfiguracaoAgenda, Agendamento, HorarioBloqueado
+    from app.models import ConfiguracaoAgenda, Agendamento, HorarioBloqueado, PausaBarbeiro
     from app.extensions import db
 
     config = ConfiguracaoAgenda.query.filter_by(barbeiro_id=resource_id).first()
@@ -83,6 +83,8 @@ def gerar_slots(resource_id: int, data, duracao_necessaria: int) -> list[str]:
         .all()
     )
 
+    pausas = PausaBarbeiro.query.filter_by(barbeiro_id=resource_id).all()
+
     slots = []
     slot = abertura
 
@@ -99,6 +101,14 @@ def gerar_slots(resource_id: int, data, duracao_necessaria: int) -> list[str]:
         if not ocupado:
             for b in bloqueios:
                 if b.data_hora_inicio < slot_fim and b.data_hora_fim > slot:
+                    ocupado = True
+                    break
+
+        if not ocupado:
+            for p in pausas:
+                pausa_ini = datetime.combine(data, p.hora_inicio)
+                pausa_fim = datetime.combine(data, p.hora_fim)
+                if pausa_ini < slot_fim and pausa_fim > slot:
                     ocupado = True
                     break
 

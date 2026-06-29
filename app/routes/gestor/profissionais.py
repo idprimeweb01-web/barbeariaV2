@@ -1,7 +1,8 @@
+from datetime import time
 from flask import Blueprint, request, g, jsonify
 from werkzeug.security import generate_password_hash
 from app.extensions import db
-from app.models import Barbeiro, Usuario, Servico, BarbeiroServico
+from app.models import Barbeiro, Usuario, Servico, BarbeiroServico, ConfiguracaoAgenda, PausaBarbeiro
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.labels import L
@@ -18,7 +19,8 @@ def _barbearia_id_atual():
 
 
 def _fmt_barbeiro(b):
-    u = b.usuario
+    u   = b.usuario
+    cfg = b.configuracao_agenda
     return {
         'id':                        b.id,
         'usuario_id':                b.usuario_id,
@@ -32,6 +34,13 @@ def _fmt_barbeiro(b):
         'comissao_percentual':       float(b.comissao_percentual),
         'comissao_plano_percentual': float(b.comissao_plano_percentual),
         'ativo':                     b.ativo,
+        'barbeiro_id':               b.id,
+        'configuracao': {
+            'horario_abertura':   cfg.horario_abertura.strftime('%H:%M') if cfg and cfg.horario_abertura else None,
+            'horario_fechamento': cfg.horario_fechamento.strftime('%H:%M') if cfg and cfg.horario_fechamento else None,
+            'intervalo_minutos':  cfg.intervalo_minutos if cfg else 30,
+            'loja_aberta':        cfg.loja_aberta if cfg else False,
+        } if cfg else None,
     }
 
 
@@ -255,3 +264,135 @@ def remover_servico(barbeiro_id, servico_id):
     db.session.delete(bs)
     db.session.commit()
     return jsonify({'mensagem': f'{L("servico")} removido do {L("profissional").lower()}.'}), 200
+
+
+# ── Agenda: horário e pausas recorrentes ─────────────────────────────────────
+
+def _fmt_config(cfg):
+    if not cfg:
+        return None
+    return {
+        'id':                 cfg.id,
+        'horario_abertura':   cfg.horario_abertura.strftime('%H:%M') if cfg.horario_abertura else None,
+        'horario_fechamento': cfg.horario_fechamento.strftime('%H:%M') if cfg.horario_fechamento else None,
+        'intervalo_minutos':  cfg.intervalo_minutos,
+        'loja_aberta':        cfg.loja_aberta,
+    }
+
+
+def _fmt_pausa(p):
+    return {
+        'id':          p.id,
+        'hora_inicio': p.hora_inicio.strftime('%H:%M') if p.hora_inicio else None,
+        'hora_fim':    p.hora_fim.strftime('%H:%M') if p.hora_fim else None,
+        'descricao':   p.descricao,
+    }
+
+
+@profissionais_bp.get('/barbeiros/<int:barbeiro_id>/agenda')
+@gestor_required
+def get_agenda(barbeiro_id):
+    barbearia_id = _barbearia_id_atual()
+    _get_barbeiro(barbeiro_id, barbearia_id)
+    config = ConfiguracaoAgenda.query.filter_by(barbeiro_id=barbeiro_id).first()
+    pausas = (PausaBarbeiro.query
+              .filter_by(barbeiro_id=barbeiro_id)
+              .order_by(PausaBarbeiro.hora_inicio)
+              .all())
+    return jsonify({'config': _fmt_config(config), 'pausas': [_fmt_pausa(p) for p in pausas]}), 200
+
+
+@profissionais_bp.put('/barbeiros/<int:barbeiro_id>/agenda')
+@gestor_required
+def put_agenda(barbeiro_id):
+    barbearia_id = _barbearia_id_atual()
+    _get_barbeiro(barbeiro_id, barbearia_id)
+    dados = request.get_json(silent=True) or {}
+
+    config = ConfiguracaoAgenda.query.filter_by(barbeiro_id=barbeiro_id).first()
+    if not config:
+        config = ConfiguracaoAgenda(
+            barbearia_id=barbearia_id, barbeiro_id=barbeiro_id,
+            horario_abertura=time(8, 0), horario_fechamento=time(18, 0),
+            intervalo_minutos=30,
+        )
+        db.session.add(config)
+
+    if 'horario_abertura' in dados:
+        try:
+            config.horario_abertura = time.fromisoformat(dados['horario_abertura'])
+        except Exception:
+            raise APIError('"horario_abertura" inválido. Use HH:MM.')
+    if 'horario_fechamento' in dados:
+        try:
+            config.horario_fechamento = time.fromisoformat(dados['horario_fechamento'])
+        except Exception:
+            raise APIError('"horario_fechamento" inválido. Use HH:MM.')
+    if 'intervalo_minutos' in dados:
+        try:
+            v = int(dados['intervalo_minutos'])
+        except Exception:
+            raise APIError('"intervalo_minutos" deve ser um inteiro.')
+        if v < 5:
+            raise APIError('"intervalo_minutos" deve ser no mínimo 5.')
+        config.intervalo_minutos = v
+    if 'loja_aberta' in dados:
+        config.loja_aberta = bool(dados['loja_aberta'])
+
+    db.session.commit()
+    return jsonify({'config': _fmt_config(config)}), 200
+
+
+@profissionais_bp.post('/barbeiros/<int:barbeiro_id>/agenda/pausas')
+@gestor_required
+def criar_pausa(barbeiro_id):
+    barbearia_id = _barbearia_id_atual()
+    _get_barbeiro(barbeiro_id, barbearia_id)
+    dados = request.get_json(silent=True) or {}
+
+    ini_str = (dados.get('hora_inicio') or '').strip()
+    fim_str = (dados.get('hora_fim') or '').strip()
+    if not ini_str or not fim_str:
+        raise APIError('"hora_inicio" e "hora_fim" são obrigatórios.')
+    try:
+        hora_ini = time.fromisoformat(ini_str)
+        hora_fim = time.fromisoformat(fim_str)
+    except Exception:
+        raise APIError('"hora_inicio" e "hora_fim" devem estar no formato HH:MM.')
+
+    if hora_fim <= hora_ini:
+        raise APIError('"hora_fim" deve ser depois de "hora_inicio".')
+
+    config = ConfiguracaoAgenda.query.filter_by(barbeiro_id=barbeiro_id).first()
+    if config:
+        if hora_ini < config.horario_abertura or hora_fim > config.horario_fechamento:
+            raise APIError('A pausa deve estar dentro do horário de trabalho do funcionário.')
+
+    for p in PausaBarbeiro.query.filter_by(barbeiro_id=barbeiro_id).all():
+        if p.hora_inicio < hora_fim and p.hora_fim > hora_ini:
+            descr = p.descricao or f'{p.hora_inicio.strftime("%H:%M")}–{p.hora_fim.strftime("%H:%M")}'
+            raise APIError(f'Conflito com a pausa "{descr}" já cadastrada.')
+
+    pausa = PausaBarbeiro(
+        barbearia_id=barbearia_id, barbeiro_id=barbeiro_id,
+        hora_inicio=hora_ini, hora_fim=hora_fim,
+        descricao=(dados.get('descricao') or '').strip() or None,
+    )
+    db.session.add(pausa)
+    db.session.commit()
+    return jsonify({'pausa': _fmt_pausa(pausa)}), 201
+
+
+@profissionais_bp.delete('/barbeiros/<int:barbeiro_id>/agenda/pausas/<int:pausa_id>')
+@gestor_required
+def deletar_pausa(barbeiro_id, pausa_id):
+    barbearia_id = _barbearia_id_atual()
+    _get_barbeiro(barbeiro_id, barbearia_id)
+    pausa = PausaBarbeiro.query.filter_by(
+        id=pausa_id, barbeiro_id=barbeiro_id, barbearia_id=barbearia_id
+    ).first()
+    if not pausa:
+        raise APIError('Pausa não encontrada.', 404)
+    db.session.delete(pausa)
+    db.session.commit()
+    return jsonify({'mensagem': 'Pausa removida.'}), 200

@@ -1,11 +1,27 @@
 {% extends "gestor/base.html" %}
-{% block title %}Barbeiros{% endblock %}
-{% block page_title %}Barbeiros{% endblock %}
+{% block title %}Funcionários{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Funcionários</span>
+{% endblock %}
+
+{% block styles %}
+<style>
+.check-list  { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; padding: 4px 0; }
+.check-item  { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #bbb; cursor: pointer; }
+.check-item input { width: 15px; height: 15px; accent-color: var(--cor-primaria); flex-shrink: 0; }
+.pausa-row   { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #2a2a2a; font-size: 13px; color: #ccc; }
+.pausa-row:last-child { border-bottom: none; }
+.pausa-del   { background: none; border: 1px solid #333; border-radius: 6px; color: #666; font-size: 11px; cursor: pointer; padding: 3px 8px; font-family: inherit; transition: all .15s; }
+.pausa-del:hover { border-color: #dc2626; color: #f87171; }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="section-header">
   <span class="section-title">Equipe</span>
-  <button class="btn btn-primary" style="width:auto;padding:9px 18px;font-size:14px" onclick="novoModal()">+ Barbeiro</button>
+  <button class="btn btn-primary" style="width:auto;padding:9px 18px;font-size:14px" onclick="novoModal()">+ Funcionário</button>
 </div>
 
 <div class="table-wrap">
@@ -22,11 +38,11 @@
   </table>
 </div>
 
-<!-- Modal criar/editar -->
+<!-- ── Modal criar/editar ── -->
 <div class="modal-overlay" id="modal" onclick="if(event.target===this)fecharModal('modal')">
   <div class="modal-box">
     <div class="modal-header">
-      <h3 id="modalTitulo">Novo Barbeiro</h3>
+      <h3 id="modalTitulo">Novo Funcionário</h3>
       <button class="modal-close" onclick="fecharModal('modal')">×</button>
     </div>
     <form id="form" onsubmit="salvar(event)">
@@ -36,16 +52,12 @@
       <div class="field" id="wrSenha"><label>Senha * (mín. 6 chars)</label><input type="password" id="fSenha" minlength="6"></div>
       <div class="field"><label>Comissão (%)</label><input type="number" id="fComissao" min="0" max="100" step="0.5" value="0"></div>
       <div class="field"><label>Bio</label><textarea id="fBio" rows="2" style="resize:vertical;padding:10px"></textarea></div>
-
-      <div class="field"><label>Foto</label><div id="wFotoBarb"></div></div>
-
       <div class="field">
         <label>Serviços que realiza</label>
         <div class="check-list" id="servicosLista">
           <span style="color:#555;font-size:13px">Carregando serviços…</span>
         </div>
       </div>
-
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modal')">Cancelar</button>
         <button type="submit" class="btn btn-primary" id="btnSalvar" style="width:auto;padding:9px 24px">Salvar</button>
@@ -53,161 +65,269 @@
     </form>
   </div>
 </div>
+
+<!-- ── Modal horário/agenda ── -->
+<div class="modal-overlay" id="modalAgenda" onclick="if(event.target===this)fecharModal('modalAgenda')">
+  <div class="modal-box" style="max-width:520px">
+    <div class="modal-header">
+      <h3>Configurar Agenda — <span id="agNome"></span></h3>
+      <button class="modal-close" onclick="fecharModal('modalAgenda')">×</button>
+    </div>
+
+    <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:12px">Horário de Trabalho</div>
+    <div class="field-row">
+      <div class="field"><label>Abertura</label><input type="time" id="agAbertura"></div>
+      <div class="field"><label>Fechamento</label><input type="time" id="agFechamento"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Intervalo entre slots (min)</label>
+        <select id="agIntervalo">
+          <option value="15">15 min</option>
+          <option value="20">20 min</option>
+          <option value="30" selected>30 min</option>
+          <option value="45">45 min</option>
+          <option value="60">60 min</option>
+        </select>
+      </div>
+      <div class="field" style="display:flex;align-items:flex-end">
+        <label class="check-item" style="padding-bottom:4px">
+          <input type="checkbox" id="agLojaAberta">
+          <span>Loja aberta</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer" style="border-top:1px solid #2a2a2a;padding-top:14px;margin-bottom:20px">
+      <button class="btn btn-ghost" style="width:auto;padding:8px 16px" onclick="fecharModal('modalAgenda')">Cancelar</button>
+      <button class="btn btn-primary" style="width:auto;padding:8px 20px" onclick="salvarHorario()" id="btnSalvarHorario">Salvar horário</button>
+    </div>
+
+    <!-- Pausas -->
+    <div style="font-size:12px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:10px">Pausas / Intervalos</div>
+    <div id="pausaLista" style="margin-bottom:14px"></div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="margin:0;flex:1;min-width:90px"><label>Início</label><input type="time" id="pIni" value="12:00"></div>
+      <div class="field" style="margin:0;flex:1;min-width:90px"><label>Fim</label><input type="time" id="pFim" value="13:00"></div>
+      <div class="field" style="margin:0;flex:2;min-width:120px"><label>Descrição</label><input type="text" id="pDesc" placeholder="Almoço…"></div>
+      <button class="btn btn-primary" style="width:auto;padding:9px 14px;font-size:13px;flex-shrink:0;align-self:flex-end" onclick="adicionarPausa()" id="btnAddPausa">+ Pausa</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  let _todos = [];
-  let _servicos = [];
-  let _editId = null;
+let _todos    = [];
+let _servicos = [];
+let _editId   = null;
+let _agBarb   = null;
 
-  // ── Carregar ────────────────────────────────────────────────
-  async function carregar() {
-    const [barbs, servs] = await Promise.all([
-      api.barbeiros.listar(),
-      api.servicos.listar(),
-    ]).catch(e => { toast(e.message, 'error'); return [[], []]; });
-    _todos    = barbs;
-    _servicos = servs;
-    renderTabela();
-    renderServicosCheck();
+// ── Carregar ──────────────────────────────────────────────
+async function carregar() {
+  try {
+    [_todos, _servicos] = await Promise.all([
+      Bos.get('/gestor/barbeiros'),
+      Bos.get('/gestor/servicos'),
+    ]);
+  } catch(e) { toast(e.message, 'error'); _todos = []; _servicos = []; }
+  renderTabela();
+  renderServicosCheck([]);
+}
+
+function renderTabela() {
+  const tb = document.getElementById('tbody');
+  if (!_todos.length) {
+    tb.innerHTML = '<tr><td colspan="7"><div class="empty-state"><p>Nenhum funcionário cadastrado.</p></div></td></tr>';
+    return;
   }
+  tb.innerHTML = _todos.map(b => `
+    <tr>
+      <td>${fotoEl(b.foto, b.nome)}</td>
+      <td style="font-weight:600">${esc(b.nome)}</td>
+      <td style="color:#888">${esc(b.email || '—')}</td>
+      <td>${esc(b.telefone)}</td>
+      <td>${b.comissao_percentual}%</td>
+      <td>${b.ativo ? '<span class="badge-green">Ativo</span>' : '<span class="badge-gray">Inativo</span>'}</td>
+      <td><div class="td-actions">
+        <button class="btn-icon" onclick="editarModal(${b.id})">Editar</button>
+        <button class="btn-icon" onclick="abrirAgenda(${b.id},'${esc(b.nome)}')">Agenda</button>
+        <button class="btn-icon danger" onclick="deletar(${b.id})">Remover</button>
+      </div></td>
+    </tr>
+  `).join('');
+}
 
-  function renderTabela() {
-    const tb = document.getElementById('tbody');
-    if (!_todos.length) {
-      tb.innerHTML = '<tr><td colspan="7"><div class="empty-state"><p>Nenhum barbeiro cadastrado.</p></div></td></tr>';
-      return;
-    }
-    tb.innerHTML = _todos.map(b => `
-      <tr>
-        <td>${fotoEl(b.foto, b.nome)}</td>
-        <td style="font-weight:600">${esc(b.nome)}</td>
-        <td style="color:#888">${esc(b.email || '—')}</td>
-        <td>${esc(b.telefone)}</td>
-        <td>${b.comissao_percentual}%</td>
-        <td>${b.ativo ? '<span class="badge-green">Ativo</span>' : '<span class="badge-gray">Inativo</span>'}</td>
-        <td><div class="td-actions">
-          <button class="btn-icon" onclick="editarModal(${b.id})">Editar</button>
-          <button class="btn-icon danger" onclick="deletar(${b.id})">Remover</button>
-        </div></td>
-      </tr>
-    `).join('');
-  }
+function fotoEl(url, nome) {
+  if (url) return `<div class="foto-avatar"><img src="${url}" alt="${esc(nome)}"></div>`;
+  return `<div class="foto-avatar">${esc(nome.charAt(0).toUpperCase())}</div>`;
+}
 
-  function fotoEl(url, nome) {
-    if (url) return `<div class="foto-avatar"><img src="${url}" alt="${esc(nome)}"></div>`;
-    return `<div class="foto-avatar">${esc(nome.charAt(0).toUpperCase())}</div>`;
-  }
+function renderServicosCheck(marcados) {
+  const el = document.getElementById('servicosLista');
+  if (!_servicos.length) { el.innerHTML = '<span style="color:#555;font-size:13px">Nenhum serviço cadastrado.</span>'; return; }
+  el.innerHTML = _servicos.map(s => `
+    <label class="check-item">
+      <input type="checkbox" class="sv-check" value="${s.id}" ${marcados.includes(s.id) ? 'checked' : ''}>
+      ${esc(s.nome)} — R$ ${s.preco.toFixed(2)}
+    </label>
+  `).join('');
+}
 
-  function renderServicosCheck() {
-    const el = document.getElementById('servicosLista');
-    if (!_servicos.length) { el.innerHTML = '<span style="color:#555;font-size:13px">Nenhum serviço cadastrado.</span>'; return; }
-    el.innerHTML = _servicos.map(s => `
-      <label class="check-item">
-        <input type="checkbox" class="sv-check" value="${s.id}">
-        ${esc(s.nome)} — R$ ${s.preco.toFixed(2)}
-      </label>
-    `).join('');
-  }
+// ── Modal criar/editar ────────────────────────────────────
+function novoModal() {
+  _editId = null;
+  document.getElementById('modalTitulo').textContent = 'Novo Funcionário';
+  document.getElementById('form').reset();
+  document.getElementById('wrSenha').style.display = '';
+  document.getElementById('fSenha').required = true;
+  renderServicosCheck([]);
+  abrirModal('modal');
+}
 
-  // ── Abrir modal ─────────────────────────────────────────────
-  function novoModal() {
-    _editId = null;
-    document.getElementById('modalTitulo').textContent = 'Novo Barbeiro';
-    document.getElementById('form').reset();
-    document.getElementById('wrSenha').style.display = '';
-    document.getElementById('fSenha').required = true;
-    document.querySelectorAll('.sv-check').forEach(c => c.checked = false);
-    uploadWidget.init('wFotoBarb', { forma: 'circulo', urlAtual: null });
-    abrirModal('modal');
-  }
+async function editarModal(id) {
+  const b = _todos.find(x => x.id === id);
+  if (!b) return;
+  _editId = id;
+  document.getElementById('modalTitulo').textContent = 'Editar Funcionário';
+  document.getElementById('fNome').value     = b.nome;
+  document.getElementById('fEmail').value    = b.email || '';
+  document.getElementById('fTelefone').value = b.telefone;
+  document.getElementById('fSenha').value    = '';
+  document.getElementById('fComissao').value = b.comissao_percentual;
+  document.getElementById('fBio').value      = b.bio || '';
+  document.getElementById('wrSenha').style.display = 'none';
+  document.getElementById('fSenha').required = false;
+  renderServicosCheck([]);
+  abrirModal('modal');
+  try {
+    const detail = await Bos.get('/gestor/barbeiros/' + id);
+    renderServicosCheck(detail.servicos.map(s => s.id));
+  } catch(e) { toast('Erro ao carregar serviços: ' + e.message, 'error'); }
+}
 
-  function editarModal(id) {
-    const b = _todos.find(x => x.id === id);
-    if (!b) return;
-    _editId = id;
-    document.getElementById('modalTitulo').textContent = 'Editar Barbeiro';
-    document.getElementById('fNome').value     = b.nome;
-    document.getElementById('fEmail').value    = b.email || '';
-    document.getElementById('fTelefone').value = b.telefone;
-    document.getElementById('fSenha').value    = '';
-    document.getElementById('fComissao').value = b.comissao_percentual;
-    document.getElementById('fBio').value      = b.bio || '';
-    document.getElementById('wrSenha').style.display = 'none';
-    document.getElementById('fSenha').required = false;
-    document.querySelectorAll('.sv-check').forEach(c => {
-      c.checked = b.servicos_ids.includes(parseInt(c.value));
-    });
-    uploadWidget.init('wFotoBarb', {
-      forma: 'circulo',
-      urlAtual: b.foto,
-      onUpload: async f => {
-        const r = await api.upload.barbeiro(id, f);
-        toast('Foto atualizada!', 'info');
-        return r.url;
-      },
-    });
-    abrirModal('modal');
-  }
-
-  // ── Salvar ──────────────────────────────────────────────────
-  async function salvar(e) {
-    e.preventDefault();
-    const btn = document.getElementById('btnSalvar');
-    btn.disabled = true; btn.textContent = 'Salvando…';
-
-    const servicos_ids = [...document.querySelectorAll('.sv-check:checked')].map(c => parseInt(c.value));
-    const dados = {
-      nome:                document.getElementById('fNome').value.trim(),
-      email:               document.getElementById('fEmail').value.trim(),
-      telefone:            document.getElementById('fTelefone').value.trim(),
-      comissao_percentual: parseFloat(document.getElementById('fComissao').value) || 0,
-      bio:                 document.getElementById('fBio').value.trim(),
-      servicos_ids,
-    };
-
-    try {
-      let resultado;
-      if (_editId) {
-        resultado = await api.barbeiros.editar(_editId, dados);
-      } else {
-        dados.senha = document.getElementById('fSenha').value;
-        resultado = await api.barbeiros.criar(dados);
+async function salvar(e) {
+  e.preventDefault();
+  const btn = document.getElementById('btnSalvar');
+  btn.disabled = true; btn.textContent = 'Salvando…';
+  const svSelecionados = [...document.querySelectorAll('.sv-check:checked')].map(c => parseInt(c.value));
+  const dados = {
+    nome:                document.getElementById('fNome').value.trim(),
+    email:               document.getElementById('fEmail').value.trim(),
+    telefone:            document.getElementById('fTelefone').value.trim(),
+    comissao_percentual: parseFloat(document.getElementById('fComissao').value) || 0,
+    bio:                 document.getElementById('fBio').value.trim(),
+  };
+  try {
+    if (_editId) {
+      await Bos.patch('/gestor/barbeiros/' + _editId, dados);
+      const detail   = await Bos.get('/gestor/barbeiros/' + _editId);
+      const atuaisIds = detail.servicos.map(s => s.id);
+      await Promise.all([
+        ...svSelecionados.filter(id => !atuaisIds.includes(id)).map(sid =>
+          Bos.post('/gestor/barbeiros/' + _editId + '/servicos', {servico_id: sid}).catch(() => {})),
+        ...atuaisIds.filter(id => !svSelecionados.includes(id)).map(sid =>
+          Bos.delete('/gestor/barbeiros/' + _editId + '/servicos/' + sid).catch(() => {})),
+      ]);
+    } else {
+      dados.senha = document.getElementById('fSenha').value;
+      const res = await Bos.post('/gestor/barbeiros', dados);
+      const novoId = res.id || res.barbeiro_id;
+      if (novoId && svSelecionados.length) {
+        await Promise.all(svSelecionados.map(sid =>
+          Bos.post('/gestor/barbeiros/' + novoId + '/servicos', {servico_id: sid}).catch(() => {})));
       }
-
-      // Upload foto pendente (nova criação — edição já é auto-upload)
-      const fotoFile = uploadWidget.getFile('wFotoBarb');
-      if (fotoFile) {
-        const bid = _editId || resultado.barbeiro.id;
-        await api.upload.barbeiro(bid, fotoFile).catch(e => toast('Erro: ' + e.message, 'error'));
-      }
-
-      fecharModal('modal');
-      toast(_editId ? 'Barbeiro atualizado!' : 'Barbeiro criado!');
-      await carregar();
-    } catch(err) {
-      toast(err.message, 'error');
-    } finally {
-      btn.disabled = false; btn.textContent = 'Salvar';
     }
-  }
+    fecharModal('modal');
+    toast(_editId ? 'Funcionário atualizado!' : 'Funcionário criado!');
+    await carregar();
+  } catch(err) { toast(err.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = 'Salvar'; }
+}
 
-  // ── Deletar ─────────────────────────────────────────────────
-  async function deletar(id) {
-    const b = _todos.find(x => x.id === id);
-    if (!confirm(`Desativar o barbeiro "${b?.nome}"?`)) return;
-    try {
-      await api.barbeiros.deletar(id);
-      toast('Barbeiro desativado.');
-      await carregar();
-    } catch(e) { toast(e.message, 'error'); }
-  }
+async function deletar(id) {
+  const b = _todos.find(x => x.id === id);
+  if (!confirm(`Desativar "${b?.nome}"?`)) return;
+  try {
+    await Bos.patch('/gestor/barbeiros/' + id, {ativo: false});
+    toast('Funcionário desativado.');
+    await carregar();
+  } catch(e) { toast(e.message, 'error'); }
+}
 
-  function esc(s) {
-    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
+// ── Modal Agenda / horário ────────────────────────────────
+async function abrirAgenda(id, nome) {
+  _agBarb = id;
+  document.getElementById('agNome').textContent = nome;
+  document.getElementById('pausaLista').innerHTML = '<div style="color:#555;font-size:13px">Carregando…</div>';
+  abrirModal('modalAgenda');
+  try {
+    const r = await Bos.get('/gestor/barbeiros/' + id + '/agenda');
+    const c = r.config || {};
+    document.getElementById('agAbertura').value   = c.horario_abertura  || '08:00';
+    document.getElementById('agFechamento').value = c.horario_fechamento || '18:00';
+    document.getElementById('agIntervalo').value  = c.intervalo_minutos || 30;
+    document.getElementById('agLojaAberta').checked = c.loja_aberta !== false;
+    renderPausas(r.pausas || []);
+  } catch(e) { toast('Erro ao carregar agenda: ' + e.message, 'error'); }
+}
 
-  carregar();
+function renderPausas(pausas) {
+  const el = document.getElementById('pausaLista');
+  if (!pausas.length) {
+    el.innerHTML = '<div style="color:#555;font-size:13px;padding:6px 0">Nenhuma pausa configurada.</div>';
+    return;
+  }
+  el.innerHTML = pausas.map(p => `
+    <div class="pausa-row">
+      <span>${p.hora_inicio} – ${p.hora_fim}${p.descricao ? ' · ' + esc(p.descricao) : ''}</span>
+      <button class="pausa-del" onclick="removerPausa(${p.id})">✕</button>
+    </div>`).join('');
+}
+
+async function salvarHorario() {
+  const btn = document.getElementById('btnSalvarHorario');
+  btn.disabled = true; btn.textContent = 'Salvando…';
+  try {
+    await Bos.put('/gestor/barbeiros/' + _agBarb + '/agenda', {
+      horario_abertura:  document.getElementById('agAbertura').value,
+      horario_fechamento: document.getElementById('agFechamento').value,
+      intervalo_minutos: parseInt(document.getElementById('agIntervalo').value),
+      loja_aberta:       document.getElementById('agLojaAberta').checked,
+    });
+    toast('Horário salvo!', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = 'Salvar horário'; }
+}
+
+async function adicionarPausa() {
+  const btn  = document.getElementById('btnAddPausa');
+  const ini  = document.getElementById('pIni').value;
+  const fim  = document.getElementById('pFim').value;
+  const desc = document.getElementById('pDesc').value.trim();
+  if (!ini || !fim) { toast('Informe horário de início e fim.', 'error'); return; }
+  btn.disabled = true;
+  try {
+    await Bos.post('/gestor/barbeiros/' + _agBarb + '/agenda/pausas', {
+      hora_inicio: ini, hora_fim: fim, descricao: desc || null,
+    });
+    toast('Pausa adicionada!', 'success');
+    document.getElementById('pDesc').value = '';
+    const r = await Bos.get('/gestor/barbeiros/' + _agBarb + '/agenda');
+    renderPausas(r.pausas || []);
+  } catch(e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+
+async function removerPausa(pid) {
+  if (!confirm('Remover esta pausa?')) return;
+  try {
+    await Bos.delete('/gestor/barbeiros/' + _agBarb + '/agenda/pausas/' + pid);
+    toast('Pausa removida.', 'success');
+    const r = await Bos.get('/gestor/barbeiros/' + _agBarb + '/agenda');
+    renderPausas(r.pausas || []);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+carregar();
 </script>
 {% endblock %}
