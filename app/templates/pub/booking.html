@@ -15,12 +15,15 @@
       --radius: 12px;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh;{% if imagem_fundo_url %} background-image: url('{{ imagem_fundo_url }}'); background-size: cover; background-attachment: fixed; background-position: center;{% endif %} }
 
     /* ── Header ─────────────────────────────────────────── */
     .header { background: #fff; border-bottom: 1px solid var(--border); padding: 0 16px; height: 54px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 100; }
     .brand { font-size: 16px; font-weight: 700; color: var(--text); }
     .brand-tag { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--bg); border: 1px solid var(--border); padding: 2px 8px; border-radius: 6px; margin-left: auto; white-space: nowrap; }
+
+    .header-logo-small { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1px solid var(--border); }
+    .header-auth-link { font-size: 12px; font-weight: 700; color: var(--cor); text-decoration: none; white-space: nowrap; }
 
     /* ── Progress ───────────────────────────────────────── */
     .progress { background: #fff; border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; justify-content: center; }
@@ -120,8 +123,12 @@
 
 <!-- ── Header ──────────────────────────────────────────────────────── -->
 <header class="header">
+  {% if logo_url %}
+  <img class="header-logo-small" src="{{ logo_url }}" alt="{{ bk_nome }}">
+  {% endif %}
   <span class="brand">{{ bk_nome }}</span>
   <span class="brand-tag">Agendamento</span>
+  <a class="header-auth-link" href="/b/{{ slug }}/entrar">Entrar</a>
 </header>
 
 <!-- ── Progress ────────────────────────────────────────────────────── -->
@@ -255,9 +262,35 @@
         <div style="font-size:12px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.5">
           Abra seu banco → Pix → Copia e Cola → cole o código acima.
         </div>
+
+        <!-- Comprovante PIX -->
+        <div id="comprovanteSection" style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:8px">📸 Enviar comprovante do PIX</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Após pagar, envie o comprovante para agilizar a confirmação.</div>
+          <label id="comprovanteLabel" style="display:flex;align-items:center;gap:10px;cursor:pointer;border:1.5px dashed var(--border);border-radius:10px;padding:14px;background:#fafafa">
+            <span style="font-size:22px">📄</span>
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#444" id="comprovanteNome">Selecionar imagem (JPEG/PNG, máx. 5 MB)</div>
+              <div style="font-size:11px;color:var(--muted)">Toque para escolher o arquivo</div>
+            </div>
+            <input type="file" id="comprovanteInput" accept="image/jpeg,image/png" style="display:none" onchange="previsualizarComprovante()">
+          </label>
+          <img id="comprovantePreview" src="" alt="preview" style="display:none;width:100%;border-radius:10px;margin-top:10px;max-height:200px;object-fit:contain;border:1px solid var(--border)">
+          <button id="btnEnviarComp" class="btn-primary" style="margin-top:12px;font-size:14px;padding:12px" onclick="enviarComprovante()">
+            Enviar comprovante
+          </button>
+          <div id="comprovanteSucesso" style="display:none;text-align:center;color:#16a34a;font-size:13px;font-weight:700;margin-top:8px">
+            ✓ Comprovante enviado! O gestor irá confirmar em breve.
+          </div>
+        </div>
       </div>
 
       <button class="btn-primary" onclick="reiniciar()">Fazer novo agendamento</button>
+
+      <div style="text-align:center;margin-top:16px;font-size:13px;color:var(--muted)">
+        Quer acompanhar seus agendamentos e benefícios?
+        <a href="/b/{{ slug }}/cadastro" style="color:var(--cor);font-weight:700;text-decoration:none">Crie sua conta</a>
+      </div>
     </div>
   </div>
 
@@ -626,8 +659,11 @@ async function confirmar() {
   }
 }
 
+let _agId = null;
+
 // ── Sucesso ───────────────────────────────────────────────────────────
 function enterSuccess(r) {
+  _agId = r.id;
   goStep(6);
   const [ano, mes, dia] = _state.data.split('-');
   const dataFmt = `${dia}/${mes}/${ano}`;
@@ -639,11 +675,49 @@ function enterSuccess(r) {
     pixSec.style.display = '';
     const code = r.pix.codigo_pix;
     document.getElementById('pixCode').textContent = code;
-    // QR Code gerado via API pública (sem dependência de biblioteca)
     const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(code);
     document.getElementById('pixQr').src = qrUrl;
+    // show comprovante section
+    document.getElementById('comprovanteSection').style.display = '';
+    document.getElementById('comprovanteSucesso').style.display = 'none';
   } else {
     pixSec.style.display = 'none';
+  }
+}
+
+function previsualizarComprovante() {
+  const input   = document.getElementById('comprovanteInput');
+  const preview = document.getElementById('comprovantePreview');
+  const nome    = document.getElementById('comprovanteNome');
+  if (!input.files.length) return;
+  const file = input.files[0];
+  nome.textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    preview.src           = e.target.result;
+    preview.style.display = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function enviarComprovante() {
+  const input = document.getElementById('comprovanteInput');
+  if (!input.files.length) { toast('Selecione uma imagem.', 'error'); return; }
+  const btn = document.getElementById('btnEnviarComp');
+  btn.disabled = true; btn.textContent = 'Enviando…';
+  try {
+    const fd = new FormData();
+    fd.append('arquivo', input.files[0]);
+    const resp = await fetch(`/api/v1/pub/${SLUG}/agendamentos/${_agId}/comprovante`, {
+      method: 'POST', body: fd,
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.erro || 'Erro ao enviar.');
+    document.getElementById('comprovanteSucesso').style.display = '';
+    btn.style.display = 'none';
+  } catch(e) {
+    toast(e.message, 'error');
+    btn.disabled = false; btn.textContent = 'Enviar comprovante';
   }
 }
 

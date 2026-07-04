@@ -89,10 +89,14 @@
           <option value="60">60 min</option>
         </select>
       </div>
-      <div class="field" style="display:flex;align-items:flex-end">
+      <div class="field" style="display:flex;align-items:flex-end;flex-direction:column;gap:6px">
         <label class="check-item" style="padding-bottom:4px">
           <input type="checkbox" id="agLojaAberta">
           <span>Loja aberta</span>
+        </label>
+        <label class="check-item" style="padding-bottom:4px">
+          <input type="checkbox" id="agPermiteHorario">
+          <span>Barbeiro pode editar horário</span>
         </label>
       </div>
     </div>
@@ -266,7 +270,8 @@ async function abrirAgenda(id, nome) {
     document.getElementById('agAbertura').value   = c.horario_abertura  || '08:00';
     document.getElementById('agFechamento').value = c.horario_fechamento || '18:00';
     document.getElementById('agIntervalo').value  = c.intervalo_minutos || 30;
-    document.getElementById('agLojaAberta').checked = c.loja_aberta !== false;
+    document.getElementById('agLojaAberta').checked    = c.loja_aberta !== false;
+    document.getElementById('agPermiteHorario').checked = !!c.permite_horario_barbeiro;
     renderPausas(r.pausas || []);
   } catch(e) { toast('Erro ao carregar agenda: ' + e.message, 'error'); }
 }
@@ -289,10 +294,11 @@ async function salvarHorario() {
   btn.disabled = true; btn.textContent = 'Salvando…';
   try {
     await Bos.put('/gestor/barbeiros/' + _agBarb + '/agenda', {
-      horario_abertura:  document.getElementById('agAbertura').value,
-      horario_fechamento: document.getElementById('agFechamento').value,
-      intervalo_minutos: parseInt(document.getElementById('agIntervalo').value),
-      loja_aberta:       document.getElementById('agLojaAberta').checked,
+      horario_abertura:         document.getElementById('agAbertura').value,
+      horario_fechamento:       document.getElementById('agFechamento').value,
+      intervalo_minutos:        parseInt(document.getElementById('agIntervalo').value),
+      loja_aberta:              document.getElementById('agLojaAberta').checked,
+      permite_horario_barbeiro: document.getElementById('agPermiteHorario').checked,
     });
     toast('Horário salvo!', 'success');
   } catch(e) { toast(e.message, 'error'); }

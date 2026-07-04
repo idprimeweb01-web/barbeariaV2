@@ -96,9 +96,9 @@ const SECTIONS = [
 async function carregarBarbearias() {
   const select = document.getElementById('selectBarbearia');
   try {
-    const barbearias = await api.super.barbearias.listar();
+    const barbearias = await Bos.get('/super/barbearias');
     select.innerHTML = '<option value="">Selecione uma barbearia…</option>' +
-      barbearias.map(b => `<option value="${b.id}">${esc(b.nome)} (${esc(b.slug)})</option>`).join('');
+      barbearias.map(b => `<option value="${b.id}">${esc(b.nome_exibicao || b.nome)} (${esc(b.slug)})</option>`).join('');
   } catch (e) {
     toast(e.message, 'error');
   }
@@ -137,7 +137,7 @@ async function carregarFeatures() {
 
   container.innerHTML = '<div class="empty-state">Carregando features…</div>';
   try {
-    const estado = await api.super.features.listar(barbeariaId);
+    const estado = await Bos.get('/super/barbearias/' + barbeariaId + '/features');
     renderizar(barbeariaId, estado);
   } catch (e) {
     container.innerHTML = `<div class="empty-state">❌ Erro ao carregar: ${e.message}</div>`;
@@ -151,7 +151,7 @@ async function alternar(barbeariaId, nome) {
 
   toggle.classList.add('busy');
   try {
-    const d = await api.super.features.toggle(barbeariaId, nome);
+    const d = await Bos.put('/super/barbearias/' + barbeariaId + '/features/' + nome, {});
     toggle.classList.toggle('active', d.ativo);
     row.classList.toggle('active', d.ativo);
     label.textContent = d.ativo ? 'ativada' : 'inativa';

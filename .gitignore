@@ -29,6 +29,7 @@ instance/
 # ── Distribuição / build ──────────────────────────────────────────────────────
 dist/
 build/
+node_modules/
 *.egg-info/
 *.egg
 .eggs/

@@ -10,6 +10,7 @@ from app.models import (
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.utils.agenda import fim_agendamento, verificar_conflito
+from app.utils.cupons import incrementar_uso_cupom, decrementar_uso_cupom
 from app.labels import L
 from app.utils import normalizar_telefone
 
@@ -61,7 +62,7 @@ def _fmt_ag_gestor(ag):
         } if cliente else None,
         'barbeiro':         {'id': ag.barbeiro_id, 'nome': barbeiro_nome},
         'servicos':         servicos_info,
-        'pix':              {'status': pix.status} if pix else None,
+        'pix':              {'status': pix.status, 'comprovante_url': pix.comprovante_url} if pix else None,
     }
 
 
@@ -113,10 +114,10 @@ def aprovar_agendamento(ag_id):
     ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id).first()
     if not ag:
         raise APIError(f'{L("agendamento")} não encontrado.', 404)
-    if ag.status != 'aguardando_pagamento':
+    _aprovavel = {'aguardando_aprovacao', 'aguardando_comprovante', 'aguardando_pagamento'}
+    if ag.status not in _aprovavel:
         raise APIError(
-            f'Apenas agendamentos com status "aguardando_pagamento" podem ser aprovados. '
-            f'Status atual: "{ag.status}".'
+            f'Agendamento não pode ser aprovado. Status atual: "{ag.status}".'
         )
 
     pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id).first()
@@ -124,6 +125,9 @@ def aprovar_agendamento(ag_id):
         pix.status = 'aprovado'
         from datetime import datetime
         pix.respondido_em = datetime.utcnow()
+
+    if ag.cupom_id:
+        incrementar_uso_cupom(ag.cupom_id)
 
     ag.status = 'agendado'
     db.session.commit()
@@ -144,6 +148,9 @@ def cancelar_agendamento_gestor(ag_id):
     pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id).first()
     if pix and pix.status == 'pendente':
         pix.status = 'rejeitado'
+
+    if ag.cupom_id and ag.status == 'agendado':
+        decrementar_uso_cupom(ag.cupom_id)
 
     ag.status = 'cancelado'
     db.session.commit()

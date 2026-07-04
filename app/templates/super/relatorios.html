@@ -3,9 +3,7 @@
 {% block page_title %}Relatórios{% endblock %}
 
 {% block styles %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-  /* ── Filtros ──────────────────────────────────────────── */
   .rel-toolbar {
     display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
     margin-bottom: 20px; background: #1e1e1e; border: 1px solid #2a2a2a;
@@ -89,274 +87,81 @@
 {% endblock %}
 
 {% block content %}
-<!-- Toolbar de filtros -->
-<div class="rel-toolbar">
-  <div class="tipo-tabs">
-    <button class="tipo-btn active" data-tipo="dia"    onclick="setTipo('dia')">Hoje</button>
-    <button class="tipo-btn"        data-tipo="semana" onclick="setTipo('semana')">Semana</button>
-    <button class="tipo-btn"        data-tipo="mes"    onclick="setTipo('mes')">Mês</button>
-    <button class="tipo-btn"        data-tipo="ano"    onclick="setTipo('ano')">Ano</button>
-  </div>
-  <div style="display:flex;align-items:center;gap:8px">
-    <span class="rel-label">Data</span>
-    <input type="date" class="rel-input" id="inputData">
-  </div>
-  <div style="display:flex;align-items:center;gap:8px">
-    <span class="rel-label">Barbearia</span>
-    <select class="rel-input" id="selBarbearia" style="min-width:160px">
-      <option value="">Todas (consolidado)</option>
-    </select>
-  </div>
-  <button class="btn-carregar" onclick="carregar()">Carregar</button>
-</div>
+<div style="font-size:22px;font-weight:700;color:#eee;margin-bottom:4px">Relatórios da Plataforma</div>
+<div style="font-size:13px;color:#555;margin-bottom:24px">Totais consolidados de todos os estabelecimentos</div>
 
-<!-- Loading -->
-<div id="relLoading" style="text-align:center;padding:40px;color:#444;display:none">Carregando…</div>
+<div id="relLoading" style="text-align:center;padding:40px;color:#444">Carregando…</div>
 
-<!-- Resultados -->
 <div id="relConteudo" style="display:none">
-
-  <!-- Cards principais -->
   <div class="rel-cards">
     <div class="rel-card">
-      <div class="rel-card-icon">💰</div>
-      <div class="rel-card-label">Faturamento</div>
-      <div class="rel-card-val" id="cFat">—</div>
-      <div class="rel-card-sub" id="cFatVar"></div>
+      <div class="rel-card-icon">🏠</div>
+      <div class="rel-card-label">Estabelecimentos</div>
+      <div class="rel-card-val" id="cBk">—</div>
+      <div class="rel-card-sub"><span id="cBkAtiv">—</span> ativos</div>
     </div>
+    <div class="rel-card">
+      <div class="rel-card-icon">👔</div>
+      <div class="rel-card-label">Gestores</div>
+      <div class="rel-card-val" id="cGest">—</div>
+    </div>
+    <div class="rel-card">
+      <div class="rel-card-icon">✂️</div>
+      <div class="rel-card-label">Barbeiros</div>
+      <div class="rel-card-val" id="cBarb">—</div>
+    </div>
+    <div class="rel-card">
+      <div class="rel-card-icon">👥</div>
+      <div class="rel-card-label">Clientes</div>
+      <div class="rel-card-val" id="cCli">—</div>
+    </div>
+  </div>
+  <div class="rel-cards">
     <div class="rel-card">
       <div class="rel-card-icon">📊</div>
-      <div class="rel-card-label">Atendimentos</div>
-      <div class="rel-card-val" id="cAts">—</div>
-      <div class="at-row">
-        <span class="at-badge at-conc" id="cConc">—</span>
-        <span class="at-badge at-canc" id="cCanc">—</span>
-      </div>
+      <div class="rel-card-label">Agendamentos Totais</div>
+      <div class="rel-card-val" id="cAgs">—</div>
     </div>
     <div class="rel-card">
-      <div class="rel-card-icon">💵</div>
-      <div class="rel-card-label">Ticket Médio</div>
-      <div class="rel-card-val" id="cTicket">—</div>
-      <div class="rel-card-sub">por atendimento</div>
+      <div class="rel-card-icon" style="color:#4ade80">✓</div>
+      <div class="rel-card-label">Concluídos</div>
+      <div class="rel-card-val" id="cConc" style="color:#4ade80">—</div>
     </div>
     <div class="rel-card">
-      <div class="rel-card-icon">📅</div>
-      <div class="rel-card-label">Período</div>
-      <div class="rel-card-val" style="font-size:14px;line-height:1.4" id="cPeriodo">—</div>
+      <div class="rel-card-icon" style="color:#f87171">✗</div>
+      <div class="rel-card-label">Cancelados</div>
+      <div class="rel-card-val" id="cCanc" style="color:#f87171">—</div>
+    </div>
+    <div class="rel-card">
+      <div class="rel-card-icon" style="color:#f59e0b">⏳</div>
+      <div class="rel-card-label">Aguardando PIX</div>
+      <div class="rel-card-val" id="cPix" style="color:#f59e0b">—</div>
     </div>
   </div>
-
-  <!-- Comparativo por barbearia -->
-  <div class="rel-comp-wrap" id="tabelaBarbearias">
-    <div class="rel-comp-title">🏠 Comparativo por Barbearia</div>
-    <table class="comp-table">
-      <thead>
-        <tr>
-          <th>Barbearia</th>
-          <th>Atendimentos</th>
-          <th>Faturamento</th>
-          <th>Ticket Médio</th>
-        </tr>
-      </thead>
-      <tbody id="tBodyBarbearias"></tbody>
-    </table>
-  </div>
-
-  <!-- Gráfico -->
-  <div class="rel-chart-wrap">
-    <div class="rel-chart-title">Faturamento no período</div>
-    <canvas id="chartRel" height="110"></canvas>
-  </div>
-
-  <!-- Estoque baixo -->
-  <div class="rel-alert" id="alertEstoque" style="display:none">
-    <div class="rel-alert-title">⚠️ Produtos com Estoque Baixo (&lt; 5 unidades)</div>
-    <div class="estoque-chips" id="chipsEstoque"></div>
-  </div>
-
-  <!-- Barbeiros + Serviços top -->
-  <div class="rel-grid-2">
-    <div class="rel-table-wrap">
-      <div class="rel-table-title">💼 Por Barbeiro</div>
-      <table class="rel-table" id="tBarbeiros"></table>
-    </div>
-    <div class="rel-table-wrap">
-      <div class="rel-table-title">✂️ Serviços Mais Vendidos</div>
-      <table class="rel-table" id="tServicos"></table>
-    </div>
-  </div>
-
-  <!-- Clientes + Produtos top -->
-  <div class="rel-grid-2">
-    <div class="rel-table-wrap">
-      <div class="rel-table-title">👥 Melhores Clientes</div>
-      <table class="rel-table" id="tClientes"></table>
-    </div>
-    <div class="rel-table-wrap">
-      <div class="rel-table-title">🛍️ Produtos Mais Vendidos</div>
-      <table class="rel-table" id="tProdutos"></table>
-    </div>
-  </div>
-
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  let _tipo  = 'mes';
-  let _chart = null;
+(async function() {
+  document.getElementById('relLoading').style.display = '';
+  try {
+    const d = await Bos.get('/super/relatorios');
+    document.getElementById('relLoading').style.display = 'none';
+    document.getElementById('relConteudo').style.display = '';
 
-  // ── Init ────────────────────────────────────────────────
-  (async () => {
-    document.getElementById('inputData').value = new Date().toISOString().split('T')[0];
-    try {
-      const barbs = await api.super.barbearias.listar();
-      const sel   = document.getElementById('selBarbearia');
-      barbs.forEach(b => {
-        const o = document.createElement('option');
-        o.value = b.id; o.textContent = esc(b.nome);
-        sel.appendChild(o);
-      });
-    } catch {}
-    carregar();
-  })();
-
-  function setTipo(t) {
-    _tipo = t;
-    document.querySelectorAll('.tipo-btn').forEach(b =>
-      b.classList.toggle('active', b.dataset.tipo === t));
-    carregar();
+    document.getElementById('cBk').textContent    = d.barbearias;
+    document.getElementById('cBkAtiv').textContent = d.barbearias_ativas;
+    document.getElementById('cGest').textContent  = d.gestores;
+    document.getElementById('cBarb').textContent  = d.barbeiros;
+    document.getElementById('cCli').textContent   = d.clientes;
+    document.getElementById('cAgs').textContent   = d.agendamentos;
+    document.getElementById('cConc').textContent  = d.concluidos;
+    document.getElementById('cCanc').textContent  = d.cancelados;
+    document.getElementById('cPix').textContent   = d.pendentes_pix;
+  } catch(e) {
+    document.getElementById('relLoading').textContent = 'Erro: ' + e.message;
   }
-
-  // ── Carregar dados ──────────────────────────────────────
-  async function carregar() {
-    const data       = document.getElementById('inputData').value || new Date().toISOString().split('T')[0];
-    const barbearia  = document.getElementById('selBarbearia').value;
-    const params     = new URLSearchParams({ tipo: _tipo, data });
-    if (barbearia) params.append('barbearia_id', barbearia);
-
-    document.getElementById('relLoading').style.display   = '';
-    document.getElementById('relConteudo').style.display  = 'none';
-
-    try {
-      const d = await api.get(`/super/relatorios/periodo?${params}`);
-      renderTudo(d);
-      document.getElementById('relLoading').style.display  = 'none';
-      document.getElementById('relConteudo').style.display = '';
-    } catch(e) {
-      document.getElementById('relLoading').textContent = 'Erro: ' + e.message;
-    }
-  }
-
-  // ── Render ──────────────────────────────────────────────
-  function renderTudo(d) {
-    const fmtR = v => 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
-
-    // Cards
-    document.getElementById('cFat').textContent    = fmtR(d.faturamento.total);
-    const vp = d.faturamento.variacao_pct;
-    document.getElementById('cFatVar').innerHTML   = vp != null
-      ? `<span class="${vp >= 0 ? 'var-pos' : 'var-neg'}">${vp >= 0 ? '▲' : '▼'} ${Math.abs(vp)}%</span> vs período anterior`
-      : 'Sem período anterior';
-
-    document.getElementById('cAts').textContent    = d.atendimentos.concluidos + d.atendimentos.cancelados;
-    document.getElementById('cConc').textContent   = `✓ ${d.atendimentos.concluidos}`;
-    document.getElementById('cCanc').textContent   = `✗ ${d.atendimentos.cancelados}`;
-    document.getElementById('cTicket').textContent = fmtR(d.ticket_medio);
-    document.getElementById('cPeriodo').textContent = `${d.periodo.inicio}\n→ ${d.periodo.fim}`;
-
-    // Comparativo por barbearia
-    const barbearias = d.barbearias || [];
-    if (barbearias.length) {
-      document.getElementById('tBodyBarbearias').innerHTML = barbearias.map(b => `
-        <tr>
-          <td style="font-weight:600">${esc(b.nome)}</td>
-          <td>${b.atendimentos}</td>
-          <td>${fmtR(b.faturamento)}</td>
-          <td>${fmtR(b.ticket_medio)}</td>
-        </tr>`).join('');
-      document.getElementById('tabelaBarbearias').style.display = '';
-    } else {
-      document.getElementById('tabelaBarbearias').style.display = 'none';
-    }
-
-    // Gráfico
-    const labels = d.receita_grafico.map(x => {
-      const dt = new Date(x.data + 'T12:00:00');
-      return d.receita_grafico_fmt === 'mes'
-        ? dt.toLocaleDateString('pt-BR', {month:'short', year:'2-digit'})
-        : dt.toLocaleDateString('pt-BR', {day:'2-digit', month:'short'});
-    });
-    const vals = d.receita_grafico.map(x => x.receita);
-
-    if (_chart) _chart.destroy();
-    _chart = new Chart(document.getElementById('chartRel'), {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Faturamento', data: vals,
-          backgroundColor: 'rgba(186,117,23,.35)',
-          borderColor: '#BA7517', borderWidth: 2, borderRadius: 5,
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { grid: { color: '#252525' }, ticks: { color: '#555', font: { size: 11 } } },
-          y: { grid: { color: '#252525' }, ticks: { color: '#555', callback: v => 'R$' + v } },
-        }
-      }
-    });
-
-    // Estoque baixo
-    const alertEl = document.getElementById('alertEstoque');
-    if (d.estoque_baixo.length) {
-      document.getElementById('chipsEstoque').innerHTML = d.estoque_baixo.map(p =>
-        `<span class="estoque-chip">${esc(p.nome)} (${p.estoque})</span>`
-      ).join('');
-      alertEl.style.display = '';
-    } else {
-      alertEl.style.display = 'none';
-    }
-
-    // Barbeiros
-    document.getElementById('tBarbeiros').innerHTML = d.barbeiros.length
-      ? d.barbeiros.map(b => `<tr>
-          <td><div style="font-weight:600">${esc(b.nome)}</div>
-              <div style="font-size:11px;color:#555">${b.atendimentos} atend. · comissão ${b.comissao_pct}%</div></td>
-          <td><div>${fmtR(b.receita)}</div>
-              <div style="font-size:11px;color:#666">comissão ${fmtR(b.comissao)}</div></td>
-        </tr>`).join('')
-      : `<tr><td colspan="2" class="rel-empty">Sem dados no período</td></tr>`;
-
-    // Serviços top
-    document.getElementById('tServicos').innerHTML = d.servicos_top.length
-      ? d.servicos_top.map((s, i) => `<tr>
-          <td><span style="color:#444;margin-right:8px">${i+1}.</span>${esc(s.nome)}
-              <span style="font-size:11px;color:#555;margin-left:6px">${s.quantidade}×</span></td>
-          <td>${fmtR(s.receita)}</td>
-        </tr>`).join('')
-      : `<tr><td colspan="2" class="rel-empty">Sem dados</td></tr>`;
-
-    // Clientes
-    document.getElementById('tClientes').innerHTML = d.clientes_top.length
-      ? d.clientes_top.map(c => `<tr>
-          <td><div style="font-weight:600">${esc(c.nome)}</div>
-              <div style="font-size:11px;color:#555">${c.visitas} visita${c.visitas !== 1 ? 's' : ''}</div></td>
-          <td>${fmtR(c.gasto)}</td>
-        </tr>`).join('')
-      : `<tr><td colspan="2" class="rel-empty">Sem dados</td></tr>`;
-
-    // Produtos top
-    document.getElementById('tProdutos').innerHTML = d.produtos_top.length
-      ? d.produtos_top.map((p, i) => `<tr>
-          <td><span style="color:#444;margin-right:8px">${i+1}.</span>${esc(p.nome)}
-              <span style="font-size:11px;color:#555;margin-left:6px">${p.quantidade}×</span></td>
-          <td>${fmtR(p.receita)}</td>
-        </tr>`).join('')
-      : `<tr><td colspan="2" class="rel-empty">Sem dados</td></tr>`;
-  }
+})();
 </script>
 {% endblock %}

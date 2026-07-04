@@ -3,159 +3,63 @@
 {% block page_title %}Gestores{% endblock %}
 
 {% block content %}
-<div class="section-header">
+<div class="section-header" style="margin-bottom:16px">
   <span class="section-title">Gestores</span>
-  <button class="btn btn-primary" style="width:auto;padding:9px 18px;font-size:14px" onclick="novoModal()">+ Gestor</button>
+  <input id="fBusca" type="text" placeholder="Buscar por nome ou e-mail…" oninput="renderTabela()"
+    style="background:#1e1e1e;border:1px solid #333;color:#ccc;padding:9px 14px;border-radius:8px;font-size:13px;font-family:inherit;width:240px">
 </div>
 
 <div class="table-wrap">
   <table class="data-table">
-    <thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Barbearia</th><th>Status</th><th>Ações</th></tr></thead>
-    <tbody id="tbody"><tr><td colspan="6" style="text-align:center;color:#444;padding:32px">Carregando…</td></tr></tbody>
+    <thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Barbearia</th><th>Status</th></tr></thead>
+    <tbody id="tbody"><tr><td colspan="5" style="text-align:center;color:#444;padding:32px">Carregando…</td></tr></tbody>
   </table>
-</div>
-
-<!-- Modal criar/editar -->
-<div class="modal-overlay" id="modal" onclick="if(event.target===this)fecharModal('modal')">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h3 id="modalTitulo">Novo Gestor</h3>
-      <button class="modal-close" onclick="fecharModal('modal')">×</button>
-    </div>
-    <form id="form" onsubmit="salvar(event)">
-      <div class="field"><label>Nome *</label><input type="text" id="fNome" required></div>
-      <div class="field"><label>E-mail *</label><input type="email" id="fEmail" required></div>
-      <div class="field"><label>Telefone *</label><input type="tel" id="fTelefone" required></div>
-      <div class="field">
-        <label>Barbearia *</label>
-        <select id="fBarbearia" style="padding:13px 16px;background:#161616;border:1.5px solid #333;border-radius:10px;color:#fff;font-family:inherit;font-size:15px;width:100%" required>
-          <option value="">Selecione…</option>
-        </select>
-      </div>
-      <div class="field" id="wrSenha"><label>Senha * (mín. 6)</label><input type="password" id="fSenha" minlength="6"></div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modal')">Cancelar</button>
-        <button type="submit" class="btn btn-primary" id="btnSalvar" style="width:auto;padding:9px 24px">Salvar</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- Modal resetar senha -->
-<div class="modal-overlay" id="modalReset" onclick="if(event.target===this)fecharModal('modalReset')">
-  <div class="modal-box" style="max-width:360px">
-    <div class="modal-header">
-      <h3>Resetar Senha — <span id="resetNome"></span></h3>
-      <button class="modal-close" onclick="fecharModal('modalReset')">×</button>
-    </div>
-    <form id="formReset" onsubmit="confirmarReset(event)">
-      <div class="field"><label>Nova senha *</label><input type="password" id="rSenha" minlength="6" required></div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modalReset')">Cancelar</button>
-        <button type="submit" class="btn btn-primary" id="btnReset" style="width:auto;padding:9px 24px">Confirmar</button>
-      </div>
-    </form>
-  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  let _todos=[], _barbs=[], _editId=null, _resetId=null;
+let _todos = [];
 
-  async function carregar() {
-    const [gestores, barbs] = await Promise.all([
-      api.super.gestores.listar().catch(() => []),
-      api.super.barbearias.listar().catch(() => []),
-    ]);
-    _todos=gestores; _barbs=barbs;
-    renderSelect(); renderTabela();
+async function carregar() {
+  try {
+    _todos = await Bos.get('/super/gestores');
+    renderTabela();
+  } catch(e) {
+    document.getElementById('tbody').innerHTML =
+      `<tr><td colspan="5" style="text-align:center;color:#f87171;padding:32px">${esc(e.message)}</td></tr>`;
   }
+}
 
-  function renderSelect() {
-    const sel=document.getElementById('fBarbearia');
-    sel.innerHTML='<option value="">Selecione…</option>' +
-      _barbs.map(b=>`<option value="${b.id}">${esc(b.nome)}</option>`).join('');
+function renderTabela() {
+  const busca   = (document.getElementById('fBusca')?.value || '').toLowerCase();
+  const tb      = document.getElementById('tbody');
+  const lista   = _todos.filter(g =>
+    !busca || g.nome?.toLowerCase().includes(busca) || g.email?.toLowerCase().includes(busca)
+  );
+  if (!lista.length) {
+    tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#444;padding:32px">Nenhum gestor encontrado.</td></tr>';
+    return;
   }
-
-  function renderTabela() {
-    const tb=document.getElementById('tbody');
-    if(!_todos.length){ tb.innerHTML='<tr><td colspan="6"><div class="empty-state">Nenhum gestor.</div></td></tr>'; return; }
-    tb.innerHTML=_todos.map(g=>`<tr>
-      <td style="font-weight:600">${esc(g.nome)}</td>
-      <td style="color:#777">${esc(g.email||'—')}</td>
-      <td>${esc(g.telefone)}</td>
-      <td>${esc(g.barbearia||'—')}</td>
-      <td>${g.ativo?'<span class="badge-green">Ativo</span>':'<span class="badge-gray">Inativo</span>'}</td>
-      <td><div class="td-actions">
-        <button class="btn-icon" onclick="editarModal(${g.id})">Editar</button>
-        <button class="btn-icon" onclick="abrirReset(${g.id},'${esc(g.nome)}')">Senha</button>
-      </div></td>
+  tb.innerHTML = lista.map(g => `
+    <tr>
+      <td style="font-weight:600;color:#ddd">${esc(g.nome)}</td>
+      <td style="color:#aaa">${esc(g.email || '—')}</td>
+      <td style="color:#aaa">${esc(g.telefone || '—')}</td>
+      <td style="color:#aaa">
+        ${g.bk_slug
+          ? `<a href="/b/${esc(g.bk_slug)}" target="_blank" style="color:var(--cor-primaria);text-decoration:none">${esc(g.barbearia || '—')}</a>`
+          : esc(g.barbearia || '—')}
+      </td>
+      <td>
+        <span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;
+          ${g.ativo ? 'background:rgba(34,197,94,.12);color:#4ade80' : 'background:rgba(239,68,68,.12);color:#f87171'}">
+          ${g.ativo ? 'Ativo' : 'Inativo'}
+        </span>
+      </td>
     </tr>`).join('');
-  }
+}
 
-  function novoModal(){
-    _editId=null;
-    document.getElementById('modalTitulo').textContent='Novo Gestor';
-    document.getElementById('form').reset();
-    document.getElementById('wrSenha').style.display='';
-    document.getElementById('fSenha').required=true;
-    abrirModal('modal');
-  }
-
-  function editarModal(id){
-    const g=_todos.find(x=>x.id===id); if(!g) return;
-    _editId=id;
-    document.getElementById('modalTitulo').textContent='Editar Gestor';
-    document.getElementById('fNome').value=g.nome;
-    document.getElementById('fEmail').value=g.email||'';
-    document.getElementById('fTelefone').value=g.telefone;
-    document.getElementById('fBarbearia').value=g.barbearia_id||'';
-    document.getElementById('wrSenha').style.display='none';
-    document.getElementById('fSenha').required=false;
-    abrirModal('modal');
-  }
-
-  async function salvar(e){
-    e.preventDefault();
-    const btn=document.getElementById('btnSalvar');
-    btn.disabled=true; btn.textContent='Salvando…';
-    const dados={
-      nome:         document.getElementById('fNome').value.trim(),
-      email:        document.getElementById('fEmail').value.trim(),
-      telefone:     document.getElementById('fTelefone').value.trim(),
-      barbearia_id: parseInt(document.getElementById('fBarbearia').value)||null,
-    };
-    if(!_editId) dados.senha=document.getElementById('fSenha').value;
-    try{
-      if(_editId) await api.super.gestores.editar(_editId, dados);
-      else        await api.super.gestores.criar(dados);
-      fecharModal('modal');
-      toast(_editId?'Gestor atualizado!':'Gestor criado!');
-      await carregar();
-    }catch(err){ toast(err.message,'error'); }
-    finally{ btn.disabled=false; btn.textContent='Salvar'; }
-  }
-
-  function abrirReset(id, nome){
-    _resetId=id;
-    document.getElementById('resetNome').textContent=nome;
-    document.getElementById('rSenha').value='';
-    abrirModal('modalReset');
-  }
-
-  async function confirmarReset(e){
-    e.preventDefault();
-    const btn=document.getElementById('btnReset');
-    btn.disabled=true; btn.textContent='Confirmando…';
-    try{
-      await api.super.gestores.resetarSenha(_resetId, {nova_senha: document.getElementById('rSenha').value});
-      fecharModal('modalReset');
-      toast('Senha redefinida!');
-    }catch(err){ toast(err.message,'error'); }
-    finally{ btn.disabled=false; btn.textContent='Confirmar'; }
-  }
-
-  carregar();
+carregar();
 </script>
 {% endblock %}

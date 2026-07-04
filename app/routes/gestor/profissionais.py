@@ -36,10 +36,11 @@ def _fmt_barbeiro(b):
         'ativo':                     b.ativo,
         'barbeiro_id':               b.id,
         'configuracao': {
-            'horario_abertura':   cfg.horario_abertura.strftime('%H:%M') if cfg and cfg.horario_abertura else None,
-            'horario_fechamento': cfg.horario_fechamento.strftime('%H:%M') if cfg and cfg.horario_fechamento else None,
-            'intervalo_minutos':  cfg.intervalo_minutos if cfg else 30,
-            'loja_aberta':        cfg.loja_aberta if cfg else False,
+            'horario_abertura':          cfg.horario_abertura.strftime('%H:%M') if cfg and cfg.horario_abertura else None,
+            'horario_fechamento':        cfg.horario_fechamento.strftime('%H:%M') if cfg and cfg.horario_fechamento else None,
+            'intervalo_minutos':         cfg.intervalo_minutos if cfg else 30,
+            'loja_aberta':               cfg.loja_aberta if cfg else False,
+            'permite_horario_barbeiro':  cfg.permite_horario_barbeiro if cfg else False,
         } if cfg else None,
     }
 
@@ -272,11 +273,12 @@ def _fmt_config(cfg):
     if not cfg:
         return None
     return {
-        'id':                 cfg.id,
-        'horario_abertura':   cfg.horario_abertura.strftime('%H:%M') if cfg.horario_abertura else None,
-        'horario_fechamento': cfg.horario_fechamento.strftime('%H:%M') if cfg.horario_fechamento else None,
-        'intervalo_minutos':  cfg.intervalo_minutos,
-        'loja_aberta':        cfg.loja_aberta,
+        'id':                        cfg.id,
+        'horario_abertura':          cfg.horario_abertura.strftime('%H:%M') if cfg.horario_abertura else None,
+        'horario_fechamento':        cfg.horario_fechamento.strftime('%H:%M') if cfg.horario_fechamento else None,
+        'intervalo_minutos':         cfg.intervalo_minutos,
+        'loja_aberta':               cfg.loja_aberta,
+        'permite_horario_barbeiro':  cfg.permite_horario_barbeiro,
     }
 
 
@@ -338,6 +340,8 @@ def put_agenda(barbeiro_id):
         config.intervalo_minutos = v
     if 'loja_aberta' in dados:
         config.loja_aberta = bool(dados['loja_aberta'])
+    if 'permite_horario_barbeiro' in dados:
+        config.permite_horario_barbeiro = bool(dados['permite_horario_barbeiro'])
 
     db.session.commit()
     return jsonify({'config': _fmt_config(config)}), 200

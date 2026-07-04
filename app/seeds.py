@@ -32,6 +32,81 @@ def seed_feature_metadata():
     print(f'[seed] FeatureMetadata: {len(FEATURES)} features sincronizadas.')
 
 
+_SEGMENTOS = [
+    ('barbearia', 'Barbearia', {
+        'rotulo_tenant': 'Barbearia', 'rotulo_tenant_plural': 'Barbearias',
+        'rotulo_profissional': 'Barbeiro', 'rotulo_profissional_plural': 'Barbeiros',
+        'rotulo_servico': 'Serviço', 'rotulo_servico_plural': 'Serviços',
+        'rotulo_agendamento': 'Agendamento', 'rotulo_agendamento_plural': 'Agendamentos',
+        'rotulo_cliente': 'Cliente', 'rotulo_cliente_plural': 'Clientes',
+        'rotulo_produto': 'Produto', 'rotulo_produto_plural': 'Produtos',
+        'rotulo_plano': 'Plano', 'rotulo_plano_plural': 'Planos',
+        'rotulo_pagamento': 'Pagamento', 'rotulo_faturamento': 'Faturamento',
+        'rotulo_relatorio': 'Relatório',
+    }),
+    ('salao', 'Salão de Beleza', {
+        'rotulo_tenant': 'Salão', 'rotulo_tenant_plural': 'Salões',
+        'rotulo_profissional': 'Cabeleireira', 'rotulo_profissional_plural': 'Cabeleireiras',
+        'rotulo_servico': 'Tratamento', 'rotulo_servico_plural': 'Tratamentos',
+        'rotulo_agendamento': 'Sessão', 'rotulo_agendamento_plural': 'Sessões',
+        'rotulo_cliente': 'Cliente', 'rotulo_cliente_plural': 'Clientes',
+        'rotulo_produto': 'Produto', 'rotulo_produto_plural': 'Produtos',
+        'rotulo_plano': 'Pacote', 'rotulo_plano_plural': 'Pacotes',
+        'rotulo_pagamento': 'Pagamento', 'rotulo_faturamento': 'Faturamento',
+        'rotulo_relatorio': 'Relatório',
+    }),
+    ('manicure', 'Nail Art / Manicure', {
+        'rotulo_tenant': 'Ateliê', 'rotulo_tenant_plural': 'Ateliês',
+        'rotulo_profissional': 'Manicure', 'rotulo_profissional_plural': 'Manicures',
+        'rotulo_servico': 'Design', 'rotulo_servico_plural': 'Designs',
+        'rotulo_agendamento': 'Sessão', 'rotulo_agendamento_plural': 'Sessões',
+        'rotulo_cliente': 'Cliente', 'rotulo_cliente_plural': 'Clientes',
+        'rotulo_produto': 'Material', 'rotulo_produto_plural': 'Materiais',
+        'rotulo_plano': 'Pacote', 'rotulo_plano_plural': 'Pacotes',
+        'rotulo_pagamento': 'Pagamento', 'rotulo_faturamento': 'Faturamento',
+        'rotulo_relatorio': 'Relatório',
+    }),
+    ('clinica', 'Clínica', {
+        'rotulo_tenant': 'Clínica', 'rotulo_tenant_plural': 'Clínicas',
+        'rotulo_profissional': 'Médico', 'rotulo_profissional_plural': 'Médicos',
+        'rotulo_servico': 'Procedimento', 'rotulo_servico_plural': 'Procedimentos',
+        'rotulo_agendamento': 'Consulta', 'rotulo_agendamento_plural': 'Consultas',
+        'rotulo_cliente': 'Paciente', 'rotulo_cliente_plural': 'Pacientes',
+        'rotulo_produto': 'Medicamento', 'rotulo_produto_plural': 'Medicamentos',
+        'rotulo_plano': 'Programa', 'rotulo_plano_plural': 'Programas',
+        'rotulo_pagamento': 'Pagamento', 'rotulo_faturamento': 'Faturamento',
+        'rotulo_relatorio': 'Relatório',
+    }),
+]
+
+
+def seed_segmentos():
+    """Insere ou atualiza os segmentos de mercado e seus rótulos. Idempotente."""
+    from app.models import Segmento, SegmentoRotulo
+    from app.labels import L
+
+    for chave, nome, cols in _SEGMENTOS:
+        seg = Segmento.query.filter_by(chave=chave).first()
+        if not seg:
+            seg = Segmento(nome=nome, chave=chave)
+            db.session.add(seg)
+            db.session.flush()
+            print(f'[seed] Segmento "{chave}" criado.')
+        else:
+            seg.nome = nome
+
+        row = SegmentoRotulo.query.filter_by(segmento_id=seg.id).first()
+        if not row:
+            row = SegmentoRotulo(segmento_id=seg.id)
+            db.session.add(row)
+        for col, val in cols.items():
+            setattr(row, col, val)
+
+    db.session.commit()
+    L.invalidar()
+    print(f'[seed] {len(_SEGMENTOS)} segmentos sincronizados.')
+
+
 def seed_super_admin():
     """Cria barbearia 'admin' e usuário super_admin inicial se ainda não existirem."""
     from app.models import Barbearia, Usuario

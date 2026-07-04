@@ -171,6 +171,15 @@ def create_app(config=None):
     from .routes.barbeiro.clientes import barbeiro_cli_bp
     app.register_blueprint(barbeiro_cli_bp)
 
+    from .routes.gestor.cupons import cupons_bp
+    app.register_blueprint(cupons_bp)
+
+    from .routes.cliente.cupons import cliente_cupons_bp
+    app.register_blueprint(cliente_cupons_bp)
+
+    from .routes.cliente.perfil import cliente_perfil_bp
+    app.register_blueprint(cliente_perfil_bp)
+
     # ── Scheduler de lembretes ────────────────────────────────────────────────
     # Iniciado após todos os blueprints para garantir que os modelos estejam prontos.
     # Em testes unitários, passar DISABLE_SCHEDULER=1 no ambiente para não iniciar.

@@ -72,7 +72,7 @@
     <div style="display:flex;gap:10px;justify-content:flex-end">
       <button onclick="fecharModal('modalLogout')"
         style="background:none;border:1px solid #333;color:#888;border-radius:9px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancelar</button>
-      <button onclick="api.logout()"
+      <button onclick="Bos.logout()"
         style="background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.35);color:#f87171;border-radius:9px;padding:10px 20px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Sair</button>
     </div>
   </div>
@@ -81,6 +81,8 @@
 
 {% block scripts %}
 <script>
+  const _BARBEIRO_EMAIL = {{ b_email | tojson }};
+
   function fecharModal(id) { document.getElementById(id).classList.remove('visible'); }
   function abrirModal(id)  { document.getElementById(id).classList.add('visible'); }
   function confirmarLogout() { abrirModal('modalLogout'); }
@@ -93,9 +95,9 @@
     const btn = document.getElementById('btnAlterarSenha');
     btn.disabled = true; btn.textContent = 'Alterando…';
     try {
-      await api.barbeiro.alterarSenha({
+      await Bos.post('/auth/trocar-senha', {
         senha_atual: document.getElementById('sAtual').value,
-        nova_senha:  nova,
+        senha_nova:  nova,
       });
       document.getElementById('formSenha').reset();
       toast('Senha alterada com sucesso!');
@@ -103,16 +105,12 @@
     finally { btn.disabled = false; btn.textContent = 'Alterar senha'; }
   }
 
-  async function esqueceuSenha() {
-    const btn = document.getElementById('btnEsqueci');
-    const u   = api.getUser();
-    if (!u?.email) { toast('Seu perfil não tem e-mail cadastrado.', 'error'); return; }
-    btn.disabled = true; btn.textContent = 'Enviando…';
-    try {
-      await api.barbeiro.esqueceuSenha(u.email);
-      toast('Solicitação enviada ao gestor!');
-    } catch(err) { toast(err.message, 'error'); }
-    finally { btn.disabled = false; btn.textContent = 'Enviar solicitação ao gestor'; }
+  function esqueceuSenha() {
+    if (!_BARBEIRO_EMAIL) {
+      toast('Sem e-mail cadastrado. Fale com o gestor.', 'info');
+      return;
+    }
+    toast('Fale com o gestor para redefinir sua senha. E-mail cadastrado: ' + _BARBEIRO_EMAIL, 'info');
   }
 </script>
 {% endblock %}

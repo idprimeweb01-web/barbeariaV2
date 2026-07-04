@@ -1,0 +1,846 @@
+================================================================================
+AUDITORIA_EDGE_CASES.txt — BARBEROS SAAS
+Gerado em: 2026-07-02
+Objetivo: Encontrar bugs em cenários extremos e casos de borda
+Arquivos analisados: app/utils/agenda.py, app/utils/cupons.py, app/utils/planos.py,
+  app/routes/pub/agendamento.py, app/routes/cliente/agendamento.py,
+  app/routes/gestor/planos.py, app/routes/gestor/profissionais.py,
+  app/models/__init__.py
+================================================================================
+
+RESUMO EXECUTIVO
+----------------
+Problemas encontrados: 18
+  Críticos  (P0): 4   — double-booking confirmável, plano nunca expira, dupla aprovação PIX-plano,
+                        plano-limite contornável em multi-serviço
+  Altos     (P1): 7   — race condition em cupom, stale-slots booking, barbeiro desativado sem
+                        cancelar agendamentos, barbearia desativada sem invalidar tokens,
+                        data_fim de plano calculada de forma incorreta, upload após aprovação PIX,
+                        datetime.utcnow() na aprovação de solicitação
+  Médios    (P2): 5   — mensagem de erro confusa no cancelamento tardio, cobertura de plano
+                        vinculado a barbeiro inativo, ClientePlano sem referência à solicitação,
+                        comprovante substitui anterior silenciosamente, slot futuro bookável após
+                        mudança de horário sem validação
+  Baixos    (P3): 2   — cancelamento de agendamento não verifica status 'em_atendimento',
+                        mensagem de limite de uso não informa qual serviço esgotou
+
+================================================================================
+TAREFA 4.1 — Fluxo: Agendamento com Race Condition (Double Booking)
+================================================================================
+
+SEVERIDADE: P0 — CRÍTICO
+Arquivo:    app/utils/agenda.py  +  app/routes/pub/agendamento.py
+
+CENÁRIO REPRODUZÍVEL
+--------------------
+Cliente A e Cliente B abrem o app ao mesmo tempo e ambos selecionam o mesmo
+barbeiro, mesma data, mesmo horário (ex: 14h00, corte 30min).
+
+Linha do tempo:
+
+  T0: A envia POST /pub/<slug>/agendar
+  T0: B envia POST /pub/<slug>/agendar (requisição concorrente)
+  T1: A executa verificar_conflito() — retorna None (nenhum agendamento existe)
+  T2: B executa verificar_conflito() — retorna None (ainda vê o banco limpo)
+  T3: A faz db.session.flush() no Agendamento e depois db.session.commit()
+  T4: B faz db.session.flush() no Agendamento e depois db.session.commit()
+
+Resultado: dois Agendamentos confirmados para o mesmo barbeiro/horário.
+
+EVIDÊNCIA NO CÓDIGO
+-------------------
+# pub/agendamento.py linha 187
+conflito = verificar_conflito(barbeiro_id, data_hora, duracao_total)
+if conflito:
+    raise APIError(...)
+
+# app/utils/agenda.py — verificar_conflito()
+# Carrega todos os agendamentos do dia com .all() e verifica sobreposição em Python.
+# NÃO usa SELECT ... FOR UPDATE nem qualquer lock de banco.
+# NÃO existe UNIQUE em (barbeiro_id, data_hora) no modelo Agendamento.
+
+CAUSA RAIZ
+----------
+Padrão check-then-act sem trava de banco. A verificação de conflito é feita em
+Python sobre um snapshot do banco; entre a leitura e o commit há uma janela de
+corrida que permite dois commits concorrentes.
+
+IMPACTO
+-------
+- Dois clientes pagos (PIX) aguardando o mesmo slot → um vai comparecer e ser
+  mandado embora; prejuízo financeiro e reputação.
+- Se o banco não tiver FK ou trigger para barrar, a linha fica dupla no banco.
+
+CORREÇÃO SUGERIDA
+-----------------
+Opção A (recomendada): SELECT FOR UPDATE antes do check
+  -------------------------------------------------------
+  from sqlalchemy import text
+
+  # Dentro de verificar_conflito(), antes do .all():
+  db.session.execute(
+      text('SELECT id FROM agendamentos WHERE barbeiro_id=:bid AND data_hora::date=:dia FOR UPDATE'),
+      {'bid': resource_id, 'dia': dia}
+  )
+  # ... depois faz o loop de sobreposição normal
+
+Opção B (complementar): UNIQUE parcial no banco
+  -----------------------------------------------
+  CREATE UNIQUE INDEX uq_agendamento_slot
+    ON agendamentos (barbeiro_id, data_hora)
+    WHERE status NOT IN ('cancelado');
+
+  Isso torna o duplo commit um erro de banco (IntegrityError) que o try/except
+  existente já captura e retorna 500. Não elimina a corrida mas limita o dano.
+
+Opção C (mais robusta): pesimistic lock no gestor de agendamento
+  ---------------------------------------------------------------
+  # Usar with_for_update() antes de qualquer verificação:
+  db.session.query(Agendamento).filter(...).with_for_update().all()
+
+================================================================================
+TAREFA 4.2 — Fluxo: Cliente Cancela com Prazo Insuficiente
+================================================================================
+
+SEVERIDADE: P2 — MÉDIO (funcionalidade correta, UX/mensagem ruim)
+Arquivo:    app/routes/cliente/agendamento.py
+
+CENÁRIO A — Agendamento já passou (horas_ate < 0)
+---------------------------------------------------
+Cliente tenta cancelar um agendamento que já ocorreu (status ainda 'agendado').
+
+# cancelar_agendamento() linha 124-130
+horas_ate = (ag.data_hora - agora).total_seconds() / 3600
+# horas_ate = -2.5 (agendamento 2h30 no passado)
+
+if horas_ate < horas_min:          # -2.5 < 3 → True
+    raise APIError(
+        f'Cancelamento não permitido. O prazo mínimo é de {horas_min}h antes do horário agendado. '
+        f'Faltam {max(0, horas_ate):.1f}h.',   # max(0, -2.5) = 0 → "Faltam 0.0h"
+        422,
+    )
+
+PROBLEMA: A mensagem diz "Faltam 0.0h" para um agendamento que já passou.
+O cliente não entende o que está errado.
+
+CENÁRIO B — Status 'concluido' vs 'em_atendimento'
+---------------------------------------------------
+O código bloqueia cancelamento de 'concluido' mas não verifica 'em_atendimento'.
+Se existir o status 'em_atendimento', o cliente conseguiria cancelar enquanto
+o atendimento está ocorrendo.
+
+CENÁRIO C — Fuso horário de data_hora
+---------------------------------------
+`ag.data_hora` é guardado como naive datetime via `datetime.fromisoformat(data_hora_str)`.
+O cliente SPA pode enviar horário em UTC ou horário de Brasília dependendo de
+como o front formata a string. Se enviar UTC, a comparação com `naive_brasilia()`
+está errada em 3h no verão (UTC-3).
+
+  Exemplo:
+  - Agendamento 14h Brasília enviado como "2026-07-02T17:00:00" (UTC)
+  - Guardado como 17:00 no banco
+  - naive_brasilia() retorna 13:00
+  - horas_ate = (17:00 - 13:00) = 4h → parece OK, mas o agendamento real é às 14h
+    e o cliente vê 1h de prazo extra que não existe
+
+CORREÇÃO SUGERIDA
+-----------------
+A) Para o caso horas_ate < 0:
+   mensagem = (
+       'Cancelamento não permitido. O horário do agendamento já passou.'
+       if horas_ate <= 0 else
+       f'Cancelamento não permitido. O prazo mínimo é de {horas_min}h. '
+       f'Restam {horas_ate:.1f}h.'
+   )
+
+B) Para fuso horário:
+   Armazenar data_hora sempre em UTC ou exigir timezone-aware na serialização.
+   Ver DT-001 nas dívidas técnicas (parcialmente resolvida).
+
+================================================================================
+TAREFA 4.3 — Fluxo: Plano Expira no Meio do Mês
+================================================================================
+
+SEVERIDADE: P0 — CRÍTICO
+Arquivo:    app/routes/pub/agendamento.py (_resolver_plano)
+            app/routes/gestor/planos.py (aprovar_solicitacao)
+
+PROBLEMA 1: _resolver_plano NÃO verifica data_fim
+---------------------------------------------------
+# _resolver_plano() linha 99-134
+assinaturas = (
+    ClientePlano.query
+    .filter_by(barbearia_id=barbearia_id, cliente_id=cliente_id, ativo=True)
+    .all()
+)
+for cp in assinaturas:
+    plano = db.session.get(Plano, cp.plano_id)
+    if not plano or not plano.ativo:
+        continue
+    # Compatibilidade de barbeiro
+    if plano.barbeiro_id is not None and plano.barbeiro_id != barbeiro_id:
+        continue
+    ps = PlanoServico.query.filter_by(...)
+    ...
+    return cp.id, True   # ← NUNCA verifica cp.data_fim
+
+NENHUMA verificação de `cp.data_fim` em nenhuma parte do loop. Se um plano tem
+`data_fim = 2026-06-30` e hoje é `2026-07-15`, o plano continua sendo aplicado
+automaticamente em novos agendamentos, desde que `cp.ativo = True`.
+
+Ninguém seta `cp.ativo = False` automaticamente ao atingir a data_fim.
+O sistema não tem job de expiração (cronjob/APScheduler) documentado.
+
+IMPACTO
+-------
+Cliente com plano expirado em junho continua usando serviços de graça em julho,
+agosto, setembro... indefinidamente. Prejuízo direto para o barbeiro.
+
+PROBLEMA 2: data_fim calculada com dados do PRIMEIRO PlanoServico apenas
+--------------------------------------------------------------------------
+# aprovar_solicitacao() linha 312-315
+ps = PlanoServico.query.filter_by(plano_id=sol.plano_id, ativo=True).first()
+if ps:
+    data_fim = hoje + timedelta(days=ps.dias_expiracao)
+
+`.first()` retorna o primeiro serviço ativo em ordem indefinida. Se o plano tem
+serviços com dias_expiracao diferentes (ex: Corte=30dias, Barba=15dias), a
+data_fim do ClientePlano depende da ordem de retorno do banco, não da intenção
+do gestor.
+
+PROBLEMA 3: Plano sem serviços = plano que nunca expira
+---------------------------------------------------------
+Se todos os PlanoServico do plano estiverem inativos ao ser aprovado:
+  ps = None → data_fim = None → ClientePlano.data_fim = None → nunca expira.
+
+CORREÇÃO SUGERIDA
+-----------------
+A) Em _resolver_plano, adicionar verificação de data_fim:
+   ref = data_hora.date() if data_hora else hoje_brasilia()
+   for cp in assinaturas:
+       if cp.data_fim is not None and cp.data_fim < ref:
+           continue   # plano expirado → pula para o próximo
+
+B) Criar tarefa periódica (APScheduler ou cron externo) para:
+   ClientePlano.query.filter(
+       ClientePlano.data_fim < hoje_brasilia(),
+       ClientePlano.ativo == True
+   ).update({ClientePlano.ativo: False})
+
+C) Em aprovar_solicitacao, usar o maior dias_expiracao entre os serviços:
+   servicos = PlanoServico.query.filter_by(plano_id=sol.plano_id, ativo=True).all()
+   if servicos:
+       max_dias = max(ps.dias_expiracao for ps in servicos)
+       data_fim = hoje + timedelta(days=max_dias)
+   else:
+       raise APIError('Plano sem serviços ativos. Adicione serviços antes de aprovar.', 422)
+
+================================================================================
+TAREFA 4.4 — Fluxo: PIX com 2 Comprovantes Submetidos
+================================================================================
+
+SEVERIDADE: P1 — ALTO
+Arquivo:    app/routes/pub/agendamento.py (upload_comprovante)
+
+CENÁRIO A — Cliente reenvia comprovante após já estar 'aguardando_aprovacao'
+-----------------------------------------------------------------------------
+# upload_comprovante() linha 554-614
+
+def upload_comprovante(slug, agendamento_id):
+    ag = Agendamento.query.filter_by(id=agendamento_id, barbearia_id=barbearia.id).first()
+    # ...
+    if ag.metodo_pagamento != 'pix':
+        raise APIError(...)
+    # NÃO VERIFICA se ag.status é válido para reenvio
+    # ...
+    pix.comprovante_url = url   # ← sobrescreve o comprovante anterior silenciosamente
+    if ag.status == 'aguardando_comprovante':
+        ag.status = 'aguardando_aprovacao'   # só muda status no primeiro envio
+    db.session.commit()
+
+Resultado: cliente pode reenviar comprovante enquanto o gestor já está analisando
+o primeiro. O gestor pode estar aprovando baseado no comprovante antigo, mas
+recebe o novo URL no banco.
+
+CENÁRIO B — Cliente envia comprovante após gestor rejeitar
+-----------------------------------------------------------
+Se o gestor rejeitar o PIX e mudar o status do agendamento (ex: para 'cancelado'
+ou 'rejeitado'), o endpoint não bloqueia novo upload desde que
+`ag.metodo_pagamento == 'pix'`. O status seria atualizado somente se fosse
+'aguardando_comprovante', portanto ficaria preso no status rejeitado mas com
+nova comprovante_url. Comportamento imprevisível.
+
+CENÁRIO C — Dois clientes diferentes tentam subir comprovante para o mesmo ID
+-------------------------------------------------------------------------------
+O endpoint valida `barbearia_id` mas não valida que o cliente autenticado é o
+dono do agendamento. (Esta é a IDOR já reportada na AUDITORIA_ENDPOINTS.txt —
+DT-005 pendente.)
+
+CORREÇÃO SUGERIDA
+-----------------
+Adicionar verificação de status aceito antes de processar o upload:
+  STATUS_ACEITA_COMPROVANTE = {'aguardando_comprovante', 'aguardando_aprovacao'}
+  if ag.status not in STATUS_ACEITA_COMPROVANTE:
+      raise APIError(
+          f'Não é possível enviar comprovante para este agendamento (status: {ag.status}).',
+          422
+      )
+Isso também protege contra reenvio após cancelamento/rejeição.
+
+================================================================================
+TAREFA 4.5 — Fluxo: Barbeiro Muda Horário Enquanto Cliente Agenda
+================================================================================
+
+SEVERIDADE: P1 — ALTO (stale-slot booking)
+Arquivo:    app/routes/pub/agendamento.py (_criar_agendamento_core)
+            app/utils/agenda.py (gerar_slots vs verificar_conflito)
+
+CENÁRIO
+-------
+1. Cliente faz GET /pub/<slug>/barbeiros/7/slots?data=2026-07-10&duracao=30
+   → retorna slot 17:30 como disponível
+2. Barbeiro/Gestor faz PUT /api/v1/gestor/barbeiros/7/agenda com horario_fechamento=17:00
+3. Cliente faz POST /pub/<slug>/agendar com data_hora="2026-07-10T17:30:00"
+
+RESULTADO: agendamento criado às 17:30 mesmo que o horário de fechamento agora
+seja 17:00. O backend não revalida o slot contra a ConfiguracaoAgenda no momento
+do POST — só verifica conflito de agendamentos existentes.
+
+EVIDÊNCIA NO CÓDIGO
+-------------------
+# _criar_agendamento_core() linha 187
+conflito = verificar_conflito(barbeiro_id, data_hora, duracao_total)
+# verificar_conflito checa APENAS colisão com Agendamentos existentes
+# NÃO checa ConfiguracaoAgenda.horario_abertura / horario_fechamento
+# NÃO checa HorarioBloqueado
+# NÃO checa PausaBarbeiro
+
+# gerar_slots() (chamado somente no GET de slots) faz essas verificações —
+# mas o POST de criação nunca chama gerar_slots()
+
+IMPACTO
+-------
+- Agendamentos fora do horário comercial do barbeiro
+- Agendamentos em dias bloqueados (feriados configurados em HorarioBloqueado)
+- Agendamentos dentro de pausas (hora do almoço etc.)
+- Em produção, com SPA cacheando slots, a janela pode ser de minutos a horas
+
+CORREÇÃO SUGERIDA
+-----------------
+Em _criar_agendamento_core, após verificar_conflito(), validar o slot:
+  from app.utils.agenda import gerar_slots
+  slots_validos = gerar_slots(barbeiro_id, data_hora.date(), duracao_total)
+  hora_fmt = data_hora.strftime('%H:%M')
+  if hora_fmt not in slots_validos:
+      raise APIError(
+          f'Horário {hora_fmt} não está disponível para este {L("profissional").lower()}.',
+          422
+      )
+Nota: gerar_slots() já inclui checagem de ConfiguracaoAgenda, HorarioBloqueado e
+PausaBarbeiro, então esse único check cobre todos os casos.
+
+================================================================================
+TAREFA 4.6 — Fluxo: Cupom Expirado / Timezone
+================================================================================
+
+SEVERIDADE: P1 — ALTO (race condition de contagem), P2 para timezone (correto)
+Arquivo:    app/utils/cupons.py
+
+RESULTADO DA ANÁLISE DE TIMEZONE: COMPORTAMENTO CORRETO
+--------------------------------------------------------
+# validar_cupom() linha 25
+if cupom.data_expiracao < hoje_brasilia():
+
+Usa comparação de `date` com `date` (ambos Brasília):
+- dia 30/jun: June30 < June30 → False → cupom VÁLIDO ✓
+- dia 01/jul: June30 < July01 → True  → cupom EXPIRADO ✓
+
+O cupom é válido durante todo o dia de expiração e rejeitado apenas no dia seguinte.
+Timezone de Brasília usada corretamente. SEM BUG aqui.
+
+PROBLEMA ENCONTRADO: RACE CONDITION NA CONTAGEM DE USOS
+---------------------------------------------------------
+Cenário: cupom com quantidade_maxima_usos=1, quantidade_usos=0
+
+T0: Cliente A chama validar_cupom() — `0 >= 1` → False → passa ✓
+T1: Cliente B chama validar_cupom() — `0 >= 1` → False → passa ✓ (antes do commit de A)
+T2: A executa incrementar_uso_cupom() → quantidade_usos = 1
+T3: B executa incrementar_uso_cupom() → quantidade_usos = 2
+T4: Dois agendamentos com o mesmo cupom "limite 1" foram criados.
+
+# incrementar_uso_cupom() linha 43-45
+def incrementar_uso_cupom(cupom_id: int):
+    cupom = db.session.get(Cupom, cupom_id)
+    if cupom:
+        cupom.quantidade_usos += 1   # ← leitura-modificação-escrita sem lock
+
+NÃO há SELECT FOR UPDATE nem transação serializada.
+NÃO há UNIQUE constraint em Agendamento.cupom_id que impedisse dois agendamentos
+com o mesmo cupom.
+
+IMPACTO
+-------
+Cupons de uso único (promoções de lançamento, brindes específicos) podem ser
+usados múltiplas vezes em janelas de alta concorrência. Perda financeira direta.
+
+ANÁLISE DE decrementar_uso_cupom()
+------------------------------------
+# linha 48-51
+def decrementar_uso_cupom(cupom_id: int):
+    cupom = db.session.get(Cupom, cupom_id)
+    if cupom and cupom.quantidade_usos > 0:
+        cupom.quantidade_usos -= 1
+
+O guard `> 0` previne valores negativos na decremento ✓. Mas com a corrida acima
+o valor pode já estar em 2 ao cancelar, então volta para 1 — ainda inconsistente.
+
+CORREÇÃO SUGERIDA
+-----------------
+Usar UPDATE atômico com filtro no banco:
+  # Em vez de ler + modificar + escrever:
+  from sqlalchemy import text
+  result = db.session.execute(
+      text('''
+          UPDATE cupons SET quantidade_usos = quantidade_usos + 1
+          WHERE id = :id
+            AND (quantidade_maxima_usos IS NULL OR quantidade_usos < quantidade_maxima_usos)
+          RETURNING quantidade_usos
+      '''),
+      {'id': cupom_id}
+  )
+  if result.rowcount == 0:
+      raise APIError('Cupom já atingiu o limite de utilizações.', 422)
+
+================================================================================
+TAREFA 4.7 — Fluxo: Limite de Plano Esgota no Multi-Serviço
+================================================================================
+
+SEVERIDADE: P0 — CRÍTICO
+Arquivo:    app/routes/pub/agendamento.py (_criar_agendamento_core, _resolver_plano)
+
+CENÁRIO
+-------
+Cliente tem plano com limite de 1 "Corte" por mês. Ele já usou 0 neste mês.
+Ele faz um agendamento multi-serviço: [Corte, Corte] (dois cortes no mesmo booking).
+
+FLUXO NO CÓDIGO
+---------------
+# _criar_agendamento_core() linha 197-208
+itens_finais = []
+for s, _ in servicos_obj:                    # itera Corte, Corte
+    cliente_plano_id, is_plano = _resolver_plano(
+        cliente_id, barbearia_id, s.id, ...   # chamado para Corte #1
+    )                                          # e para Corte #2
+
+# _resolver_plano conta uso_mes via query ao banco ANTES de qualquer flush:
+uso_mes = ClientePlanoUso.query.filter(...).count()
+# No momento da 1ª chamada: uso_mes = 0, limite=1 → is_plano=True
+# No momento da 2ª chamada: uso_mes = 0 ainda (nada foi commitado!)
+#   → is_plano=True também ← BUG: ambos os Cortes cobertos pelo plano
+
+# ClientePlanoUso só é adicionado DEPOIS de processar todos os itens:
+for item in itens_finais:        # linha 244
+    if item['is_plano']:
+        db.session.add(ClientePlanoUso(...))
+# Em seguida: db.session.commit()
+
+RESULTADO
+---------
+Um cliente com limite de 1 Corte/mês pode usar 2 Cortes no mesmo agendamento,
+ambos cobertos pelo plano. O sistema não vê a segunda "reserva" de uso porque
+os ClientePlanoUso ainda não foram gravados no banco quando _resolver_plano
+é chamado para o segundo item.
+
+VARIAÇÕES DO MESMO BUG
+-----------------------
+1. Dois agendamentos simultâneos (race condition): dois agendamentos criados ao
+   mesmo tempo, cada um com 1 Corte, ambos passam em _resolver_plano porque
+   nenhum commitou antes do outro ler o uso_mes.
+
+2. Multi-serviço + race: (Corte+Barba) e (Corte) concorrentes → três Cortes
+   cobertos quando o limite é 1.
+
+IMPACTO
+-------
+- Cliente usa mais serviços do plano do que pagou
+- Não há validação retroativa (não é detectado nem corrigido)
+- Planos ilimitados (PLANO_LIMITE_ILIMITADO) são imunes ao bug ✓
+
+CORREÇÃO SUGERIDA
+-----------------
+Opção A: Flush intermediário por item antes de chamar _resolver_plano
+  -----------------------------------------------------------------------
+  for s, _ in servicos_obj:
+      # Registrar uso antes de processar o próximo
+      if uses_from_current_booking[s.id] > 0:
+          # Flush parcial para tornar uso visível
+          db.session.flush()
+      cliente_plano_id, is_plano = _resolver_plano(...)
+
+Opção B: Acumular uso "in-memory" durante o loop
+  --------------------------------------------------
+  uso_extra = {}  # {(cliente_plano_id, servico_id): count}
+  for s, _ in servicos_obj:
+      extra = uso_extra.get((cp_id, s.id), 0)
+      uso_mes_total = uso_mes_db + extra
+      if uso_mes_total >= ps.limite_uso_mensal:
+          continue  # limite atingido
+      uso_extra[(cp_id, s.id)] = extra + 1
+      # procede com is_plano=True
+
+Opção C: Unique constraint no banco (mais forte — combate race condition também)
+  -------------------------------------------------------------------------------
+  # Ver DT em AUDITORIA_BANCO_DADOS.txt — falta UNIQUE em ClientePlanoUso
+
+================================================================================
+TAREFA 4.8 — Fluxo: Gestor Desativa Barbeiro com Agendamentos Ativos
+================================================================================
+
+SEVERIDADE: P1 — ALTO
+Arquivo:    app/routes/gestor/profissionais.py (editar_barbeiro)
+
+ANÁLISE: SOFT DELETE APENAS
+----------------------------
+Não existe rota DELETE para barbeiros. A desativação é feita via PATCH:
+
+# editar_barbeiro() linha 194-198
+if 'ativo' in dados:
+    ativo = bool(dados['ativo'])
+    b.ativo = ativo
+    u.ativo = ativo
+    auditoria_mudancas.append(f'ativo: {"ativado" if ativo else "desativado"}')
+
+PROBLEMA 1: Agendamentos futuros não são cancelados nem notificados
+--------------------------------------------------------------------
+Ao desativar b.ativo=False, nenhuma ação é tomada sobre:
+- Agendamentos com status 'agendado' para datas futuras
+- Agendamentos com status 'aguardando_comprovante'
+- Agendamentos com status 'aguardando_aprovacao' (PIX pendente)
+
+Esses clientes comparecem no dia e encontram o barbeiro indisponível sem aviso.
+
+PROBLEMA 2: Nenhuma validação de agendamentos futuros antes da desativação
+---------------------------------------------------------------------------
+O sistema não impede (nem avisa) o gestor que existem agendamentos futuros
+ativos antes de permitir a desativação. O gestor pode desativar por acidente.
+
+PROBLEMA 3: _resolver_plano não considera ativo do barbeiro
+------------------------------------------------------------
+Planos vinculados a um barbeiro (Plano.barbeiro_id != None) continuam sendo
+resolvidos para o barbeiro inativo:
+
+# _resolver_plano() linha 110
+if plano.barbeiro_id is not None and plano.barbeiro_id != barbeiro_id:
+    continue
+# Não verifica: if not barbeiro.ativo: continue
+
+Se o cliente tinha plano vinculado ao Barbeiro X, e X foi desativado, o cliente
+ainda pode agendar com qualquer outro barbeiro do plano "aberto" e o plano
+ainda tenta ser aplicado.
+
+PROBLEMA 4: Slots bloqueados por agendamentos existentes do barbeiro inativo
+-----------------------------------------------------------------------------
+`verificar_conflito()` não filtra `Barbeiro.ativo`. Se o barbeiro for reativado,
+os slots ocupados por agendamentos passados continuam bloqueando.
+(Isso é correto para agendamentos futuros, mas confuso para gestão.)
+
+CORREÇÃO SUGERIDA
+-----------------
+Antes de desativar, retornar contagem de agendamentos futuros ativos:
+  futuros = Agendamento.query.filter(
+      Agendamento.barbeiro_id == barbeiro.id,
+      Agendamento.data_hora >= naive_brasilia(),
+      Agendamento.status.in_(['agendado', 'aguardando_comprovante', 'aguardando_aprovacao'])
+  ).count()
+  if futuros > 0:
+      raise APIError(
+          f'Este {L("profissional")} tem {futuros} agendamento(s) futuro(s). '
+          f'Cancele-os antes de desativar.', 409
+      )
+
+Alternativa: cancelar automaticamente + registrar auditoria + notificar clientes.
+
+================================================================================
+TAREFA 4.9 — Fluxo: Barbearia Desativada pelo Super Admin
+================================================================================
+
+SEVERIDADE: P1 — ALTO
+Arquivo:    app/routes/pub/agendamento.py (_get_barbearia_ou_404)
+            Decoradores de autenticação (gestor_required, barbeiro_required)
+
+PROTEÇÃO EXISTENTE (parcialmente correta)
+-----------------------------------------
+# _get_barbearia_ou_404() linha 35-38
+def _get_barbearia_ou_404(slug: str) -> Barbearia:
+    b = Barbearia.query.filter_by(slug=slug, ativo=True).first()
+    if not b:
+        raise APIError(f'{L("tenant")} não encontrada ou inativa.', 404)
+
+Todas as rotas públicas (/pub/*) verificam ativo=True. Barbearia desativada
+fica invisível para clientes imediatamente ✓.
+
+PROBLEMA 1: Tokens JWT de gestores/barbeiros continuam válidos
+--------------------------------------------------------------
+O JWT armazena `barbearia_id` na emissão mas não verifica se a barbearia ainda
+está ativa no `@gestor_required` ou `@barbeiro_required`.
+
+Janela de exposição:
+- Access token: 15 minutos após desativação
+- Refresh token: 30 dias (se não invalidado manualmente)
+
+Durante esse período, gestores/barbeiros com token válido conseguem:
+- Ler e modificar agendamentos
+- Criar/editar planos, serviços, cupons
+- Aprovar PIX de clientes que já bookaram
+
+PROBLEMA 2: Agendamentos futuros não são cancelados
+-----------------------------------------------------
+Mesma questão do 4.8: ao desativar a barbearia, todos os agendamentos futuros
+ficam em limbo. Os clientes não são notificados automaticamente.
+
+PROBLEMA 3: Clientes que já estão com agendamento aguardando PIX
+-----------------------------------------------------------------
+`aguardando_comprovante` / `aguardando_aprovacao` — o cliente já pagou o PIX
+mas a barbearia foi desativada. O endpoint de upload de comprovante verificaria
+a barbearia como inativa e retornaria 404, mas o cliente pode ficar preso sem
+conseguir enviar o comprovante nem receber confirmação.
+
+PROBLEMA 4: Dados de clientes permanecem acessíveis internamente
+-----------------------------------------------------------------
+Sem mecanismo de anonimização automática (LGPD) na desativação. Os dados dos
+clientes da barbearia desativada ficam indefinidamente na base.
+
+CORREÇÃO SUGERIDA
+-----------------
+A) Verificar barbearia.ativo nos decoradores de auth internos:
+   # Em gestor_required / barbeiro_required, após extrair barbearia_id do JWT:
+   barbearia = Barbearia.query.get(g.barbearia_id)
+   if not barbearia or not barbearia.ativo:
+       raise APIError('Esta barbearia está desativada.', 403)
+
+B) Na desativação (super admin), invalidar todos os refresh tokens do tenant.
+   (Requer tabela de revogação de tokens ou campo revoked_at em Usuario.)
+
+C) Cancelar agendamentos futuros automaticamente na desativação:
+   Agendamento.query.filter(
+       Agendamento.barbearia_id == barbearia_id,
+       Agendamento.data_hora >= naive_brasilia(),
+       Agendamento.status.in_(['agendado', 'aguardando_comprovante', 'aguardando_aprovacao'])
+   ).update({'status': 'cancelado'})
+
+================================================================================
+TAREFA 4.10 — Fluxo: 2 Gestores Aprovam Mesmo PIX Simultâneamente
+================================================================================
+
+SEVERIDADE: P0 — CRÍTICO
+Arquivo:    app/routes/gestor/planos.py (aprovar_solicitacao)
+
+CENÁRIO
+-------
+Barbearia tem dois gestores logados. O cliente fez uma solicitação de plano
+via PIX (ClientePlanoSolicitacao.status='pendente'). Ambos os gestores
+abrem a tela de solicitações e clicam "Aprovar" ao mesmo tempo.
+
+FLUXO COM CORRIDA
+-----------------
+# aprovar_solicitacao() linha 296-341
+
+T0: Gestor A lê sol = ClientePlanoSolicitacao.query.filter_by(id=sol_id).first()
+                → sol.status = 'pendente'
+T1: Gestor B lê sol = ClientePlanoSolicitacao.query.filter_by(id=sol_id).first()
+                → sol.status = 'pendente'  (A ainda não commitou)
+T2: A passa: if sol.status != 'pendente' → False → continua
+T3: B passa: if sol.status != 'pendente' → False → continua
+T4: A cria ClientePlano(cp1), seta sol.status='aprovado', commit()
+T5: B cria ClientePlano(cp2), seta sol.status='aprovado', commit()
+    (sol.status já está 'aprovado' mas B não sabe porque B tem o objeto em cache)
+
+RESULTADO
+---------
+Dois ClientePlano criados para a mesma ClientePlanoSolicitacao:
+- cp1: barbearia_id=X, cliente_id=Y, plano_id=Z, ativo=True
+- cp2: barbearia_id=X, cliente_id=Y, plano_id=Z, ativo=True
+
+O cliente fica com duas assinaturas ativas do mesmo plano. _resolver_plano
+iterará as assinaturas e usará a primeira que encontrar, mas ambas têm seus
+contadores de uso separados. O cliente pode usar o plano duas vezes por mês
+efetivamente.
+
+SEM PROTEÇÃO NO BANCO
+----------------------
+Não existe:
+- SELECT ... FOR UPDATE na leitura da solicitação
+- UNIQUE constraint em ClientePlano (cliente_id, plano_id)
+- Coluna solicitacao_id em ClientePlano para evitar duplicatas
+- Trigger que impedisse dois ClientePlano da mesma solicitação
+
+O único guard é o check `sol.status != 'pendente'` que é TOCTOU (time-of-check
+time-of-use). O campo `sol.status` na instância em memória de B não é recarregado
+do banco entre a leitura e o commit.
+
+BUG ADICIONAL: datetime.utcnow() na aprovação
+----------------------------------------------
+# aprovar_solicitacao() linha 329
+sol.aprovado_em = datetime.utcnow()
+
+Usa utcnow() em vez de naive_brasilia() ou datetime.now(timezone.utc).
+Inconsistência com o resto do sistema (DT-001). O campo aprovado_em ficará
+em UTC enquanto outros campos usam horário de Brasília.
+
+CORREÇÃO SUGERIDA
+-----------------
+A) SELECT FOR UPDATE na leitura da solicitação:
+   sol = (
+       ClientePlanoSolicitacao.query
+       .filter_by(id=sol_id, barbearia_id=g.barbearia_id)
+       .with_for_update()
+       .first()
+   )
+   if not sol:
+       raise APIError('Solicitação não encontrada.', 404)
+   if sol.status != 'pendente':
+       raise APIError(f'Solicitação já foi {sol.status}.', 409)
+
+B) Adicionar coluna solicitacao_id em ClientePlano e UNIQUE constraint:
+   class ClientePlano(TenantMixin, db.Model):
+       solicitacao_id = db.Column(db.Integer, db.ForeignKey('cliente_plano_solicitacoes.id'), nullable=True, unique=True)
+
+C) Corrigir utcnow():
+   from app.utils.tz import naive_brasilia
+   sol.aprovado_em = naive_brasilia()
+
+================================================================================
+RESUMO CONSOLIDADO — PRIORIDADE DE CORREÇÃO
+================================================================================
+
+LEGENDA: [Arquivo] linha — Descrição do problema
+
+P0 — CRÍTICO (corrigir antes de qualquer deploy em produção):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ID   │ Arquivo                          │ Linha  │ Descrição                │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC01 │ app/utils/agenda.py              │ todos  │ verificar_conflito() sem  │
+│      │ app/routes/pub/agendamento.py    │ 187    │ SELECT FOR UPDATE →       │
+│      │                                  │        │ double booking            │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC02 │ app/routes/pub/agendamento.py    │ 99-134 │ _resolver_plano() não     │
+│      │                                  │        │ verifica data_fim do      │
+│      │                                  │        │ ClientePlano → plano      │
+│      │                                  │        │ nunca expira              │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC03 │ app/routes/pub/agendamento.py    │ 197-   │ _resolver_plano chamado   │
+│      │                                  │ 265    │ antes de flush → limite   │
+│      │                                  │        │ de plano contornável em   │
+│      │                                  │        │ multi-serviço             │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC04 │ app/routes/gestor/planos.py      │ 297-   │ TOCTOU na aprovação de    │
+│      │                                  │ 334    │ solicitação PIX → duplo   │
+│      │                                  │        │ ClientePlano criado        │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+P1 — ALTO (corrigir antes de go-live):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ID   │ Arquivo                          │ Linha  │ Descrição                │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC05 │ app/utils/cupons.py              │ 25-28, │ Race condition em         │
+│      │                                  │ 43-45  │ incrementar_uso_cupom()   │
+│      │                                  │        │ → cupom "limite 1"        │
+│      │                                  │        │ usado múltiplas vezes     │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC06 │ app/routes/pub/agendamento.py    │ 187    │ Slot não revalidado       │
+│      │ app/utils/agenda.py              │        │ contra ConfiguracaoAgenda │
+│      │                                  │        │ no POST → stale booking   │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC07 │ app/routes/gestor/profissionais.py│194-198│ Desativar barbeiro não    │
+│      │                                  │        │ cancela agendamentos      │
+│      │                                  │        │ futuros nem notifica      │
+│      │                                  │        │ clientes                  │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC08 │ decoradores de auth              │ —      │ Barbearia desativada não  │
+│      │                                  │        │ invalida tokens JWT dos   │
+│      │                                  │        │ gestores/barbeiros        │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC09 │ app/routes/gestor/planos.py      │ 312-315│ data_fim calculada do     │
+│      │                                  │        │ primeiro PlanoServico     │
+│      │                                  │        │ arbitrário; NULL se       │
+│      │                                  │        │ nenhum serviço ativo      │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC10 │ app/routes/pub/agendamento.py    │ 605-613│ upload_comprovante não    │
+│      │                                  │        │ verifica status atual →   │
+│      │                                  │        │ comprovante enviado após  │
+│      │                                  │        │ aprovação/rejeição        │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC11 │ app/routes/gestor/planos.py      │ 329    │ datetime.utcnow() em      │
+│      │                                  │        │ aprovado_em vs resto do   │
+│      │                                  │        │ sistema em Brasília       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+P2 — MÉDIO (backlog prioridade média):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ID   │ Arquivo                          │ Linha  │ Descrição                │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC12 │ app/routes/cliente/agendamento.py│ 127-130│ Mensagem "Faltam 0.0h"   │
+│      │                                  │        │ quando agendamento já     │
+│      │                                  │        │ passou (horas_ate < 0)    │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC13 │ app/routes/pub/agendamento.py    │ 110    │ _resolver_plano não       │
+│      │                                  │        │ verifica barbeiro.ativo   │
+│      │                                  │        │ em planos vinculados      │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC14 │ app/models/__init__.py           │ —      │ ClientePlano sem campo    │
+│      │                                  │        │ solicitacao_id → sem      │
+│      │                                  │        │ rastreabilidade de origem │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC15 │ app/routes/pub/agendamento.py    │ 607    │ pix.comprovante_url       │
+│      │                                  │        │ sobrescrito silencioso    │
+│      │                                  │        │ sem log de auditoria      │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC16 │ app/routes/cliente/agendamento.py│ 80     │ data_hora enviada pelo    │
+│      │                                  │        │ cliente sem garantia de   │
+│      │                                  │        │ fuso (naive ISO 8601)     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+P3 — BAIXO (nice-to-have):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ID   │ Arquivo                          │ Linha  │ Descrição                │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC17 │ app/routes/cliente/agendamento.py│ 115-118│ Status 'em_atendimento'  │
+│      │                                  │        │ não verificado no         │
+│      │                                  │        │ cancelamento              │
+├──────┼──────────────────────────────────┼────────┼──────────────────────────┤
+│ EC18 │ app/routes/pub/agendamento.py    │ 132    │ Mensagem ao atingir       │
+│      │                                  │        │ limite de plano não       │
+│      │                                  │        │ informa qual serviço      │
+│      │                                  │        │ esgotou                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+OBSERVAÇÕES TRANSVERSAIS
+================================================================================
+
+1. PADRÃO check-then-act (TOCTOU) está presente em 3 fluxos críticos:
+   - Conflito de agendamento (EC01)
+   - Aprovação de solicitação de plano (EC04)
+   - Contagem de uso de cupom (EC05)
+   Todos seguem o mesmo padrão: ler do banco → verificar em Python → escrever.
+   A correção global é: usar SELECT ... FOR UPDATE nas leituras antes das
+   verificações de negócio, ou usar UPDATE atômico com filtro (para contadores).
+
+2. AUSÊNCIA DE EXPIRAÇÃO AUTOMÁTICA DE PLANOS (EC02 + EC09):
+   O sistema não tem nenhum mecanismo de expiração automática (cronjob, celery,
+   APScheduler). Para produção, é necessário um worker que desative ClientePlano
+   com data_fim < hoje diariamente.
+
+3. LIMITE DE PLANO EM MULTI-SERVIÇO (EC03) É CONSEQUÊNCIA DE UMA LACUNA DE
+   DESIGN: _resolver_plano foi projetado para checar um serviço por vez. Ele
+   funciona corretamente em agendamentos de serviço único. O multi-serviço
+   quebrou a invariante que "uma leitura de uso_mes reflete o estado real"
+   porque os usos do mesmo booking não existem no banco ainda.
+
+4. EC07 E EC08 SÃO O MESMO PROBLEMA EM DOIS NÍVEIS: falta de cascata quando
+   uma entidade é desativada. A solução geral é: ao desativar qualquer entidade,
+   verificar dependentes ativos, exigir ou executar limpeza antes de confirmar.
+
+================================================================================
+FIM DE AUDITORIA_EDGE_CASES.txt
+================================================================================

@@ -40,7 +40,15 @@
   <div class="section-title">Meu Horário</div>
 </div>
 
+<!-- Mensagem de bloqueio (oculta por padrão, exibida via JS se bloqueado) -->
+<div id="bloqueioMsg" style="display:none;background:#1e1e1e;border:1px solid #2d2d2d;border-radius:12px;padding:32px;text-align:center">
+  <div style="font-size:32px;margin-bottom:12px">🔒</div>
+  <div style="font-size:16px;font-weight:700;color:#ccc;margin-bottom:8px">Edição de horário desativada</div>
+  <div style="font-size:13px;color:#555">O gestor não habilitou a edição do horário por barbeiros.<br>Entre em contato com o gestor para solicitar acesso.</div>
+</div>
+
 <!-- ── Seção 1: Horário de trabalho ── -->
+<div id="horarioForm">
 <div class="horario-section">
   <div class="hor-section-title">Horário de Trabalho</div>
   <div class="field-row">
@@ -74,9 +82,10 @@
     <button class="btn btn-primary" onclick="salvarHorario()">Salvar horário</button>
   </div>
 </div>
+</div><!-- /horarioForm -->
 
 <!-- ── Seção 2: Pausas ── -->
-<div class="horario-section">
+<div id="pausasSection" class="horario-section">
   <div class="hor-section-title">
     Pausas recorrentes
     <button class="btn btn-ghost" style="float:right;font-size:12px;padding:5px 12px" onclick="abrirPausa(null)">+ Adicionar pausa</button>
@@ -124,10 +133,18 @@ let _pausaId = null;  // null = criar, number = editar
 (async function() {
   try {
     const r = await Bos.get('/barbeiro/horario');
+
+    if (r.bloqueado) {
+      document.getElementById('bloqueioMsg').style.display = '';
+      document.getElementById('horarioForm').style.display = 'none';
+      document.getElementById('pausasSection').style.display = 'none';
+      return;
+    }
+
     const c = r.config;
     if (c) {
-      if (c.horario_abertura)   document.getElementById('hAberta').value   = c.horario_abertura;
-      if (c.horario_fechamento) document.getElementById('hFechada').value  = c.horario_fechamento;
+      if (c.horario_abertura)   document.getElementById('hAberta').value    = c.horario_abertura;
+      if (c.horario_fechamento) document.getElementById('hFechada').value   = c.horario_fechamento;
       if (c.intervalo_minutos)  document.getElementById('hIntervalo').value = String(c.intervalo_minutos);
       document.getElementById('hAberto').checked = !!c.loja_aberta;
     }

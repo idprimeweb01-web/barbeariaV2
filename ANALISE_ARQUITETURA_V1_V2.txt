@@ -1,0 +1,496 @@
+================================================================================
+ ANALISE DA ARQUITETURA DO PROJETO BARBEROS — FLUXO, BACKEND, FRONTEND E V1 x V2
+ Gerado em: 2026-06-30
+================================================================================
+
+RESUMO EXECUTIVO
+--------------------------------------------------------------------------------
+O projeto contem DUAS gerações de codigo dentro do MESMO repositorio:
+
+  - V1 (legado): arquitetura plana, rotas sem prefixo de versao
+    (ex: /admin/barbeiros, /agenda/..., /caixa/..., /api/cliente/...),
+    autenticacao via localStorage + Bearer token (app/static/js/api.js).
+
+  - V2 (atual): arquitetura em camadas por papel (gestor/barbeiro/cliente/
+    super/pub), todas as rotas de API sob /api/v1/<papel>/..., autenticacao
+    via cookies HttpOnly + JWT (app/static/js/bos.js).
+
+CONCLUSAO DIRETA A PERGUNTA "o v1 esta misturado com o v2?":
+
+  ESTRUTURALMENTE NAO. O arquivo app/__init__.py (o unico lugar que registra
+  blueprints no Flask) so registra blueprints da nova arquitetura (pasta
+  app/routes/<papel>/...). Nenhum arquivo solto em app/routes/*.py (o legado)
+  esta importado ali. Ou seja, o backend V1 NAO RESPONDE a nenhuma requisicao
+  hoje — ele existe fisicamente no disco mas esta desconectado do app Flask
+  em execucao.
+
+  FISICAMENTE SIM. Os arquivos do V1 nunca foram apagados: ~6.572 linhas de
+  codigo Python "fantasma" continuam no repositorio (rotas, regras de
+  negocio duplicadas), alem de um arquivo JS inteiro (api.js, 288 linhas) e
+  8 templates HTML completos que nunca sao renderizados por nenhuma rota.
+
+  E O MAIS GRAVE: existem 6 PAGINAS REAIS, alcancaveis por URL direta hoje
+  (nao tem link no menu, mas a rota Flask existe e funciona), cujo HTML
+  ainda foi escrito para o V1 (chama `api.barbeiro.xxx(...)`) mas que estao
+  dentro do layout V2 (que so carrega bos.js, nao api.js). Resultado: essas
+  6 paginas quebram com "ReferenceError: api is not defined" se alguem
+  acessar a URL — um residuo hibrido, nem V1 nem V2 funcional. Detalhes na
+  Secao 5.
+
+
+================================================================================
+1. COMO O BACKEND (V2) FUNCIONA — FLUXO REQUISICAO A RESPOSTA
+================================================================================
+
+1.1 Estrutura em camadas por papel
+--------------------------------------------------------------------------------
+app/routes/
+  views/          -> rotas que renderizam HTML (Jinja). Login, paginas internas.
+  auth.py         -> API JSON de autenticacao via Bearer token (/api/v1/auth/*)
+  gestor/         -> API JSON do papel "gestor"   (/api/v1/gestor/...)
+  barbeiro/       -> API JSON do papel "barbeiro" (/api/v1/barbeiro/...)
+  cliente/        -> API JSON do papel "cliente"  (/api/v1/cliente/...)
+  super/          -> API JSON do papel "super_admin" (/api/v1/super/...)
+  pub/            -> API JSON PUBLICA, sem login   (/api/v1/pub/...)
+
+Cada blueprint e registrado uma unica vez, em app/__init__.py. Exemplo real
+(arquivo app/__init__.py, linhas 174-181):
+
+    from .routes.gestor.cupons import cupons_bp
+    app.register_blueprint(cupons_bp)
+
+    from .routes.cliente.cupons import cliente_cupons_bp
+    app.register_blueprint(cliente_cupons_bp)
+
+    from .routes.cliente.perfil import cliente_perfil_bp
+    app.register_blueprint(cliente_perfil_bp)
+
+Se um blueprint nao aparece nesse arquivo, ele NUNCA roda — é só um .py
+parado no disco. Esse e o criterio usado nesta analise para separar
+"codigo vivo" de "codigo fantasma".
+
+1.2 Quem é o usuario? — autenticacao por cookie + g.* global
+--------------------------------------------------------------------------------
+Toda requisicao passa primeiro por app/context.py::load_user_context(),
+registrado como app.before_request em app/__init__.py (linha 61):
+
+    def load_user_context():
+        g.user_id = None
+        g.perfil = None
+        g.barbearia_id = None
+        try:
+            verify_jwt_in_request(optional=True)   # le cookie bos_at OU header Authorization
+            uid = get_jwt_identity()
+            if uid is not None:
+                usuario = db.session.get(Usuario, int(uid))
+                if usuario and usuario.ativo:
+                    g.user_id = usuario.id
+                    g.perfil = usuario.perfil
+                    g.barbearia_id = usuario.barbearia_id
+        except Exception:
+            pass
+
+Isso roda em TODA rota, mesmo as publicas (`pub/`) — por isso uma rota
+publica como `POST /api/v1/pub/<slug>/planos/<id>/solicitar` consegue
+"perceber" automaticamente se quem esta chamando e um cliente logado
+(g.user_id preenchido) sem precisar de nenhum decorator, e aplicar regras
+diferentes (ex: vincular a assinatura ao cliente autenticado em vez de
+pedir telefone).
+
+1.3 Quem pode acessar? — decorators de papel (app/decorators/auth.py)
+--------------------------------------------------------------------------------
+    def gestor_required(fn):
+        """Perfil 'gestor' ou 'super_admin'."""
+        return _require(['gestor'])(fn)
+
+    def cliente_required(fn):
+        """Apenas perfil 'cliente'. super_admin NAO faz bypass aqui."""
+        return _require(['cliente'], allow_super=False)(fn)
+
+`_require` levanta APIError(401) se g.user_id for None, ou APIError(403) se
+g.perfil nao estiver na lista permitida. Isso é aplicado direto no topo da
+funcao da rota:
+
+    @cliente_perfil_bp.patch('/perfil')
+    @cliente_required
+    def editar_perfil():
+        ...
+
+1.4 Isolamento entre barbearias (multi-tenant) — TenantMixin
+--------------------------------------------------------------------------------
+app/models/mixins.py:
+
+    class TenantMixin:
+        @declared_attr
+        def barbearia_id(cls):
+            return Column(Integer, ForeignKey('barbearias.id'), nullable=False, index=True)
+
+        @classmethod
+        def query_tenant(cls):
+            """super_admin sem barbearia_id recebe query sem filtro (cross-tenant).
+            Qualquer outro perfil sem barbearia_id recebe query VAZIA (fail-safe)."""
+            q = db.session.query(cls)
+            barbearia_id = getattr(g, 'barbearia_id', None)
+            if barbearia_id:
+                q = q.filter(cls.barbearia_id == barbearia_id)
+            elif getattr(g, 'perfil', None) != 'super_admin':
+                q = q.filter(False)
+            return q
+
+Todo model "pertence" a uma barbearia (Cupom, Servico, Barbeiro, Cliente,
+Agendamento...). Em vez de cada rota escrever `.filter_by(barbearia_id=...)`
+manualmente (e arriscar esquecer e vazar dado de outra barbearia), as
+rotas usam `Cupom.query_tenant()` — o filtro de tenant é automatico e
+fail-safe (se algo der errado e g.barbearia_id nao existir, a query volta
+vazia em vez de vazar tudo).
+
+Exemplo real (app/routes/gestor/cupons.py):
+
+    @cupons_bp.get('/cupons')
+    @gestor_required
+    @feature_required('cupons')
+    def listar_cupons():
+        q = Cupom.query_tenant()
+        ...
+        return jsonify([_fmt_cupom(c) for c in q.order_by(Cupom.criado_em.desc()).all()]), 200
+
+1.5 Regras de negocio como "feature flags" por barbearia
+--------------------------------------------------------------------------------
+app/utils/features.py:
+
+    def feature_required(nome: str):
+        """Bloqueia a rota com 403 se a feature nao estiver ativa para g.barbearia_id."""
+        def decorator(f):
+            def wrapper(*args, **kwargs):
+                if not feature_ativa(g.barbearia_id, nome):
+                    raise APIError(f'Feature "{nome}" nao esta ativa para esta barbearia.', 403)
+                return f(*args, **kwargs)
+            return wrapper
+        return decorator
+
+Isso permite ligar/desligar funcionalidades (ex: "cupons", "pix", "vip")
+por barbearia, sem precisar de deploy separado — coerente com o principio
+ja registrado em memoria do projeto ("produto desativavel" / multi-segmento
+futuro).
+
+1.6 Tratamento de erro centralizado
+--------------------------------------------------------------------------------
+app/exceptions.py define `APIError`, capturada globalmente em
+app/__init__.py:
+
+    @app.errorhandler(APIError)
+    def handle_api_error(e):
+        return e.to_response()
+
+Qualquer rota pode dar `raise APIError('mensagem', codigo)` em vez de
+montar jsonify/status manualmente — todas as respostas de erro do V2 saem
+no mesmo formato `{"erro": "..."}`.
+
+
+================================================================================
+2. COMO O FRONTEND (V2) FUNCIONA — TEMPLATES + BOS.JS
+================================================================================
+
+2.1 Paginas sao renderizadas pelo Flask (Jinja), nao por um SPA
+--------------------------------------------------------------------------------
+app/routes/views/auth.py concentra TODAS as rotas que devolvem HTML (uma
+por tela). Exemplo:
+
+    @views_bp.get('/cliente/dashboard')
+    @cliente_session_required
+    def cliente_dashboard():
+        return render_template('cliente/dashboard.html', **_cliente_ctx())
+
+`cliente_session_required` (mesmo arquivo) e um decorator separado dos da
+Secao 1.3 — ele guarda PAGINAS (sessao de navegador/cookie Flask), nao API:
+
+    def cliente_session_required(f):
+        def wrapper(*args, **kwargs):
+            if session.get('perfil') != 'cliente':
+                slug = session.get('barbearia_slug', '')
+                return redirect(f'/b/{slug}/entrar' if slug else '/entrar')
+            return f(*args, **kwargs)
+        return wrapper
+
+2.2 Bos.js — cliente HTTP que fala com a API /api/v1/...
+--------------------------------------------------------------------------------
+app/static/js/bos.js (104 linhas) e o UNICO arquivo JS que as paginas V2
+carregam. Ele NAO usa localStorage — depende dos cookies HttpOnly
+(`bos_at`/`bos_rt`) que o navegador ja manda sozinho em toda requisicao
+same-origin:
+
+    const Bos = (() => {
+      const BASE = '/api/v1';
+      async function _fetch(url, opts = {}) {
+        let resp = await fetch(url, { credentials: 'same-origin', ...opts });
+        if (resp.status === 401) {
+          const renovado = await _renovar();        // tenta /entrar/renovar
+          if (!renovado) {
+            window.location.href = window.BOS_LOGIN_URL || '/entrar';
+            return null;
+          }
+          resp = await fetch(url, { credentials: 'same-origin', ...opts });
+        }
+        return resp;
+      }
+      return {
+        get(path)        { return _json(`${BASE}${path}`); },
+        post(path, body) { return _json(`${BASE}${path}`, {method:'POST', ...}); },
+        patch(path, body){ ... },
+        logout() { fetch('/sair', {method:'POST'}); window.location.href = window.BOS_LOGIN_URL || '/entrar'; },
+      };
+    })();
+
+`window.BOS_LOGIN_URL` e definido por cada shell ANTES de carregar bos.js,
+o que permite a mesma biblioteca servir tanto o login de staff (`/entrar`)
+quanto o login de cliente escopado por barbearia
+(`/b/<slug>/entrar`). Exemplo (app/templates/cliente/base.html):
+
+    <script>window.BOS_LOGIN_URL = '/b/{{ bk_slug }}/entrar';</script>
+    <script src="/static/js/bos.js"></script>
+
+2.3 Exemplo completo: tela chama API, API consulta banco, resposta volta pro DOM
+--------------------------------------------------------------------------------
+Frontend (app/templates/cliente/dashboard.html):
+
+    async function carregarVip() {
+      const v = await Bos.get('/cliente/vip');
+      if (!v.nivel_vip_atual) { box.innerHTML = ''; return; }
+      box.innerHTML = `<div class="vip-badge">${v.nivel_vip_atual}</div> ...`;
+    }
+
+Essa chamada vira `GET /api/v1/cliente/vip` (BASE + path). No backend
+(app/routes/cliente/perfil.py):
+
+    @cliente_perfil_bp.get('/vip')
+    @cliente_required
+    def status_vip():
+        cli, _usr = _get_cliente_e_usuario()
+        cv = ClienteVip.query.filter_by(cliente_id=cli.id, barbearia_id=g.barbearia_id).first()
+        nivel_atual = cv.nivel_vip_atual if cv else 0
+        ...
+        return jsonify({'nivel_vip_atual': nivel_atual, 'nivel_info': nivel_info, ...}), 200
+
+`@cliente_required` ja garantiu que so um cliente autenticado chega aqui
+(senao 401/403, capturado pelo `_fetch` do Bos que redireciona pro login).
+`g.barbearia_id` veio do `load_user_context()` (Secao 1.2), garantindo que
+o cliente so ve dados da PROPRIA barbearia.
+
+2.4 Rotas publicas reaproveitadas pelo app do cliente (sem duplicar codigo)
+--------------------------------------------------------------------------------
+Em vez de criar endpoints autenticados separados para Agendar, o app do
+cliente chama os MESMOS endpoints publicos (`/api/v1/pub/<slug>/...`) que
+a pagina de agendamento sem login usa. Isso funciona porque o
+`load_user_context()` roda em TODA rota (publica ou nao) — entao
+`g.user_id` fica preenchido mesmo numa rota sem `@cliente_required`,
+quando o cookie existe. Exemplo (app/routes/pub/planos.py,
+`solicitar_assinatura`): se `g.user_id` existe, a assinatura e vinculada
+automaticamente ao cliente logado; se nao existe, pede telefone manual.
+Isso evita ter dois conjuntos de rotas fazendo a mesma coisa.
+
+
+================================================================================
+3. RESUMO DO FLUXO PONTA-A-PONTA (EXEMPLO REAL: CLIENTE APLICA CUPOM)
+================================================================================
+  1. Usuario abre /cliente/agendar -> views/auth.py renderiza
+     cliente/agendar.html (guardado por cliente_session_required).
+  2. JS do template chama Bos.get(`/pub/${SLUG}/barbeiros`) — endpoint
+     publico, sem necessidade de auth, so para listar profissionais.
+  3. Usuario digita um codigo de cupom -> Bos.post('/cliente/cupons/validar',
+     {codigo, subtotal}) -> bate em app/routes/cliente/cupons.py, que
+     chama app/utils/cupons.py::validar_cupom() -> valida ativo/expiracao/
+     limite de usos -> calcula desconto -> devolve JSON.
+  4. Usuario confirma -> Bos.post('/cliente/agendamentos', {... ,
+     cupom_codigo}) -> cliente/agendamento.py reusa
+     pub/agendamento.py::_criar_agendamento_core(), que: cria o
+     Agendamento, chama calcular_desconto() de novo (nunca confia so no
+     valor que veio do passo 3), grava valor_desconto/cupom_id, e chama
+     incrementar_uso_cupom(). Se status virar "cancelado" depois,
+     decrementar_uso_cupom() e chamado no ponto de cancelamento.
+  5. Resposta JSON volta pro JS, que mostra o resumo (ou o QR/copia-cola
+     PIX, se metodo_pagamento == 'pix') sem sair da pagina.
+
+Esse é o padrao geral repetido em todas as telas: template Jinja so
+desenha o esqueleto -> JS (Bos.*) busca/envia dados -> blueprint valida
+permissao (decorator de papel) -> regra de negocio roda isolada por
+tenant -> JSON volta -> JS atualiza o DOM.
+
+
+================================================================================
+4. CODIGO FANTASMA NO BACKEND — V1 LEGADO, NAO REGISTRADO
+================================================================================
+Criterio de verificacao: procurei cada um destes arquivos dentro de
+app/__init__.py (unico lugar onde blueprints viram rotas reais). Nenhum
+deles aparece la.
+
+  Arquivo                          Linhas   Equivalente em V2 (se existe)
+  --------------------------------------------------------------------------
+  app/routes/agenda.py              1.224   gestor/agendamento.py, barbeiro/agendamentos.py
+  app/routes/gestor_admin.py        1.240   gestor/* (varios arquivos especializados)
+  app/routes/publica.py               548   pub/agendamento.py, pub/planos.py, views/auth.py (/b/<slug>/...)
+  app/routes/caixa.py                 485   (SEM equivalente — fluxo de caixa/PDV do barbeiro nao foi reescrito em V2)
+  app/routes/cliente_perfil.py        442   cliente/perfil.py, cliente/dashboard.py, cliente/planos.py
+  app/routes/relatorios.py            471   gestor/relatorios.py
+  app/routes/super_admin.py           397   super/barbearias.py, super/dashboard.py
+  app/routes/catalogo.py              397   gestor/catalogo.py
+  app/routes/features.py              323   gestor/features.py (parcial)
+  app/routes/clientes.py              247   gestor/clientes.py, barbeiro/clientes.py
+  app/routes/vip.py                   177   (SEM equivalente — gestao de niveis VIP pelo gestor nao tem API em V2)
+  app/routes/upload.py                167   (SEM equivalente — upload de fotos nao foi portado)
+  app/routes/auditoria.py              95   gestor/auditoria.py (parcial)
+  app/routes/customizacao.py           88   (sem equivalente dedicado; super/dashboard cobre parte)
+  --------------------------------------------------------------------------
+  TOTAL                             6.572 linhas de Python nunca executadas
+
+Risco concreto, alem do "peso morto": `app/routes/cliente_perfil.py` define
+um Blueprint chamado `cliente_perfil` (linha 15) — EXATAMENTE o mesmo nome
+usado pelo novo `app/routes/cliente/perfil.py` (`cliente_perfil_bp`, nome
+interno tambem `'cliente_perfil'`). Hoje nao colide porque o arquivo
+legado nunca e importado. Mas se algum dia alguem (humano ou IA) reativar
+esse arquivo sem perceber a duplicata, o Flask vai falhar no boot com
+`ValueError: The name 'cliente_perfil' is already registered`.
+
+app/routes/publica.py tambem é um caso a parte: ele usa
+`url_prefix='/b'` — o MESMO prefixo que `views_bp` usa hoje para
+`/b/<slug>/entrar` e `/b/<slug>/cadastro`. Se reativado, colidiria
+diretamente com as rotas de login do cliente que foram construidas
+nesta fase do projeto.
+
+
+================================================================================
+5. CODIGO FANTASMA NO FRONTEND — TEMPLATES E JS NUNCA SERVIDOS
+================================================================================
+Criterio: procurei cada template .html dentro de TODAS as chamadas
+render_template() do projeto. Os que nunca aparecem la sao inacessiveis
+por qualquer rota.
+
+5.1 Templates 100% orfaos (nenhuma rota os renderiza)
+--------------------------------------------------------------------------------
+  app/templates/cliente/login.html        -> chama api.post('/auth/login', ...) [V1]
+  app/templates/cliente/checkout_pix.html
+  app/templates/cliente/checkout_plano.html
+  app/templates/cliente/comprar_plano.html
+  app/templates/cliente/meu_plano.html
+  app/templates/cliente/vip_status.html
+  app/templates/staff/placeholder.html
+  app/templates/super/em_construcao.html
+
+Os 6 primeiros sao a versao ANTIGA das telas do cliente (Login, Checkout,
+Comprar Plano, Meu Plano, Status VIP) — foram o precursor direto das 5
+telas novas (Home/Agendar/Beneficios/Historico/Perfil) entregues nesta
+fase. Continuam no disco, mas zero rota aponta pra eles.
+
+5.2 JS legado nunca carregado por nenhum template ativo
+--------------------------------------------------------------------------------
+  app/static/js/api.js            (288 linhas) -> so referenciado por cliente/login.html (orfao)
+  app/static/js/upload-widget.js  (148 linhas) -> referenciado por ZERO templates
+
+api.js usa localStorage (`barberos_token`, `barberos_user`) e Bearer token
+manual em vez de cookie HttpOnly — exatamente o padrao que a correcao
+critica desta fase do projeto proibiu para a area do cliente. Ele so
+sobrevive hoje porque cliente/login.html (tambem orfao) ainda o referencia.
+
+5.3 CASO MAIS GRAVE — templates VIVOS (renderizados por rota real) que
+    ainda usam o api.js legado, mas rodam dentro do layout V2 que so
+    carrega bos.js. Resultado: pagina quebra em runtime.
+--------------------------------------------------------------------------------
+Confirmado que cada um destes:
+  (a) TEM uma rota Flask registrada e funcional (existe em views/auth.py);
+  (b) extends um *_base.html que so faz `<script src="/static/js/bos.js">`
+      (NUNCA carrega api.js);
+  (c) chama `api.<algo>(...)` dentro do proprio HTML — `api` e undefined
+      nesse contexto -> `ReferenceError: api is not defined` na hora do
+      clique/load.
+
+  Rota Flask                          Template                       Chamadas legadas (exemplos)
+  ------------------------------------------------------------------------------------------------
+  GET /barbeiro/agenda                barbeiro/agenda.html           api.barbeiro.agenda(ds)
+                                                                      api.barbeiro.iniciar(agId)
+                                                                      api.barbeiro.cancelar(...)
+                                                                      api.barbeiro.agendarManual(...)
+  GET /barbeiro/caixa/<id>            barbeiro/caixa.html            api.barbeiro.caixa(id)
+                                                                      api.barbeiro.addItem(...)
+                                                                      api.barbeiro.efetuar(...)
+  GET /barbeiro/produtos              barbeiro/produtos.html         api.barbeiro.produtos()
+  GET /barbeiro/perfil                barbeiro/perfil.html           api.barbeiro.perfil()
+  GET /gestor/vip                     gestor/vip.html                api.vip.listar() / criar() / editar()
+  GET /gestor/esqueci-senha           gestor/esqueci_senha.html      api.senha.listar() / resolver()
+
+Pior ainda: mesmo SE api.js fosse carregado, as chamadas acima apontam
+pra rotas backend (`/agenda/...`, `/caixa/...`, `/api/vip/niveis`,
+`/auth/gestor/solicitacoes-senha`) que pertencem aos arquivos V1
+NAO REGISTRADOS da Secao 4 — ou seja, mesmo consertando o `<script>`
+faltante, essas 6 paginas ainda dariam 404, porque o backend que elas
+chamam tambem nao existe rodando hoje.
+
+  - barbeiro/caixa.html e gestor/vip.html: a FUNCIONALIDADE (fluxo de
+    caixa/PDV do barbeiro; cadastro de niveis VIP pelo gestor) nunca foi
+    reconstruida em V2. Nao e so um residuo de V1 — e um GAP DE PRODUTO.
+  - barbeiro/agenda.html, produtos.html, perfil.html: ja existem
+    equivalentes funcionais em V2 (barbeiro/dashboard.html,
+    barbeiro/agendamentos.html, etc., todos via Bos.js) — entao essas 3
+    paginas sao puramente redundantes/obsoletas, seguras para apagar.
+  - gestor/esqueci_senha.html: o link "Esqueci a senha" em
+    staff/login.html aponta hoje pra `href="#"` (nao-funcional) — ou
+    seja, nem o V1 nem o V2 tem um fluxo de recuperacao de senha do
+    gestor utilizavel agora.
+
+5.4 Por que isso nao quebra a experiencia normal do usuario hoje
+--------------------------------------------------------------------------------
+Conferido em app/templates/barbeiro/base.html e gestor/base.html: o MENU
+lateral atual nao linka para nenhuma dessas 6 URLs (foram removidas do
+nav quando as telas novas — dashboard, agendamentos, horario, clientes —
+substituiram as antigas). Entao um usuario normal, navegando so pelos
+links visiveis, nunca cai nessas paginas. O risco existe se alguem
+acessar a URL direto (favorito antigo, link salvo, ou um QA/dev testando
+manualmente).
+
+
+================================================================================
+6. O QUE *NAO* E CODIGO FANTASMA (para nao confundir na limpeza futura)
+================================================================================
+  - app/routes/auth.py (registrado, /api/v1/auth/*): so o endpoint
+    `/trocar-senha` esta em uso de verdade (chamado por
+    barbeiro/redefinicoes.html via Bos.post). `/login`, `/refresh` e `/me`
+    desse mesmo arquivo NAO sao chamados por nenhum frontend hoje — sao
+    "mortos" mas dentro de um arquivo que e, em parte, vivo. Nao apagar o
+    arquivo inteiro sem checar de novo, so os endpoints nao usados.
+  - app/routes/views/* , app/routes/<papel>/* , app/static/js/bos.js,
+    app/static/css/style.css, e os templates de cliente/gestor/barbeiro/
+    super que aparecem nos menus atuais -> tudo isso e V2, vivo, testado
+    nesta sessao (cadastro/login/perfil do cliente via curl, logica de
+    cupom validada e revertida via rollback).
+
+
+================================================================================
+7. RECOMENDACOES (nao executadas — apenas para decisao do usuario)
+================================================================================
+  1. Apagar com seguranca (zero rota aponta pra eles):
+     app/routes/agenda.py, gestor_admin.py, publica.py, cliente_perfil.py,
+     relatorios.py, super_admin.py, catalogo.py, features.py, clientes.py,
+     vip.py, upload.py, auditoria.py, customizacao.py (todos da Secao 4);
+     app/static/js/api.js, app/static/js/upload-widget.js;
+     os 8 templates orfaos da Secao 5.1;
+     barbeiro/agenda.html, barbeiro/produtos.html, barbeiro/perfil.html
+     (redundantes — ja tem substituto V2 funcionando).
+
+  2. Decidir antes de apagar (porque sao GAPS DE PRODUTO, nao so lixo):
+     - Fluxo de caixa/PDV do barbeiro (barbeiro/caixa.html + caixa.py):
+       se essa funcionalidade ainda e necessaria, precisa ser RECONSTRUIDA
+       em V2 (novo blueprint app/routes/barbeiro/caixa.py com Bos.js),
+       nao reaproveitada do V1.
+     - Gestao de niveis VIP pelo gestor (gestor/vip.html + vip.py): hoje
+       so existe LEITURA no V2 (cliente ve seu nivel), nao existe CRUD
+       para o gestor criar/editar niveis. Mesma decisao: reconstruir do
+       zero em V2 se for prioridade.
+     - Recuperacao de senha do gestor: nem V1 nem V2 tem um fluxo
+       funcional hoje (link quebrado no login).
+
+  3. Garantir, antes de apagar, que nenhum script auxiliar na raiz do
+     projeto (pw_*.py, test_*.py, setup_test_barbeiro.py etc.) depende
+     dos arquivos legados — varios desses scripts foram criados na mesma
+     epoca do V1 e podem importar de app/routes/*.py diretamente.
+
+================================================================================
+FIM DO DOCUMENTO
+================================================================================

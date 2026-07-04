@@ -43,6 +43,52 @@ class Barbearia(db.Model):
     cep              = db.Column(db.String(9))
     telefone_contato = db.Column(db.String(20))
     instagram        = db.Column(db.String(100))
+    # ── Multi-segmento (Parte B) ───────────────────────────────────────────────
+    segmento_id      = db.Column(db.Integer, db.ForeignKey('segmentos.id'), nullable=True)
+
+
+# ── Segmento e Rótulos Dinâmicos ──────────────────────────────────────────────
+
+class Segmento(db.Model):
+    __tablename__ = 'segmentos'
+
+    id    = db.Column(db.Integer, primary_key=True)
+    nome  = db.Column(db.String(100), nullable=False)
+    chave = db.Column(db.String(50), unique=True, nullable=False, index=True)
+
+
+class SegmentoRotulo(db.Model):
+    __tablename__ = 'segmento_rotulos'
+
+    id          = db.Column(db.Integer, primary_key=True)
+    segmento_id = db.Column(db.Integer, db.ForeignKey('segmentos.id'), unique=True, nullable=False)
+
+    rotulo_tenant        = db.Column(db.String(50), default='Estabelecimento')
+    rotulo_tenant_plural = db.Column(db.String(50), default='Estabelecimentos')
+
+    rotulo_profissional        = db.Column(db.String(50), default='Profissional')
+    rotulo_profissional_plural = db.Column(db.String(50), default='Profissionais')
+
+    rotulo_servico        = db.Column(db.String(50), default='Serviço')
+    rotulo_servico_plural = db.Column(db.String(50), default='Serviços')
+
+    rotulo_agendamento        = db.Column(db.String(50), default='Agendamento')
+    rotulo_agendamento_plural = db.Column(db.String(50), default='Agendamentos')
+
+    rotulo_cliente        = db.Column(db.String(50), default='Cliente')
+    rotulo_cliente_plural = db.Column(db.String(50), default='Clientes')
+
+    rotulo_produto        = db.Column(db.String(50), default='Produto')
+    rotulo_produto_plural = db.Column(db.String(50), default='Produtos')
+
+    rotulo_plano        = db.Column(db.String(50), default='Plano')
+    rotulo_plano_plural = db.Column(db.String(50), default='Planos')
+
+    rotulo_pagamento   = db.Column(db.String(50), default='Pagamento')
+    rotulo_faturamento = db.Column(db.String(50), default='Faturamento')
+    rotulo_relatorio   = db.Column(db.String(50), default='Relatório')
+
+    atualizado_em = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 # ── Usuários ───────────────────────────────────────────────────────────────────
@@ -179,8 +225,9 @@ class ConfiguracaoAgenda(db.Model):
     horario_abertura   = db.Column(db.Time, nullable=False)
     horario_fechamento = db.Column(db.Time, nullable=False)
     intervalo_minutos  = db.Column(db.Integer, nullable=False)
-    loja_aberta        = db.Column(db.Boolean, default=True, nullable=False)
-    atualizado_em      = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+    loja_aberta               = db.Column(db.Boolean, default=True, nullable=False)
+    permite_horario_barbeiro  = db.Column(db.Boolean, default=False, nullable=False)
+    atualizado_em             = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 class Agendamento(TenantMixin, db.Model):
@@ -197,6 +244,9 @@ class Agendamento(TenantMixin, db.Model):
     observacao       = db.Column(db.String(300))
     metodo_pagamento = db.Column(db.String(20))  # pix, local
     criado_em        = db.Column(db.DateTime, default=_utcnow)
+    # ── Cupons de desconto ────────────────────────────────────────────────────
+    cupom_id         = db.Column(db.Integer, db.ForeignKey('cupons.id'), nullable=True)
+    valor_desconto   = db.Column(db.Numeric(10, 2), nullable=False, default=0)
 
 
 class AgendamentoServico(db.Model):
@@ -449,6 +499,27 @@ class ClienteVip(db.Model):
     data_proxima_renovacao = db.Column(db.Date)
     criado_em              = db.Column(db.DateTime, default=_utcnow)
     atualizado_em          = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+# ── Cupons de desconto ────────────────────────────────────────────────────────
+
+class Cupom(TenantMixin, db.Model):
+    __tablename__ = 'cupons'
+    __table_args__ = (
+        db.UniqueConstraint('barbearia_id', 'codigo', name='uq_cupom_barbearia_codigo'),
+    )
+
+    id                      = db.Column(db.Integer, primary_key=True)
+    nome                    = db.Column(db.String(100), nullable=False)
+    codigo                  = db.Column(db.String(30), nullable=False)
+    tipo_desconto           = db.Column(db.String(20), nullable=False)  # percentual, valor_fixo
+    valor_desconto          = db.Column(db.Numeric(10, 2), nullable=False)
+    data_expiracao          = db.Column(db.Date, nullable=False)
+    quantidade_maxima_usos  = db.Column(db.Integer)  # NULL = ilimitado
+    quantidade_usos         = db.Column(db.Integer, nullable=False, default=0)
+    ativo                   = db.Column(db.Boolean, nullable=False, default=True)
+    criado_em               = db.Column(db.DateTime, default=_utcnow)
+    atualizado_em           = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
 
 # ── Feature Flags (v2: normalizado) ────────────────────────────────────────────

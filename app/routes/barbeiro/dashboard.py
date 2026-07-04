@@ -1,4 +1,3 @@
-from datetime import datetime, date
 from flask import Blueprint, g, jsonify
 from app.extensions import db
 from app.models import (
@@ -6,6 +5,7 @@ from app.models import (
 )
 from app.decorators.auth import barbeiro_required
 from app.utils.features import feature_ativa
+from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.labels import L
 
 barbeiro_dash_bp = Blueprint('barbeiro_dashboard', __name__, url_prefix='/api/v1/barbeiro')
@@ -35,7 +35,7 @@ def dashboard_barbeiro():
     if not barbeiro:
         return jsonify({'erro': f'{L("profissional")} não encontrado.'}), 404
 
-    hoje = date.today()
+    hoje = hoje_brasilia()
     mes_ano = (hoje.year, hoje.month)
 
     # Agendamentos de hoje
@@ -77,7 +77,7 @@ def dashboard_barbeiro():
     comissao_mes,  receita_mes  = _comissao_ags(ags_mes)
 
     # Próximos 5 agendamentos futuros
-    agora = datetime.utcnow()
+    agora = naive_brasilia()
     proximos = (
         Agendamento.query
         .filter(

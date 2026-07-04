@@ -1,0 +1,135 @@
+{% extends "cliente/base.html" %}
+{% block title %}Benefícios{% endblock %}
+
+{% block styles %}
+.sec-title { font-size: 12px; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 10px; }
+
+.vip-row { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.vip-badge {
+  width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
+  background: rgba(186,117,23,.15); border: 1px solid rgba(186,117,23,.35);
+  display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 800; color: var(--cor-primaria);
+}
+.vip-nivel-nome { font-size: 15px; font-weight: 700; color: #ddd; }
+.vip-brinde { font-size: 12px; color: #888; margin-top: 2px; }
+
+.plano-nome-dash { font-size: 16px; font-weight: 800; color: var(--cor-primaria); margin-bottom: 10px; }
+.servico-prog { margin-bottom: 12px; }
+.servico-prog-label { display: flex; justify-content: space-between; font-size: 12px; color: #ccc; margin-bottom: 5px; }
+.servico-prog-bar { height: 8px; background: #1e1e1e; border-radius: 999px; overflow: hidden; border: 1px solid #2d2d2d; }
+.servico-prog-fill { height: 100%; background: var(--cor-primaria); }
+.plano-validade { font-size: 12px; color: #666; margin-top: 10px; }
+
+.planos-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.plano-mini { background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 10px; padding: 14px; }
+.plano-mini-nome { font-size: 13px; font-weight: 700; color: #ddd; margin-bottom: 4px; }
+.plano-mini-preco { font-size: 15px; font-weight: 800; color: var(--cor-primaria); margin-bottom: 8px; }
+.plano-mini-servicos { font-size: 11px; color: #777; margin-bottom: 10px; line-height: 1.5; }
+.btn-block { display: block; width: 100%; text-align: center; padding: 9px; border-radius: 8px; font-size: 12px; font-weight: 700; border: none; cursor: pointer; font-family: inherit; box-sizing: border-box; }
+.btn-primario { background: var(--cor-primaria); color: #fff; }
+.btn-primario:disabled { opacity: .5; cursor: not-allowed; }
+.pix-code { background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 11px; word-break: break-all; color: #ccc; margin: 10px 0; max-height: 120px; overflow-y: auto; }
+{% endblock %}
+
+{% block content %}
+<div class="b-card" id="vipSecao"><div class="b-loading">Carregando…</div></div>
+<div class="b-card" id="pacoteSecao" style="display:none"></div>
+<div class="b-card" id="comprarSecao" style="display:none"></div>
+<div class="b-card" id="pixSecao" style="display:none"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SLUG = {{ bk_slug | tojson }};
+
+async function carregarVip() {
+  const box = document.getElementById('vipSecao');
+  try {
+    const v = await Bos.get('/cliente/vip');
+    if (!v.nivel_vip_atual) {
+      box.innerHTML = `<div class="sec-title">Nível VIP</div><p style="font-size:13px;color:#666">Você ainda não atingiu nenhum nível VIP.</p>`;
+      return;
+    }
+    box.innerHTML = `
+      <div class="sec-title">Nível VIP</div>
+      <div class="vip-row">
+        <div class="vip-badge">${v.nivel_vip_atual}</div>
+        <div>
+          <div class="vip-nivel-nome">Nível ${v.nivel_vip_atual}</div>
+          ${v.nivel_info?.brinde_descricao ? `<div class="vip-brinde">${esc(v.nivel_info.brinde_descricao)}</div>` : ''}
+        </div>
+      </div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="sec-title">Nível VIP</div><p style="font-size:13px;color:#666">Não foi possível carregar.</p>`;
+  }
+}
+
+async function carregarPacoteAtivo() {
+  const box = document.getElementById('pacoteSecao');
+  try {
+    const assinaturas = await Bos.get('/cliente/planos?ativo=true');
+    if (!assinaturas.length) { box.style.display = 'none'; return; }
+    const cp = assinaturas[0];
+    box.innerHTML = `
+      <div class="sec-title">Pacote ativo</div>
+      <div class="plano-nome-dash">${esc(cp.plano_nome || '')}</div>
+      ${(cp.servicos || []).map(s => `
+        <div class="servico-prog">
+          <div class="servico-prog-label"><span>${esc(s.nome)}</span><span>${s.uso_mes_atual}/${s.ilimitado ? '∞' : s.limite_uso_mensal}</span></div>
+          <div class="servico-prog-bar"><div class="servico-prog-fill" style="width:${s.ilimitado ? 0 : Math.min(100, s.uso_mes_atual / s.limite_uso_mensal * 100)}%"></div></div>
+        </div>
+      `).join('')}
+      ${cp.data_fim ? `<div class="plano-validade">Válido até ${new Date(cp.data_fim).toLocaleDateString('pt-BR')}</div>` : ''}`;
+    box.style.display = '';
+  } catch (e) {
+    box.style.display = 'none';
+  }
+}
+
+async function carregarPlanosDisponiveis() {
+  const box = document.getElementById('comprarSecao');
+  try {
+    const planos = await Bos.get(`/pub/${SLUG}/planos`);
+    if (!planos.length) { box.style.display = 'none'; return; }
+    box.innerHTML = `
+      <div class="sec-title">Comprar pacote</div>
+      <div class="planos-grid">
+        ${planos.map(pl => `
+          <div class="plano-mini">
+            <div class="plano-mini-nome">${esc(pl.nome)}</div>
+            <div class="plano-mini-preco">R$ ${pl.preco_mensal.toFixed(2)}/mês</div>
+            <div class="plano-mini-servicos">${pl.servicos.map(s => `${s.ilimitado ? '∞' : s.limite_uso_mensal}x ${esc(s.nome)}`).join(', ') || '—'}</div>
+            <button type="button" class="btn-block btn-primario" onclick="comprarPlano(${pl.id})">Solicitar</button>
+          </div>
+        `).join('')}
+      </div>`;
+    box.style.display = '';
+  } catch (e) {
+    box.style.display = 'none';
+  }
+}
+
+async function comprarPlano(planoId) {
+  try {
+    const r = await Bos.post(`/pub/${SLUG}/planos/${planoId}/solicitar`, { metodo_pagamento: 'pix' });
+    if (r.pix_copia_cola) {
+      const box = document.getElementById('pixSecao');
+      box.innerHTML = `
+        <div class="sec-title">Pagamento via PIX</div>
+        <p style="font-size:12px;color:#999">${esc(r.pix_info || '')}</p>
+        <div class="pix-code">${esc(r.pix_copia_cola)}</div>
+        <button type="button" class="btn-block btn-primario" onclick="navigator.clipboard?.writeText(${JSON.stringify(r.pix_copia_cola)});toast('Código PIX copiado!')">Copiar código PIX</button>`;
+      box.style.display = '';
+      box.scrollIntoView({ behavior: 'smooth' });
+    }
+    toast(r.mensagem || 'Solicitação enviada!', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+carregarVip();
+carregarPacoteAtivo();
+carregarPlanosDisponiveis();
+</script>
+{% endblock %}

@@ -1,0 +1,547 @@
+═══════════════════════════════════════════════════════════════════════════════
+AUDITORIA ESTRUTURAL DO BANCO DE DADOS — BarberOS
+Fonte: app/models/__init__.py + app/models/mixins.py
+Gerado em: 2026-07-02
+═══════════════════════════════════════════════════════════════════════════════
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 2.1 — Relacionamentos Circulares                                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+RESULTADO: SEM DEPENDÊNCIAS CIRCULARES ✓
+
+O banco forma um DAG (grafo acíclico direcionado) com Barbearia como raiz.
+Hierarquia de dependência principal:
+
+  Barbearia
+    ├── Segmento (barbearia_id → segmentos)
+    ├── Usuario (barbearia_id → barbearias)
+    │     ├── Barbeiro (usuario_id → usuarios)
+    │     │     ├── BarbeiroServico   (barbeiro_id → barbeiros)
+    │     │     ├── ConfiguracaoAgenda (barbeiro_id → barbeiros)
+    │     │     ├── HorarioBloqueado  (barbeiro_id → barbeiros)
+    │     │     ├── PausaBarbeiro     (barbeiro_id → barbeiros)
+    │     │     └── BarbeiroComissaoServico (barbeiro_id → barbeiros)
+    │     └── Cliente (usuario_id → usuarios)
+    │           └── ClientePlano (cliente_id → clientes)
+    │                 └── ClientePlanoUso (cliente_plano_id → cliente_plano)
+    ├── Servico (barbearia_id via TenantMixin)
+    │     ├── BarbeiroServico (servico_id → servicos)
+    │     ├── PlanoServico    (servico_id → servicos)
+    │     └── AgendamentoServico (servico_id → servicos)
+    ├── Agendamento (barbearia_id via TenantMixin)
+    │     ├── AgendamentoServico (agendamento_id → agendamentos)
+    │     │     └── ClientePlano (cliente_plano_id → cliente_plano)  ← ATENÇÃO *
+    │     ├── AgendamentoSolicitacaoPix (agendamento_id → agendamentos)
+    │     ├── ReservaProduto   (agendamento_id → agendamentos)
+    │     ├── Atendimento      (agendamento_id → agendamentos)
+    │     │     ├── AtendimentoItem (atendimento_id → atendimentos)
+    │     │     └── Pagamento       (atendimento_id → atendimentos)
+    │     └── Notificacao (agendamento_id → agendamentos)
+    ├── Plano (barbearia_id via TenantMixin)
+    │     ├── PlanoServico   (plano_id → planos)
+    │     ├── PlanoBarbeiro  (plano_id → planos)
+    │     ├── ClientePlano   (plano_id → planos)
+    │     └── ClientePlanoSolicitacao (plano_id → planos)
+    ├── Cupom (barbearia_id via TenantMixin)
+    │     └── Agendamento.cupom_id → cupons  ← referência reversa sem cascade
+    └── FeatureMetadata
+          └── FeatureBarbearia (feature_id → feature_metadata)
+
+* ATENÇÃO — CAMINHO DE DEPENDÊNCIA PROFUNDA (não circular, mas longa):
+  Agendamento → AgendamentoServico → ClientePlano → ClientePlanoUso
+  Um único DELETE em Agendamento pode precisar limpar 4 níveis de dependência
+  se cascade fosse configurado. Como NÃO há cascade, deleções precisam ser
+  feitas manualmente em ordem, ou via soft delete (ativo=False).
+
+RELACIONAMENTOS ORM BIDIRECIONAIS (via backref):
+  Usuario ↔ Barbeiro       (backref='usuario', uselist=False)
+  Usuario ↔ Cliente        (backref='usuario', uselist=False)
+  Barbeiro ↔ BarbeiroServico (backref='barbeiro')
+  Barbeiro ↔ ConfiguracaoAgenda (backref='barbeiro', uselist=False)
+  FeatureMetadata ↔ FeatureBarbearia (backref='feature')
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 2.2 — Índices Faltando                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+NOTA: TenantMixin adiciona barbearia_id com index=True em todos os models
+que herdam dele: Servico, Produto, Agendamento, HorarioBloqueado,
+SolicitacaoLiberacao, Plano, VipNivel, Cupom, Atendimento.
+
+ÍNDICES FALTANDO — por ordem de impacto:
+
+  [1] CRÍTICO — AuditoriaLog.barbearia_id
+      Coluna: barbearia_id (ForeignKey, sem index)
+      Por quê: GET /api/v1/super/auditoria filtra por barbearia_id com pagination
+               GET /api/v1/gestor/auditoria filtra por barbearia_id
+               Tabela cresce indefinidamente → full table scan em produção
+      SQL sem índice: EXPLAIN → Seq Scan on auditoria_log (rows=100000)
+      Solução: index=True na definição da coluna
+
+  [2] CRÍTICO — AuditoriaLog.usuario_id
+      Coluna: usuario_id (ForeignKey, sem index)
+      Por quê: Log de ações por usuário filtrado frequentemente
+      Mesmo problema de crescimento da tabela sem índice
+
+  [3] ALTO — Cliente.usuario_id
+      Coluna: usuario_id (ForeignKey, sem index)
+      Por quê: Ao fazer login do cliente, o sistema busca:
+               Cliente.query.filter_by(usuario_id=usuario.id, barbearia_id=bk_id)
+               → sem índice em usuario_id, full scan na tabela de clientes
+      Frequência: TODO login de cliente (endpoint mais chamado)
+
+  [4] ALTO — Barbeiro.usuario_id
+      Coluna: usuario_id (ForeignKey, sem index)
+      Por quê: ao fazer login do barbeiro, busca:
+               Barbeiro.query.filter_by(usuario_id=usuario.id, barbearia_id=bk_id)
+               → sem índice em usuario_id, full scan
+
+  [5] ALTO — ClientePlanoUso.servico_id
+      Coluna: servico_id (ForeignKey, sem index)
+      Por quê: A cada agendamento com plano, o sistema conta usos mensais:
+               ClientePlanoUso.query.filter_by(cliente_plano_id=X, servico_id=Y, mes/ano)
+               Sem índice em servico_id, scan de todos os usos do plano
+      Frequência: Toda tentativa de agendamento com plano ativo
+
+  [6] ALTO — AgendamentoServico.cliente_plano_id
+      Coluna: cliente_plano_id (ForeignKey, sem index)
+      Por quê: Verificação de uso de plano por mês e por serviço
+      Tabela cresce com cada agendamento
+
+  [7] ALTO — Agendamento.cupom_id
+      Coluna: cupom_id (ForeignKey, sem index)
+      Por quê: Ao cancelar agendamento com cupom, busca e decrementa uso:
+               AgendamentoServico relacionado com cupom_id
+               Tabela de agendamentos é a maior do sistema
+
+  [8] MÉDIO — BarbeiroServico.servico_id
+      Coluna: servico_id (ForeignKey, sem index)
+      Por quê: GET /pub/<slug>/barbeiros?servico_ids=1,2 filtra barbeiros
+               que oferecem determinado serviço; faz JOIN via servico_id
+
+  [9] MÉDIO — Plano.barbeiro_id
+      Coluna: barbeiro_id (ForeignKey, sem index, barbearia_id vem do TenantMixin)
+      Por quê: Busca de planos de um barbeiro específico
+               Plano.query.filter_by(barbeiro_id=X, barbearia_id=Y)
+
+  [10] MÉDIO — ClientePlano.plano_id
+       Coluna: plano_id (ForeignKey, sem index)
+       Por quê: Gestão de assinaturas: quantos clientes têm determinado plano
+
+  [11] MÉDIO — ClientePlanoSolicitacao.cliente_id
+       Coluna: cliente_id (ForeignKey, sem index)
+       Por quê: GET /api/v1/cliente/planos/solicitacoes filtra por cliente_id
+       Tabela cresce com solicitações históricas
+
+  [12] MÉDIO — Atendimento.cliente_id
+       Coluna: cliente_id (ForeignKey, sem index)
+       Por quê: Histórico de atendimentos por cliente
+       Tabela de atendimentos cresce constantemente
+
+  [13] MÉDIO — PlanoServico.servico_id
+       Coluna: servico_id (ForeignKey, sem index)
+       Por quê: "Quais planos incluem este serviço?" — consulta frequente
+
+  [14] BAIXO — PausaBarbeiro.barbearia_id
+       Coluna: barbearia_id (ForeignKey, sem index)
+       Por quê: barbeiro_id já tem índice, barbearia_id raramente filtrado sozinho
+       Impacto pequeno pois tabela é pequena
+
+MIGRAÇÃO SUGERIDA:
+  Adicionar em app/models/__init__.py na classe AuditoriaLog:
+    barbearia_id = db.Column(db.Integer, db.ForeignKey('barbearias.id'), index=True)
+    usuario_id   = db.Column(db.Integer, db.ForeignKey('usuarios.id'),   index=True)
+
+  Para Cliente e Barbeiro:
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), index=True)
+
+  Ou via migration:
+    CREATE INDEX idx_auditoria_barbearia ON auditoria_log(barbearia_id);
+    CREATE INDEX idx_auditoria_usuario   ON auditoria_log(usuario_id);
+    CREATE INDEX idx_cliente_usuario     ON clientes(usuario_id);
+    CREATE INDEX idx_barbeiro_usuario    ON barbeiros(usuario_id);
+    CREATE INDEX idx_plano_uso_servico   ON cliente_plano_uso(servico_id);
+    CREATE INDEX idx_ag_servico_plano    ON agendamento_servicos(cliente_plano_id);
+    CREATE INDEX idx_ag_cupom            ON agendamentos(cupom_id);
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 2.3 — Campos Repetidos (Desnormalização Perigosa)                   ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 5 casos de duplicação com risco real
+
+  [1] ALTO — Usuario.email vs Cliente.email
+      Tabelas: usuarios.email (String 100) | clientes.email (String 150)
+      Problema: Quando um cliente cria conta, Cliente.usuario_id é preenchido.
+                O email existe em DUAS tabelas. Se o usuário edita o email em
+                /cliente/perfil (PATCH /api/v1/cliente/perfil), apenas QUAL
+                tabela é atualizada? Se só Usuario, Cliente.email fica stale.
+                Se só Cliente, o login (que usa Usuario.email) falha.
+      Risco: Confusão na exibição e possível falha de login após mudança de email
+      Verificar: app/routes/cliente/perfil.py — o que o PATCH realmente atualiza?
+      Solução ideal: Remover Cliente.email (usar sempre via Usuario.email quando
+                     cliente tem usuario_id) e manter apenas como campo de contato
+                     para clientes sem conta.
+
+  [2] ALTO — Usuario.nome vs Cliente.nome
+      Mesmo problema da duplicação de email.
+      Quando cliente edita o nome no perfil React, ambas as tabelas precisam
+      ser atualizadas atomicamente. Uma falha de commit parcial pode deixar
+      nomes diferentes nos dois registros.
+      Verificar: O PATCH em perfil.py atualiza AMBOS?
+
+  [3] MÉDIO — Atendimento.barbeiro_id + Atendimento.cliente_id vs Atendimento.agendamento_id
+      O Atendimento tem:
+        agendamento_id → Agendamento (que tem barbeiro_id e cliente_id)
+        barbeiro_id    → duplicado diretamente
+        cliente_id     → duplicado diretamente
+      Esses dados são deriváveis: at.agendamento.barbeiro_id == at.barbeiro_id
+      Risco: Se o Agendamento fosse editado (transferência de barbeiro), os
+             campos no Atendimento não seriam atualizados automaticamente.
+      Na prática: baixo risco pois agendamentos não mudam de barbeiro pós-criação.
+      Mas gera queries duplicadas e confusão sobre qual é a fonte de verdade.
+
+  [4] MÉDIO — AgendamentoServico.is_plano ≈ (AgendamentoServico.cliente_plano_id IS NOT NULL)
+      is_plano=True deveria sempre ter cliente_plano_id != NULL
+      is_plano=False deveria sempre ter cliente_plano_id == NULL
+      O campo is_plano é REDUNDANTE — o estado real é determinado por cliente_plano_id.
+      Risco: Bug onde is_plano=True mas cliente_plano_id=NULL → cobrança indevida de 0
+             ou is_plano=False mas cliente_plano_id preenchido → não conta no limite
+      Solução: Remover is_plano e usar `cliente_plano_id IS NOT NULL` nas queries
+
+  [5] BAIXO — PlanoBarbeiro (tabela) vs Plano.barbeiro_id (coluna)
+      Plano tem barbeiro_id para "plano vinculado a 1 barbeiro" (NULL = plano aberto)
+      PlanoBarbeiro existe para "barbeiros que podem atender este plano" (N barbeiros)
+      Semânticas diferentes, mas sobreposição confusa:
+        - Se Plano.barbeiro_id = 5, ele já está vinculado ao barbeiro 5.
+          Existe também PlanoBarbeiro(plano_id=X, barbeiro_id=5)?
+        - Quem tem precedência? Não há constraint impedindo isso.
+      Solução: Documentar claramente quando usar cada um, ou unificar em uma
+               única FK quando o plano tem apenas 1 barbeiro.
+
+  [6] INFORMAÇÃO — ClienteNota vs Cliente.observacoes
+      Cliente.observacoes: texto livre único, sem autor nem tipo
+      ClienteNota: múltiplas notas estruturadas com tipo e autor
+      Não há migração de dados — observacoes legadas podem nunca virar notas.
+      Não é risco, mas pode gerar confusão sobre onde buscar anotações do cliente.
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 2.4 — Constraints Faltando                                          ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 10 constraints ausentes que permitem dados corrompidos
+
+  [1] CRÍTICO — Agendamento.valor_total sem CHECK >= 0
+      Definição atual: db.Column(db.Numeric(10, 2), nullable=False, default=0)
+      Problema: Um bug no cálculo de desconto pode gerar valor_total negativo.
+                Banco aceita -150.00 como válido.
+      Solução SQL: ALTER TABLE agendamentos ADD CONSTRAINT chk_valor_total
+                   CHECK (valor_total >= 0);
+
+  [2] CRÍTICO — Agendamento.status sem CHECK ENUM
+      Definição atual: db.Column(db.String(20), nullable=False)
+      Problema: Aceita qualquer string. Um typo como 'agendado ' (com espaço)
+                ou 'Agendado' (maiúscula) nunca seria filtrado pelas queries
+                mas também nunca apareceria nas listagens.
+      Solução SQL: ALTER TABLE agendamentos ADD CONSTRAINT chk_status
+                   CHECK (status IN ('agendado','concluido','cancelado',
+                   'em_atendimento','aguardando_comprovante',
+                   'aguardando_aprovacao','aguardando_pagamento','nao_realizado'));
+
+  [3] ALTO — Agendamento.valor_desconto sem CHECK >= 0
+      Mesmo risco de valor_total. Um desconto negativo resultaria em aumento
+      de preço não intencional.
+
+  [4] ALTO — Cupom.valor_desconto sem CHECK >= 0
+      E sem CHECK <= 100 para tipo_desconto='percentual'
+      Um desconto percentual de 150% geraria valor_total negativo no agendamento.
+
+  [5] ALTO — Cupom.quantidade_usos sem CHECK >= 0
+      Poderia ser decrementado para negativo em race condition ou bug.
+
+  [6] ALTO — Cupom.tipo_desconto sem CHECK ENUM
+      Definição: db.Column(db.String(20), nullable=False)
+      Aceita qualquer string. Correto seria: CHECK (tipo_desconto IN ('percentual', 'valor_fixo'))
+
+  [7] MÉDIO — Barbeiro.comissao_percentual sem CHECK BETWEEN 0 AND 100
+      Definição: db.Column(db.Numeric(5, 2), nullable=False, default=0)
+      Uma comissão de 150% seria aceita — incorreto.
+
+  [8] MÉDIO — VipNivel.nivel sem CHECK >= 1
+      Nível 0 é reservado para "sem VIP" (ClienteVip.nivel_vip_atual=0).
+      Um VipNivel com nivel=0 colide com o valor padrão.
+
+  [9] MÉDIO — ClientePlanoUso.semana_do_mes sem CHECK BETWEEN 1 AND 5
+      Semana do mês: valores válidos são 1, 2, 3, 4, 5 (meses têm no máx 5 semanas).
+      Banco aceita 0, -1, 99 sem reclamar.
+
+  [10] MÉDIO — Produto.quantidade_estoque e quantidade_reservada sem CHECK >= 0
+       Definição: db.Column(db.Integer, nullable=False, default=0)
+       Estoque negativo é possível se bug em operação de reserva.
+       quantidade_disponivel (property) usa max(0, ...) como workaround — mas
+       o banco poderia ter -50 em estoque sem que ninguém percebesse.
+
+  [11] BAIXO — VipNivel.tipo_brinde sem CHECK ENUM
+       Aceita qualquer string além de 'fisico' e 'desconto'.
+
+  [12] BAIXO — ReservaProduto.status sem CHECK ENUM
+       Aceita qualquer string além de 'reservado', 'confirmado', 'cancelado'.
+
+NOTA: SQLAlchemy/Flask-SQLAlchemy não suporta ADD CHECK via Column() diretamente.
+Usar __table_args__ para constraints de nível de tabela:
+  __table_args__ = (
+      db.CheckConstraint('valor_total >= 0', name='chk_ag_valor_total'),
+      db.CheckConstraint("status IN ('agendado','concluido','cancelado',...)",
+                         name='chk_ag_status'),
+  )
+Ou migrations Alembic com op.create_check_constraint().
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 2.5 — Chaves Alternativas Faltando (UNIQUE Constraints)             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 3 casos críticos e 1 risco médio
+
+  [1] CRÍTICO — Usuario.email sem UNIQUE constraint
+      Definição atual: db.Column(db.String(100))  — NÃO NULLABLE=FALSE, NÃO UNIQUE!
+      Cenário de falha:
+        1. Gestor da Barbearia A cria email "gestor@email.com"
+        2. Por bug de UI ou import, outro usuário cria email "gestor@email.com"
+        3. Login: query busca por email=... retorna .first() → pega o errado!
+        4. Staff logado com conta de outra barbearia = vazamento de dados
+      Risco: Altíssimo em multi-tenant
+      Observação: Para clientes, email é opcional e pode ser repetido
+                  (clientes de barbearias diferentes podem ter o mesmo email).
+                  A FK única de clientes é por (barbearia_id, telefone).
+                  Mas para staff (gestor, barbeiro, super_admin), email deve ser ÚNICO globalmente.
+      Solução:
+        Opção A (simples): UniqueConstraint('email') na tabela usuarios
+          → bloqueia dois clientes com mesmo email em barbearias diferentes
+          → pode ser aceitável se email for obrigatório apenas para staff
+        Opção B (correto): Unique parcial via SQL:
+          CREATE UNIQUE INDEX uq_usuario_email_staff
+          ON usuarios(email)
+          WHERE perfil IN ('gestor', 'barbeiro', 'super_admin');
+          → permite clientes repetirem email entre barbearias
+          → garante unicidade apenas para staff
+
+  [2] ALTO — ClientePlanoUso sem UNIQUE (cliente_plano_id, servico_id, data_uso)
+      Definição atual: Sem UniqueConstraint na tabela
+      Cenário de falha:
+        Race condition: dois requests simultâneos de agendamento com o mesmo plano
+        → ambos verificam uso: count = 0 (limite não atingido)
+        → ambos criam ClientePlanoUso para o mesmo (plano, servico, data)
+        → resultado: 2 registros onde deveria haver 1 → limite dobrado!
+      Risco: Médio (requer race condition rara, mas possível em horários pico)
+      Solução:
+        __table_args__ = (
+            db.UniqueConstraint('cliente_plano_id', 'servico_id', 'data_uso',
+                                name='uq_plano_uso_dia'),
+        )
+      Ou controle via database lock no momento da verificação.
+
+  [3] MÉDIO — Ausência de UNIQUE (barbeiro_id, data_hora) em agendamentos
+      Apesar da função verificar_conflito() checar conflitos via Python,
+      em race condition (2 agendamentos criados em <1ms), ambos passariam na
+      verificação antes que qualquer um seja salvo.
+      Solução ideal: Lock otimista ou UNIQUE INDEX parcial:
+        CREATE UNIQUE INDEX uq_ag_barbeiro_data
+        ON agendamentos(barbeiro_id, data_hora)
+        WHERE status NOT IN ('cancelado');
+
+  [4] BAIXO — SegmentoRotulo.segmento_id com unique=True mas errado
+      Definição: db.Column(db.Integer, db.ForeignKey('segmentos.id'), unique=True, nullable=False)
+      unique=True em FK garante 1 linha por segmento. CORRETO ✓
+      Mas o unique está na coluna e não em __table_args__ — menor controle.
+      Funciona, mas por convenção usar __table_args__ para unicidade composta.
+
+ÚNICOS JÁ CORRETOS ✓:
+  Barbearia.slug: unique=True ✓
+  Segmento.chave: unique=True ✓
+  Cupom: UniqueConstraint(barbearia_id, codigo) ✓
+  Cliente: UniqueConstraint(barbearia_id, telefone) ✓
+  BarbeiroServico: UniqueConstraint(barbeiro_id, servico_id) ✓
+  PlanoServico: UniqueConstraint(plano_id, servico_id) ✓
+  PlanoBarbeiro: UniqueConstraint(plano_id, barbeiro_id) ✓
+  BarbeiroComissaoServico: UniqueConstraint(barbeiro_id, servico_id) ✓
+  ClienteVip: UniqueConstraint(cliente_id, barbearia_id) ✓
+  VipNivel: UniqueConstraint(barbearia_id, nivel) ✓
+  ConfiguracaoAgenda: UniqueConstraint(barbeiro_id) ✓
+  ConfiguracaoAgendamento: unique=True em barbearia_id ✓
+  FeatureBarbearia: UniqueConstraint(barbearia_id, feature_id) ✓
+  FeatureMetadata.nome: unique=True ✓
+  AgendamentoSolicitacaoPix.agendamento_id: unique=True ✓
+  Atendimento.agendamento_id: unique=True ✓
+  BarbeariaCustomizacao.barbearia_id: unique=True ✓
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 2.6 — NOT NULL Faltando                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 4 casos relevantes
+
+  [1] ALTO — Agendamento.metodo_pagamento sem nullable=False e sem default
+      Definição: metodo_pagamento = db.Column(db.String(20))
+      Problema: Se um agendamento for criado sem metodo_pagamento (None),
+                o campo ficará NULL no banco. Queries que filtram por
+                metodo_pagamento='pix' não vão encontrá-lo, mas também
+                não vai para 'local'. Dados inconsistentes em relatórios.
+      Frequência: Agendamentos via landing page pública podem omitir este campo
+      Solução:
+        metodo_pagamento = db.Column(db.String(20), nullable=False, default='local')
+
+  [2] MÉDIO — Atendimento.total pode ser NULL
+      Definição: total = db.Column(db.Numeric(10, 2))  ← sem nullable=False
+      Problema: Um Atendimento criado sem total (NULL) não pode ser somado
+                em relatórios de faturamento. Dificulta reconciliação.
+      Solução:
+        total = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+
+  [3] MÉDIO — Pagamento.gateway e gateway_transaction_id opcionais
+      Definição: gateway = db.Column(db.String(30))  ← nullable por padrão
+      Para pagamentos locais (dinheiro), gateway é NULL — CORRETO.
+      Para pagamentos via gateway externo, ambos deveriam ser NOT NULL.
+      Não há constraint impedindo gateway='stripe' com gateway_transaction_id=NULL.
+      Impacto: Reconciliação financeira impossível para transações sem ID.
+
+  [4] BAIXO — BarbeariaCustomizacao.logo_url, imagem_capa_url, imagem_boas_vindas_url
+      Definição: nullable por padrão (sem NOT NULL)
+      Impacto: Baixo — o frontend trata NULL como "sem imagem"
+
+CORRETOS ✓ (campos que parecem precisar de NOT NULL e já têm):
+  Agendamento.status: nullable=False ✓
+  Agendamento.valor_total: nullable=False ✓
+  Agendamento.duracao_minutos: nullable=False ✓
+  Agendamento.data_hora: nullable=False ✓
+  Agendamento.barbeiro_id: nullable=False ✓
+  Agendamento.cliente_id: nullable=False ✓
+  ClientePlano.data_inicio: nullable=False ✓
+  Cupom.barbearia_id: nullable=False (via TenantMixin) ✓
+  AuditoriaLog.tipo_acao: nullable=False ✓
+  ConfiguracaoAgendamento.cancelamento_horas_minimas: nullable=False ✓
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 2.7 — Tipos de Dados Inadequados                                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 6 casos (2 críticos, 4 médios)
+
+  [1] MÉDIO — ClienteVip.brindes_resgatados: Text em vez de JSONB
+      Definição: db.Column(db.Text, default='[]')
+      Problema:
+        - Banco aceita texto inválido como '{"broken json' — nenhum erro
+        - JSON serializado manualmente: propenso a erros de encoding
+        - Sem possibilidade de query nativa: WHERE brindes ? 'item_x' (PostgreSQL JSONB)
+        - Na leitura, código precisa fazer json.loads() manualmente
+      Solução:
+        from sqlalchemy.dialects.postgresql import JSONB
+        brindes_resgatados = db.Column(JSONB, default=list, nullable=False)
+
+  [2] MÉDIO — Pagamento.gateway_metadata: Text em vez de JSONB
+      Definição: db.Column(db.Text)
+      Mesmo problema — payload JSON do gateway salvo como texto.
+      Impossível fazer queries sobre campos internos do JSON.
+      Solução:
+        gateway_metadata = db.Column(JSONB)
+
+  [3] MÉDIO — Notificacao.corpo: String(1000) pode truncar notificações
+      Definição: db.Column(db.String(1000), nullable=False)
+      Problema: Mensagens longas (ex: com detalhes de agendamento + instruções PIX)
+                podem ultrapassar 1000 chars e serem cortadas silenciosamente.
+      Solução:
+        corpo = db.Column(db.Text, nullable=False)
+
+  [4] MÉDIO — AuditoriaLog.descricao: String(500) pode truncar descrições de ações
+      Definição: db.Column(db.String(500), nullable=False)
+      Problema: Ação de "edição de barbearia" com muitos campos alterados pode
+                gerar descrição maior que 500 chars.
+      Solução:
+        descricao = db.Column(db.Text, nullable=False)
+
+  [5] BAIXO — Agendamento.observacao: String(300) pode ser curto
+      Definição: db.Column(db.String(300))
+      Clientes com notas longas terão textos cortados silenciosamente.
+      Solução: db.Column(db.Text)
+
+  [6] BAIXO — BarbearioComissaoServico sem tipo de dados ENUM
+      Definição: comissao_tipo = db.Column(db.String(20), nullable=False, default='percentual')
+      Aceita qualquer string — usar CheckConstraint ou Enum seria mais correto.
+
+CORRETOS ✓:
+  Todos os campos monetários: Numeric(10, 2) ✓
+  Comissões: Numeric(5, 2) para percentuais ✓
+  Datas: db.Date ✓
+  DateTimes: db.DateTime ✓
+  Horários: db.Time ✓ (em ConfiguracaoAgenda e PausaBarbeiro)
+  Booleanos: db.Boolean ✓ (nenhum usa String 'S'/'N')
+  Quantidades inteiras: db.Integer ✓
+  Emails como String (não precisa ser tipo especial em SQLAlchemy)
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  RESUMO EXECUTIVO                                                           ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────┬───────┬─────────┬──────┬───────┬───────┐
+│ Categoria                               │ Total │ CRÍTICO │ ALTO │ MÉDIO │ BAIXO │
+├─────────────────────────────────────────┼───────┼─────────┼──────┼───────┼───────┤
+│ 2.1 Relacionamentos Circulares          │   0   │    —    │  —   │   —   │   —   │
+│ 2.2 Índices Faltando                    │  14   │   2     │  5   │   6   │   1   │
+│ 2.3 Campos Repetidos                    │   6   │    —    │  2   │   2   │   2   │
+│ 2.4 Constraints Faltando                │  12   │   2     │  2   │   5   │   3   │
+│ 2.5 Unique Constraints                  │   4   │   1     │  1   │   1   │   1   │
+│ 2.6 NOT NULL Faltando                   │   4   │    —    │  1   │   2   │   1   │
+│ 2.7 Tipos Inadequados                   │   6   │    —    │  —   │   4   │   2   │
+├─────────────────────────────────────────┼───────┼─────────┼──────┼───────┼───────┤
+│ TOTAL                                   │  46   │   5     │  11  │  20   │  10   │
+└─────────────────────────────────────────┴───────┴─────────┴──────┴───────┴───────┘
+
+PROBLEMAS MAIS URGENTES:
+
+🔴 1. AuditoriaLog sem índice em barbearia_id/usuario_id
+      → Full table scan em tabela que só cresce. Crítico antes de ir a produção.
+
+🔴 2. Usuario.email sem UNIQUE constraint
+      → Staff com email duplicado. Login pode autenticar a pessoa errada.
+      → Usar UNIQUE parcial por perfil (unique index WHERE perfil IN ('gestor','barbeiro','super_admin'))
+
+🟠 3. Agendamento.status sem CHECK ENUM
+      → Typos como 'agendado ' (espaço) passam silenciosamente e ficam invisíveis.
+
+🟠 4. ClientePlanoUso sem UNIQUE (cliente_plano_id, servico_id, data_uso)
+      → Race condition dobra o uso contado do plano. Clientes ultrapassam limite sem bloqueio.
+
+🟠 5. Cliente.usuario_id e Barbeiro.usuario_id sem índice
+      → Full scan no login. Problema visível com 10k+ usuários.
+
+🟠 6. Agendamento.metodo_pagamento nullable sem default
+      → Agendamentos com metodo_pagamento=NULL geram dados inconsistentes em relatórios.
+
+🟡 7. Campos JSON como Text (brindes_resgatados, gateway_metadata)
+      → Sem validação de JSON no banco. Mudar para JSONB em migração.
+
+🟡 8. Atendimento.barbeiro_id/cliente_id redundantes vs agendamento_id
+      → Duplicação de dados. Risco baixo mas gera queries duplicadas.
+
+═══════════════════════════════════════════════════════════════════════════════
+PRÓXIMOS PASSOS RECOMENDADOS
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Criar migration Alembic para adicionar os 7 índices CRÍTICOS/ALTO
+2. Adicionar UNIQUE parcial em usuarios.email para staff
+3. Adicionar UniqueConstraint em ClientePlanoUso
+4. Adicionar NOT NULL default='local' em agendamentos.metodo_pagamento
+5. Adicionar CheckConstraints para status e valores monetários
+6. Considerar JSONB para brindes_resgatados e gateway_metadata
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM DA AUDITORIA DE BANCO DE DADOS — BarberOS v1.0  |  2026-07-02
+═══════════════════════════════════════════════════════════════════════════════

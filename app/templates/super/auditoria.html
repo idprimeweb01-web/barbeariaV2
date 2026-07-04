@@ -17,23 +17,24 @@
 
 {% block content %}
 <div class="aud-toolbar">
-  <input class="aud-input" id="fFiltro" placeholder="Buscar por usuário ou ação...">
-  <select class="aud-input" id="fDias">
-    <option value="7">Últimos 7 dias</option>
-    <option value="30" selected>Últimos 30 dias</option>
-    <option value="90">Últimos 90 dias</option>
+  <select class="aud-input" id="fTipo" onchange="paginaAtual=1;carregar()">
+    <option value="">Todas as ações</option>
+    <option value="create">Criação</option>
+    <option value="edicao">Edição</option>
+    <option value="delete">Exclusão</option>
+    <option value="login">Login</option>
+    <option value="notificacao">Notificação</option>
   </select>
-  <button class="btn-carregar" onclick="paginaAtual = 1; carregar()">Buscar</button>
-  <button class="btn-exportar" onclick="exportarCsv()">Exportar (CSV)</button>
+  <button class="btn-carregar" onclick="paginaAtual=1;carregar()">Atualizar</button>
 </div>
 
 <div class="table-wrap">
   <table class="data-table">
     <thead>
-      <tr><th>Data/Hora</th><th>Usuário</th><th>Ação</th></tr>
+      <tr><th>Data/Hora</th><th>Usuário</th><th>Barbearia</th><th>Ação</th></tr>
     </thead>
     <tbody id="logsTbody">
-      <tr><td colspan="3" style="text-align:center;color:#555;">Carregando…</td></tr>
+      <tr><td colspan="4" style="text-align:center;color:#555;padding:24px">Carregando…</td></tr>
     </tbody>
   </table>
 </div>
@@ -47,36 +48,40 @@
 
 {% block scripts %}
 <script>
-let paginaAtual = 1;
+let paginaAtual  = 1;
 let totalPaginas = 1;
 
 async function carregar() {
-  const filtro = document.getElementById('fFiltro').value.trim();
-  const dias = document.getElementById('fDias').value;
+  const params = new URLSearchParams({ page: paginaAtual, per_page: 50 });
+  const tipo = document.getElementById('fTipo').value;
+  if (tipo) params.append('tipo_acao', tipo);
+
   try {
-    const r = await api.super.auditoria.logs(paginaAtual, filtro, dias);
-    totalPaginas = r.total_paginas;
-    renderizar(r.logs);
-    document.getElementById('paginaLabel').textContent = `Página ${r.pagina} de ${r.total_paginas}`;
-    document.getElementById('btnAnterior').disabled = r.pagina <= 1;
-    document.getElementById('btnProxima').disabled = r.pagina >= r.total_paginas;
+    const r = await Bos.get('/super/auditoria?' + params);
+    totalPaginas = r.pages;
+    renderizar(r.registros);
+    document.getElementById('paginaLabel').textContent = `Página ${r.page} de ${r.pages}`;
+    document.getElementById('btnAnterior').disabled = r.page <= 1;
+    document.getElementById('btnProxima').disabled  = r.page >= r.pages;
     document.getElementById('paginacao').style.display = r.total > 0 ? 'flex' : 'none';
-  } catch (e) {
-    document.getElementById('logsTbody').innerHTML = `<tr><td colspan="3" style="text-align:center;color:#f87171;">Erro: ${e.message}</td></tr>`;
+  } catch(e) {
+    document.getElementById('logsTbody').innerHTML =
+      `<tr><td colspan="4" style="text-align:center;color:#f87171;padding:24px">Erro: ${esc(e.message)}</td></tr>`;
   }
 }
 
 function renderizar(logs) {
   const tbody = document.getElementById('logsTbody');
   if (!logs.length) {
-    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#555;">Nenhum registro encontrado.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#555;padding:24px">Nenhum registro encontrado.</td></tr>';
     return;
   }
   tbody.innerHTML = logs.map(l => `
     <tr>
-      <td>${new Date(l.data_hora).toLocaleString('pt-BR')}</td>
-      <td>${l.usuario_nome}${l.barbearia_nome ? ' — ' + l.barbearia_nome : ''}</td>
-      <td>${l.acao}</td>
+      <td style="color:#888;white-space:nowrap">${esc(l.criado_em || '—')}</td>
+      <td style="color:#ddd">${esc(l.usuario || '—')}</td>
+      <td style="color:#aaa">${esc(l.barbearia || '—')}</td>
+      <td>${esc(l.tipo_acao)} — ${esc(l.entidade)} — ${esc(l.descricao)}</td>
     </tr>
   `).join('');
 }
@@ -86,19 +91,6 @@ function irPagina(delta) {
   if (nova < 1 || nova > totalPaginas) return;
   paginaAtual = nova;
   carregar();
-}
-
-async function exportarCsv() {
-  const filtro = document.getElementById('fFiltro').value.trim();
-  const dias = document.getElementById('fDias').value;
-  try {
-    const blob = await api.super.auditoria.exportar(filtro, dias);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'auditoria.csv';
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-  } catch (e) { toast(e.message, 'error'); }
 }
 
 carregar();

@@ -1,4 +1,3 @@
-from datetime import datetime
 from flask import Blueprint, g, jsonify
 from app.extensions import db
 from app.models import (
@@ -7,6 +6,7 @@ from app.models import (
 )
 from app.decorators.auth import cliente_required
 from app.utils.features import feature_ativa
+from app.utils.tz import naive_brasilia
 from app.labels import L
 
 cliente_dash_bp = Blueprint('cliente_dashboard', __name__, url_prefix='/api/v1/cliente')
@@ -33,7 +33,7 @@ def dashboard_cliente():
             'rotulos': {L('agendamento'): 'agendamento', L('plano'): 'plano'},
         }), 200
 
-    agora = datetime.utcnow()
+    agora = naive_brasilia()
 
     # Próximos agendamentos (futuro, status=agendado)
     proximos = (

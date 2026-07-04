@@ -7,6 +7,7 @@ from app.utils.relatorio import (
     COLUNAS, COLUNAS_OBRIGATORIAS, validar_colunas,
     gerar_dados, gerar_excel, gerar_pdf,
 )
+from app.utils.tz import hoje_brasilia
 
 gestor_relatorios_bp = Blueprint('gestor_relatorios', __name__, url_prefix='/api/v1/gestor')
 
@@ -24,8 +25,8 @@ def _parse_params():
     except ValueError as exc:
         raise APIError(str(exc), 422)
 
-    de_str  = request.args.get('de',  date.today().replace(day=1).isoformat())
-    ate_str = request.args.get('ate', date.today().isoformat())
+    de_str  = request.args.get('de',  hoje_brasilia().replace(day=1).isoformat())
+    ate_str = request.args.get('ate', hoje_brasilia().isoformat())
     try:
         de  = date.fromisoformat(de_str)
         ate = date.fromisoformat(ate_str)

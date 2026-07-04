@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime
 from flask import Blueprint, request, g, jsonify
 from app.extensions import db
 from app.models import (
@@ -8,6 +8,7 @@ from app.models import (
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
+from app.utils.tz import hoje_brasilia
 from app.labels import L
 
 planos_bp = Blueprint('gestor_planos', __name__, url_prefix='/api/v1/gestor')
@@ -97,7 +98,11 @@ def criar_plano():
         ativo=True,
     )
     db.session.add(p)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise APIError(f'Erro ao salvar {L("plano").lower()}. Tente novamente.', 500)
     return jsonify(_fmt_plano(p, com_servicos=True)), 201
 
 
@@ -134,7 +139,11 @@ def editar_plano(plano_id):
     if 'ativo' in dados:
         p.ativo = bool(dados['ativo'])
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise APIError(f'Erro ao salvar {L("plano").lower()}. Tente novamente.', 500)
     return jsonify(_fmt_plano(p, com_servicos=True)), 200
 
 
@@ -145,7 +154,11 @@ def editar_plano(plano_id):
 def desativar_plano(plano_id):
     p = _get_plano_ou_404(plano_id, g.barbearia_id)
     p.ativo = False
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise APIError(f'Erro ao desativar {L("plano").lower()}. Tente novamente.', 500)
     return jsonify({'mensagem': f'{L("plano")} desativado.', 'id': plano_id}), 200
 
 
@@ -191,7 +204,11 @@ def adicionar_servico_plano(plano_id):
         dias_expiracao=dias, ativo=True,
     )
     db.session.add(ps)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise APIError(f'Erro ao salvar {L("servico").lower()} do {L("plano").lower()}. Tente novamente.', 500)
 
     return jsonify({
         'mensagem': f'{L("servico")} adicionado ao {L("plano").lower()}.',
@@ -212,7 +229,11 @@ def remover_servico_plano(plano_id, servico_id):
     if not ps:
         raise APIError(f'{L("servico")} não encontrado neste {L("plano").lower()}.', 404)
     db.session.delete(ps)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise APIError(f'Erro ao remover {L("servico").lower()} do {L("plano").lower()}. Tente novamente.', 500)
     return jsonify({'mensagem': f'{L("servico")} removido do {L("plano").lower()}.'}), 200
 
 
@@ -285,7 +306,7 @@ def aprovar_solicitacao(sol_id):
     if not p or not p.ativo:
         raise APIError(f'{L("plano")} não está mais ativo.', 422)
 
-    hoje = date.today()
+    hoje = hoje_brasilia()
     data_fim = None
     # Calcula data_fim como hoje + dias_expiracao do primeiro PlanoServico, ou 30 dias
     ps = PlanoServico.query.filter_by(plano_id=sol.plano_id, ativo=True).first()
@@ -306,7 +327,11 @@ def aprovar_solicitacao(sol_id):
 
     sol.status = 'aprovado'
     sol.aprovado_em = datetime.utcnow()
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise APIError('Erro ao aprovar solicitação. Tente novamente.', 500)
 
     return jsonify({
         'mensagem': f'{L("plano")} ativado para o cliente.',
@@ -332,6 +357,10 @@ def rejeitar_solicitacao(sol_id):
     dados = request.get_json(silent=True) or {}
     sol.status = 'rejeitado'
     sol.motivo_rejeicao = (dados.get('motivo') or '').strip() or 'Rejeitado pelo gestor.'
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise APIError('Erro ao rejeitar solicitação. Tente novamente.', 500)
 
     return jsonify({'mensagem': 'Solicitação rejeitada.', 'id': sol_id}), 200

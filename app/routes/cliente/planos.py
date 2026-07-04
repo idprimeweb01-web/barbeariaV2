@@ -1,4 +1,3 @@
-from datetime import date
 from flask import Blueprint, request, g, jsonify
 from app.extensions import db
 from app.models import (
@@ -8,6 +7,7 @@ from app.models import (
 from app.exceptions import APIError
 from app.decorators.auth import cliente_required
 from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
+from app.utils.tz import hoje_brasilia
 from app.labels import L
 
 cliente_planos_bp = Blueprint('cliente_planos', __name__, url_prefix='/api/v1/cliente')
@@ -26,7 +26,7 @@ def _get_cliente_ou_404(user_id, barbearia_id):
 
 
 def _uso_mes_atual(cliente_plano_id, servico_id):
-    hoje = date.today()
+    hoje = hoje_brasilia()
     return ClientePlanoUso.query.filter(
         ClientePlanoUso.cliente_plano_id == cliente_plano_id,
         ClientePlanoUso.servico_id == servico_id,
@@ -109,7 +109,11 @@ def cancelar_assinatura(cp_id):
     if not cp.ativo:
         raise APIError(f'{L("plano")} já está inativo.')
     cp.ativo = False
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise APIError(f'Erro ao salvar {L("plano")}. Tente novamente.', 500)
     return jsonify({'mensagem': f'{L("plano")} cancelado.', 'id': cp_id}), 200
 
 

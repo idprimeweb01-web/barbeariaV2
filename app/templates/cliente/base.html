@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>BarberOS — {% block title %}{% endblock %}</title>
+  <title>{{ bk_nome }} — {% block title %}{% endblock %}</title>
   <script>
-    (function(){try{var t=JSON.parse(localStorage.getItem('barberos_barbearia_tema'));if(t){var r=document.documentElement.style;if(t.cor_primaria)r.setProperty('--cor-primaria',t.cor_primaria);if(t.cor_fundo)r.setProperty('--cor-fundo',t.cor_fundo);if(t.cor_card)r.setProperty('--cor-card',t.cor_card);if(t.fonte)r.setProperty('--fonte',"'"+t.fonte+"', sans-serif");}}catch(e){}}());
+    window.BOS_LOGIN_URL = '/b/{{ bk_slug }}/entrar';
   </script>
   <link rel="stylesheet" href="/static/css/style.css">
   <style>
@@ -18,8 +18,8 @@
       display: flex; align-items: center; gap: 10px;
       position: sticky; top: 0; z-index: 100;
     }
-    .b-brand { font-size: 16px; font-weight: 700; color: #fff; text-decoration: none; flex-shrink: 0; }
-    .b-brand span { color: var(--cor-primaria); }
+    .b-brand { font-size: 16px; font-weight: 700; color: #fff; text-decoration: none; flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+    .b-brand-logo { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
     .b-header-sep { width: 1px; height: 20px; background: #333; flex-shrink: 0; }
     .b-user { flex: 1; font-size: 13px; color: #aaa; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .b-logout {
@@ -74,10 +74,13 @@
 </head>
 <body>
   <header class="b-header">
-    <a class="b-brand" href="/cliente/dashboard" id="bBrand">Barber<span>OS</span></a>
+    <a class="b-brand" href="/cliente/dashboard">
+      {% if logo_url %}<img class="b-brand-logo" src="{{ logo_url }}" alt="{{ bk_nome }}">{% endif %}
+      {{ bk_nome }}
+    </a>
     <div class="b-header-sep"></div>
-    <span class="b-user" id="bUser">—</span>
-    <button class="b-logout" onclick="api.logout()" title="Sair">
+    <span class="b-user">{{ c_nome }}</span>
+    <button class="b-logout" onclick="Bos.logout()" title="Sair">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
     </button>
   </header>
@@ -88,24 +91,20 @@
 
   <nav class="b-nav" id="bNav">
     <a class="b-nav-item" href="/cliente/dashboard" data-path="/cliente/dashboard">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
       Início
     </a>
     <a class="b-nav-item" href="/cliente/agendar" data-path="/cliente/agendar">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
       Agendar
     </a>
-    <a class="b-nav-item" href="/cliente/meu-plano" data-path="/cliente/meu-plano" id="navMeuPlano" style="display:none">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14.5 2.5-9 9"/><path d="m7.5 4.5 7 7"/><path d="m2 22 6-2 10-10-4-4L4 16l-2 6z"/></svg>
-      Meu Plano
+    <a class="b-nav-item" href="/cliente/beneficios" data-path="/cliente/beneficios">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+      Benefícios
     </a>
-    <a class="b-nav-item" href="/cliente/comprar-plano" data-path="/cliente/comprar-plano" id="navComprar" style="display:none">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-      Comprar
-    </a>
-    <a class="b-nav-item" href="/cliente/vip" data-path="/cliente/vip" id="navVip" style="display:none">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 8.5 22 9.5 17 14.5 18.5 21.5 12 18 5.5 21.5 7 14.5 2 9.5 9 8.5 12 2"/></svg>
-      VIP
+    <a class="b-nav-item" href="/cliente/historico" data-path="/cliente/historico">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
+      Histórico
     </a>
     <a class="b-nav-item" href="/cliente/perfil" data-path="/cliente/perfil">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -115,33 +114,12 @@
 
   <div id="toasts"></div>
 
-  <script src="/static/js/api.js"></script>
+  <script src="/static/js/bos.js"></script>
   <script>
-    // ── Auth guard ──────────────────────────────────────────────
-    (function() {
-      const u = api.getUser();
-      if (!u || !api.getToken()) { window.location.href = '/login'; return; }
-      if (u.perfil !== 'cliente') { window.location.href = '/login'; return; }
-      document.getElementById('bUser').textContent = u.nome || 'Cliente';
-    })();
-
     // ── Nav active state ────────────────────────────────────────
     document.querySelectorAll('.b-nav-item[data-path]').forEach(a => {
       if (window.location.pathname === a.dataset.path) a.classList.add('active');
     });
-
-    // ── Mostra itens de nav conforme features ativas ────────────
-    (async function() {
-      try {
-        const perfil = await api.cliente.profile();
-        window._clientePerfil = perfil;
-        if (perfil.secoes_disponiveis?.planos) {
-          document.getElementById('navMeuPlano').style.display = '';
-          document.getElementById('navComprar').style.display = '';
-        }
-        if (perfil.secoes_disponiveis?.vip)    document.getElementById('navVip').style.display = '';
-      } catch (e) { /* silencioso */ }
-    })();
 
     // ── Toast ─────────────────────────────────────────────────
     function toast(msg, tipo = 'success') {
@@ -152,6 +130,8 @@
       setTimeout(() => d.classList.add('out'), 2500);
       setTimeout(() => d.remove(), 2800);
     }
+
+    function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   </script>
   {% block scripts %}{% endblock %}
 </body>

@@ -7,14 +7,14 @@
   background: rgba(186,117,23,.15); border: 2px solid var(--cor-primaria);
   display: flex; align-items: center; justify-content: center;
   font-size: 24px; font-weight: 700; color: var(--cor-primaria);
+  overflow: hidden;
 }
+.perfil-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .perfil-nome { text-align: center; font-size: 17px; font-weight: 700; margin-bottom: 4px; }
 .perfil-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #2d2d2d; font-size: 13px; }
 .perfil-row:last-child { border-bottom: none; }
 .perfil-row span:first-child { color: #777; }
 .perfil-row span:last-child  { color: #ddd; font-weight: 600; text-align: right; }
-
-.b-card h4 { font-size: 13px; color: #999; text-transform: uppercase; letter-spacing: .4px; margin: 0 0 12px; }
 
 .btn-block {
   width: 100%; padding: 11px; border-radius: 8px; border: none; cursor: pointer;
@@ -23,21 +23,6 @@
 }
 .btn-secundario { background: #2a2a2a; color: #ddd; border: 1px solid #3a3a3a; }
 .btn-perigo      { background: rgba(220,38,38,.12); color: #f87171; border: 1px solid rgba(220,38,38,.3); }
-.btn-voltar      { background: #dc2626; color: #fff; }
-
-.toggle-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; font-size: 14px; color: #ccc; padding: 8px 0; }
-.toggle-label input[type=checkbox] { display: none; }
-.toggle-track {
-  width: 40px; height: 22px; background: #444; border-radius: 22px;
-  position: relative; transition: background .2s; flex-shrink: 0;
-}
-.toggle-track::after {
-  content: ''; position: absolute; top: 3px; left: 3px;
-  width: 16px; height: 16px; background: #fff; border-radius: 50%;
-  transition: transform .2s;
-}
-.toggle-label input:checked + .toggle-track { background: var(--cor-primaria); }
-.toggle-label input:checked + .toggle-track::after { transform: translateX(18px); }
 
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.65);
@@ -59,7 +44,6 @@
   padding: 7px 14px; cursor: pointer; font-size: 13px; font-family: inherit;
 }
 .btn-icon:hover { border-color: var(--cor-primaria); color: var(--cor-primaria); }
-.btn-icon.danger:hover { border-color: #dc2626; color: #dc2626; }
 
 .form-group { margin-bottom: 12px; }
 .form-label { display: block; font-size: 12px; color: #888; font-weight: 600; margin-bottom: 6px; }
@@ -75,42 +59,19 @@
 <div id="bLoading" class="b-loading">Carregando…</div>
 
 <div id="perfilContent" style="display:none">
-  <!-- Seção 1: Perfil -->
   <div class="b-card">
-    <div class="perfil-avatar" id="avatarIniciais">?</div>
+    <div class="perfil-avatar" id="avatarBox">?</div>
     <div class="perfil-nome" id="pNome">—</div>
     <div class="perfil-row"><span>Telefone</span><span id="pTelefone">—</span></div>
     <div class="perfil-row"><span>Email</span><span id="pEmail">—</span></div>
-    <div class="perfil-row"><span>Membro desde</span><span id="pMembroDesde">—</span></div>
     <button class="btn-block btn-secundario" style="margin-top:14px" onclick="abrirModalEditar()">✏️ Editar dados</button>
   </div>
 
-  <!-- Seção 2: Notificações (condicional) -->
-  <div class="b-card" id="cardNotificacoes" style="display:none">
-    <h4>Notificações</h4>
-    <label class="toggle-label">SMS <span></span>
-      <input type="checkbox" id="notifSms" onchange="salvarNotificacoes()">
-      <span class="toggle-track"></span>
-    </label>
-    <label class="toggle-label">WhatsApp
-      <input type="checkbox" id="notifWhatsapp" onchange="salvarNotificacoes()">
-      <span class="toggle-track"></span>
-    </label>
-    <label class="toggle-label">Email
-      <input type="checkbox" id="notifEmail" onchange="salvarNotificacoes()">
-      <span class="toggle-track"></span>
-    </label>
-  </div>
-
-  <!-- Seção 3: Ações -->
   <div class="b-card">
-    <button class="btn-block btn-secundario" onclick="abrirModalSenha()">🔒 Alterar senha</button>
-    <button class="btn-block btn-perigo" onclick="confirmarDeletarConta()">🗑️ Deletar conta</button>
-    <button class="btn-block btn-voltar" onclick="window.location.href='/cliente/dashboard'">Voltar</button>
+    <button class="btn-block btn-perigo" onclick="Bos.logout()">🚪 Sair</button>
   </div>
 </div>
 
-<!-- Modal Editar dados -->
 <div class="modal-overlay" id="modalEditar">
   <div class="modal-box">
     <div class="modal-header">
@@ -135,32 +96,6 @@
     </div>
   </div>
 </div>
-
-<!-- Modal Alterar senha -->
-<div class="modal-overlay" id="modalSenha">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h3>Alterar senha</h3>
-      <button class="modal-close" onclick="fecharModal('modalSenha')">✕</button>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Senha atual</label>
-      <input class="form-input" id="sAtual" type="password">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Senha nova</label>
-      <input class="form-input" id="sNova" type="password">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Confirmar senha</label>
-      <input class="form-input" id="sConfirmar" type="password">
-    </div>
-    <div class="modal-footer">
-      <button class="btn-icon" onclick="fecharModal('modalSenha')">Cancelar</button>
-      <button class="btn-icon" id="btnSalvarSenha" onclick="salvarSenha()">Salvar</button>
-    </div>
-  </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
@@ -170,27 +105,24 @@ function fecharModal(id) { document.getElementById(id).classList.remove('visible
 
 let perfilAtual = null;
 
+function renderAvatar(p) {
+  const box = document.getElementById('avatarBox');
+  if (p.foto) {
+    box.innerHTML = `<img src="${esc(p.foto)}" alt="">`;
+  } else {
+    box.textContent = (p.nome || '?').charAt(0).toUpperCase();
+  }
+}
+
 async function carregar() {
   try {
-    const [perfil, secoes] = await Promise.all([
-      api.cliente.meuPerfil(),
-      api.cliente.profile(),
-    ]);
+    const perfil = await Bos.get('/cliente/perfil');
     perfilAtual = perfil;
 
-    document.getElementById('avatarIniciais').textContent = (perfil.nome || '?').charAt(0).toUpperCase();
+    renderAvatar(perfil);
     document.getElementById('pNome').textContent = perfil.nome || '—';
     document.getElementById('pTelefone').textContent = perfil.telefone || '—';
     document.getElementById('pEmail').textContent = perfil.email || '—';
-    document.getElementById('pMembroDesde').textContent =
-      perfil.membro_desde ? new Date(perfil.membro_desde).toLocaleDateString('pt-BR') : '—';
-
-    if (secoes.secoes_disponiveis?.notificacoes && perfil.notificacoes) {
-      document.getElementById('notifSms').checked      = !!perfil.notificacoes.sms;
-      document.getElementById('notifWhatsapp').checked = !!perfil.notificacoes.whatsapp;
-      document.getElementById('notifEmail').checked    = !!perfil.notificacoes.email;
-      document.getElementById('cardNotificacoes').style.display = '';
-    }
 
     document.getElementById('perfilContent').style.display = '';
   } catch (e) {
@@ -217,7 +149,7 @@ async function salvarEdicao() {
   const btn = document.getElementById('btnSalvarEditar');
   btn.disabled = true;
   try {
-    await api.cliente.editarPerfil({ nome, telefone, email });
+    await Bos.patch('/cliente/perfil', { nome, telefone, email });
     toast('Dados atualizados.', 'success');
     fecharModal('modalEditar');
     carregar();
@@ -225,59 +157,6 @@ async function salvarEdicao() {
     toast(e.message, 'error');
   } finally {
     btn.disabled = false;
-  }
-}
-
-function abrirModalSenha() {
-  document.getElementById('sAtual').value = '';
-  document.getElementById('sNova').value = '';
-  document.getElementById('sConfirmar').value = '';
-  abrirModal('modalSenha');
-}
-
-async function salvarSenha() {
-  const senhaAtual = document.getElementById('sAtual').value;
-  const novaSenha  = document.getElementById('sNova').value;
-  const confirmar  = document.getElementById('sConfirmar').value;
-  if (!senhaAtual || !novaSenha) { toast('Preencha todos os campos.', 'error'); return; }
-  if (novaSenha.length < 6) { toast('A nova senha deve ter no mínimo 6 caracteres.', 'error'); return; }
-  if (novaSenha !== confirmar) { toast('As senhas não coincidem.', 'error'); return; }
-
-  const btn = document.getElementById('btnSalvarSenha');
-  btn.disabled = true;
-  try {
-    await api.cliente.alterarSenha({ senha_atual: senhaAtual, nova_senha: novaSenha, confirmar_senha: confirmar });
-    toast('Senha alterada.', 'success');
-    fecharModal('modalSenha');
-  } catch (e) {
-    toast(e.message, 'error');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function salvarNotificacoes() {
-  try {
-    await api.cliente.notificacoes({
-      sms:      document.getElementById('notifSms').checked,
-      whatsapp: document.getElementById('notifWhatsapp').checked,
-      email:    document.getElementById('notifEmail').checked,
-    });
-    toast('Preferências salvas.', 'success');
-  } catch (e) {
-    toast(e.message, 'error');
-  }
-}
-
-async function confirmarDeletarConta() {
-  if (!confirm('Tem certeza? Esta ação não pode ser desfeita.')) return;
-  if (!confirm('Confirme novamente: deletar sua conta permanentemente?')) return;
-  try {
-    await api.cliente.deletarConta();
-    toast('Conta deletada.', 'info');
-    setTimeout(() => api.logout(), 800);
-  } catch (e) {
-    toast(e.message, 'error');
   }
 }
 

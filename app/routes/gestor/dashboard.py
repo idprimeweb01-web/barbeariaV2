@@ -1,4 +1,3 @@
-from datetime import date
 from flask import Blueprint, g, jsonify
 from sqlalchemy import func
 from app.extensions import db
@@ -9,6 +8,7 @@ from app.models import (
 )
 from app.decorators.auth import gestor_required
 from app.utils.features import feature_ativa
+from app.utils.tz import hoje_brasilia
 from app.labels import L
 
 gestor_dash_bp = Blueprint('gestor_dashboard', __name__, url_prefix='/api/v1/gestor')
@@ -18,7 +18,7 @@ gestor_dash_bp = Blueprint('gestor_dashboard', __name__, url_prefix='/api/v1/ges
 @gestor_required
 def dashboard_gestor():
     bid = g.barbearia_id
-    hoje = date.today()
+    hoje = hoje_brasilia()
     mes, ano = hoje.month, hoje.year
 
     # ── Hoje ──────────────────────────────────────────────────────────────────
@@ -60,8 +60,9 @@ def dashboard_gestor():
     ).count()
 
     # ── PIX pendentes ─────────────────────────────────────────────────────────
-    pendentes_pix = Agendamento.query.filter_by(
-        barbearia_id=bid, status='aguardando_pagamento'
+    pendentes_pix = Agendamento.query.filter(
+        Agendamento.barbearia_id == bid,
+        Agendamento.status.in_(['aguardando_comprovante', 'aguardando_aprovacao', 'aguardando_pagamento']),
     ).count()
 
     # ── Top serviços do mês ───────────────────────────────────────────────────

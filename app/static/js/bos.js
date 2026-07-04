@@ -29,7 +29,7 @@ const Bos = (() => {
     if (resp.status === 401) {
       const renovado = await _renovar();
       if (!renovado) {
-        window.location.href = '/entrar';
+        window.location.href = window.BOS_LOGIN_URL || '/entrar';
         return null;
       }
       resp = await fetch(url, { credentials: 'same-origin', ...opts });
@@ -98,7 +98,7 @@ const Bos = (() => {
       try {
         await fetch('/sair', { method: 'POST', credentials: 'same-origin' });
       } catch { /* silencioso */ }
-      window.location.href = '/entrar';
+      window.location.href = window.BOS_LOGIN_URL || '/entrar';
     },
   };
 })();

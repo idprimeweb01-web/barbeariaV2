@@ -1,0 +1,535 @@
+═══════════════════════════════════════════════════════════════════════════════
+AUDITORIA DE PADRÕES DE BUG — BarberOS
+30+ padrões que causam problemas em produção
+Gerado em: 2026-07-01
+═══════════════════════════════════════════════════════════════════════════════
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 1 — Magic Strings (strings hardcoded em vez de constantes)          ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 107 ocorrências em app/routes/
+RISCO: MÉDIO (typo em qualquer lugar quebra lógica de negócio silenciosamente)
+
+Status de agendamento (quantidade de ocorrências):
+  'agendado'              — 23 ocorrências
+  'concluido'             — 18 ocorrências
+  'cancelado'             — 14 ocorrências
+  'em_atendimento'        —  8 ocorrências
+  'aguardando_comprovante'—  5 ocorrências
+  'aguardando_aprovacao'  —  5 ocorrências
+  'aguardando_pagamento'  —  3 ocorrências
+
+Exemplos de localização:
+  app/routes/barbeiro/agendamentos.py:22   — .filter_by(status='concluido')
+  app/routes/barbeiro/agendamentos.py:111  — if ag.status != 'agendado':
+  app/routes/barbeiro/dashboard.py:48      — .in_(['agendado', 'concluido'])
+
+Métodos de pagamento:
+  'pix'   — ~8 locais
+  'local' — ~3 locais
+
+Perfis de usuário:
+  Usados via decorators e g.perfil — não hardcoded diretamente em routes ✓
+
+SOLUÇÃO RECOMENDADA:
+  Criar app/constants.py com:
+    class StatusAgendamento:
+        AGENDADO               = 'agendado'
+        CONCLUIDO              = 'concluido'
+        CANCELADO              = 'cancelado'
+        EM_ATENDIMENTO         = 'em_atendimento'
+        AGUARDANDO_COMPROVANTE = 'aguardando_comprovante'
+        AGUARDANDO_APROVACAO   = 'aguardando_aprovacao'
+        AGUARDANDO_PAGAMENTO   = 'aguardando_pagamento'
+
+    class MetodoPagamento:
+        PIX   = 'pix'
+        LOCAL = 'local'
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 2 — Queries sem filtro de barbearia_id (Tenant Isolation)           ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 6 ocorrências
+RISCO: 1 ALTO, 5 MÉDIO
+
+  [ALTO] app/routes/pub/agendamento.py:605
+    Contexto: upload_comprovante()
+    Código: pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=agendamento_id).first()
+    Problema: Endpoint público com agendamento_id na URL sem verificar barbearia_id.
+              Cliente malicioso pode enviar comprovante para agendamento de outra barbearia.
+    Solução: Adicionar validação de barbearia_id via slug da URL:
+             pix = AgendamentoSolicitacaoPix.query.filter_by(
+                 agendamento_id=agendamento_id,
+                 barbearia_id=barbearia.id
+             ).first()
+
+  [MÉDIO] app/routes/barbeiro/agendamentos.py:22
+    Contexto: _fmt_ag() — helper interno
+    Código: itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
+    Problema: Query secundária sem barbearia_id, mas ag já foi validado (risco baixo na prática)
+
+  [MÉDIO] app/routes/barbeiro/agendamentos.py:39
+    Contexto: _fmt_ag() — loop de histórico
+    Código: h_itens = AgendamentoServico.query.filter_by(agendamento_id=h.id).all()
+    Mesmo contexto do item anterior
+
+  [MÉDIO] app/routes/barbeiro/agendamentos.py:171
+    Contexto: aprovar_comprovante()
+    Código: pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id).first()
+    Problema: ag validado pelo decorator, mas PIX não tem filtro de barbearia_id
+
+  [MÉDIO] app/routes/caixa.py:26
+    Contexto: _get_atendimento()
+    Código: at = Atendimento.query.filter_by(agendamento_id=agendamento_id).first()
+    Problema: Sem validação de barbearia_id em nível de Atendimento
+
+  [MÉDIO] app/routes/auth.py:39
+    Contexto: login()
+    Código: usuario = Usuario.query.filter_by(email=email).first()
+    Observação: Usuario é tabela compartilhada — sem barbearia_id é CORRETO aqui.
+                Porém o login não valida se o usuário pertence à barbearia do slug.
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 3 — N+1 Queries (query dentro de loop)                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 11 ocorrências confirmadas
+RISCO: 5 ALTO, 6 MÉDIO
+IMPACTO: Com 100 agendamentos → até 300 queries por request
+
+  [ALTO] app/routes/barbeiro/agendamentos.py:37-42
+    Contexto: _fmt_ag() — loop no histórico do cliente
+    Código:
+      for h in ags_h:
+          h_itens = AgendamentoServico.query.filter_by(agendamento_id=h.id).all()
+    5 históricos × N queries = até 5+ queries extras por agendamento listado
+
+  [ALTO] app/routes/barbeiro/agendamentos.py:40-42
+    Contexto: _fmt_ag() — dentro do loop acima
+    Código:
+      nomes = [db.session.get(Servico, hi.servico_id).nome
+               for hi in h_itens if db.session.get(Servico, hi.servico_id)]
+    DOBRO PERIGOSO: 2 lookups por item no list comprehension!
+
+  [ALTO] app/routes/barbeiro/dashboard.py:70-73
+    Contexto: _comissao_ags()
+    Código:
+      for ag in ags_list:
+          itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
+
+  [ALTO] app/routes/barbeiro/dashboard.py:118-124
+    Contexto: dashboard_barbeiro() — breakdown de comissão mensal
+    Código:
+      for ag in ags_mes:
+          itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
+    CRÍTICO: ags_mes pode ter centenas de registros → centenas de queries!
+
+  [ALTO] app/routes/cliente/agendamento.py:37-48
+    Contexto: listar_agendamentos()
+    Código:
+      for ag in ags:
+          itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
+
+  [MÉDIO] app/routes/gestor/agendamento.py:26-47 e 172-179
+    Contexto: _fmt_ag_gestor() e _fmt_ag_grade()
+    Código: for it in itens: s = db.session.get(Servico, it.servico_id)
+    Usa SQLAlchemy identity cache (menos impacto)
+
+  [MÉDIO] app/routes/cliente/planos.py:42-53
+    Contexto: _fmt_assinatura()
+    Código: for ps in servicos_plano: svc = db.session.get(Servico, ps.servico_id)
+
+  [MÉDIO] app/utils/relatorio.py:87-93
+    Contexto: gerar_dados()
+    Código: for it in itens: s = db.session.get(Servico, it.servico_id)
+
+SOLUÇÃO PARA OS CASOS ALTO:
+  Usar joinedload/subqueryload do SQLAlchemy:
+
+  from sqlalchemy.orm import subqueryload
+
+  ags = (Agendamento.query
+         .options(subqueryload(Agendamento.servicos)
+                  .subqueryload(AgendamentoServico.servico))
+         .filter_by(barbeiro_id=b.id)
+         .all())
+
+  # Agora ag.servicos e ag.servicos[].servico estão pré-carregados em 2 queries
+  for ag in ags:
+      for it in ag.servicos:
+          print(it.servico.nome)  # sem query adicional
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 4 — Timestamps sem timezone (DT-001 parcialmente corrigido)         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 7 ocorrências remanescentes
+RISCO: 4 ALTO (armazenamento), 3 MÉDIO (apenas exibição)
+
+CONTEXTO: DT-001 foi corrigido em alguns arquivos nesta sessão (naive_brasilia(),
+hoje_brasilia()), mas app/routes/ ainda tem datetime.utcnow() em outros lugares.
+
+  [ALTO] app/routes/barbeiro/agendamentos.py:174-175
+    Contexto: aprovar_comprovante()
+    Código: pix.respondido_em = datetime.utcnow()
+    Problema: Armazena timestamp UTC mas sem tzinfo → naive datetime no banco.
+    Solução: pix.respondido_em = naive_brasilia()
+
+  [ALTO] app/routes/gestor/agendamento.py:126-127
+    Contexto: aprovar_agendamento()
+    Código: pix.respondido_em = datetime.utcnow()
+    Solução: pix.respondido_em = naive_brasilia()
+
+  [ALTO] app/routes/gestor/agendamento.py:604
+    Contexto: endpoint de resposta
+    Código: s.data_resposta = datetime.utcnow()
+    Solução: s.data_resposta = naive_brasilia()
+
+  [ALTO] app/routes/gestor/planos.py:329
+    Contexto: aprovação de solicitação
+    Código: sol.aprovado_em = datetime.utcnow()
+    Solução: sol.aprovado_em = naive_brasilia()
+
+  [MÉDIO] app/routes/gestor/relatorios.py:71
+    Contexto: cabeçalho de relatório (apenas display)
+    Código: 'gerado_em': datetime.utcnow().strftime(...)
+    Impacto: Relatório mostra hora em UTC em vez de Brasília
+
+  [MÉDIO] app/utils/relatorio.py:148
+    Contexto: gerar_excel() — cabeçalho
+    Código: ws['A3'] = f'Gerado em: {datetime.utcnow().strftime(...)}'
+
+  [MÉDIO] app/utils/relatorio.py:256
+    Contexto: gerar_pdf() — cabeçalho
+    Código: f'Gerado em: {datetime.utcnow().strftime(...)}'
+
+OBSERVAÇÃO: models/__init__.py:6 define _utcnow() corretamente com
+  datetime.now(timezone.utc) para colunas de modelo. O problema é nas rotas.
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 5 — request.json[] sem .get()                                       ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+NENHUMA OCORRÊNCIA ENCONTRADA ✓
+
+Todas as rotas usam o padrão correto:
+  dados = request.get_json(silent=True)
+  if not dados: raise APIError('Corpo inválido.')
+  campo = (dados.get('campo') or '').strip()
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 6 — db.session.commit() sem try/except [PROBLEMA PRINCIPAL]         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 71 commits SEM proteção de try/except/rollback
+RISCO: ALTO em todos os 71 casos
+IMPACTO: Erro de banco de dados causa 500 genérico sem rollback → dados inconsistentes
+
+ARQUIVOS AFETADOS (amostra dos 10 primeiros):
+  app/routes/auth.py:110                     — trocar_senha()
+  app/routes/barbeiro/agendamentos.py:114    — iniciar_agendamento()
+  app/routes/barbeiro/agendamentos.py:133    — concluir_agendamento()
+  app/routes/barbeiro/agendamentos.py:155    — cancelar_agendamento()
+  app/routes/barbeiro/agendamentos.py:179    — aprovar_comprovante()
+  app/routes/barbeiro/agendamentos.py:204    — adicionar_nota_agendamento()
+  app/routes/barbeiro/horario.py:98          — atualizar_horario()
+  app/routes/barbeiro/horario.py:136         — criar_pausa()
+  app/routes/barbeiro/horario.py:175         — editar_pausa()
+  app/routes/barbeiro/horario.py:191         — deletar_pausa()
+  ... + 61 outros em gestor/, super/, pub/, cliente/, views/
+
+COMMITS JÁ PROTEGIDOS (13 de ~84 total):
+  app/routes/cliente/agendamento.py:138      — criar_agendamento()
+  app/routes/cliente/planos.py:113           — cancelar_assinatura()
+  app/routes/gestor/planos.py (7 locais)    — todos protegidos nesta sessão ✓
+  app/routes/pub/agendamento.py:300          — criar_agendamento()
+
+PADRÃO CORRETO A APLICAR (já definido no projeto):
+  try:
+      db.session.commit()
+  except Exception:
+      db.session.rollback()
+      raise APIError('Erro ao salvar. Tente novamente.', 500)
+
+PRIORIDADE DE CORREÇÃO (risco de dados inconsistentes):
+  1. barbeiro/agendamentos.py — concluir, cancelar, aprovar (dados financeiros)
+  2. gestor/agendamento.py   — aprovar, cancelar (visibilidade entre usuários)
+  3. pub/agendamento.py      — demais commits além do protegido
+  4. auth.py                 — trocar_senha()
+  5. barbeiro/horario.py     — pausas e configuração
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 7 — Soft Delete sem filtro ativo=True                               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+NENHUMA OCORRÊNCIA CRÍTICA ENCONTRADA ✓
+
+Queries por ID incluem ativo=True quando necessário:
+  Barbeiro.query.filter_by(id=id, barbearia_id=bk_id, ativo=True).first() ✓
+  Servico.query.filter_by(id=id, barbearia_id=bk_id, ativo=True).first() ✓
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 8 — IDOR (acesso sem verificar dono)                                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+NENHUMA OCORRÊNCIA CRÍTICA ENCONTRADA ✓
+
+Verificações de ownership implementadas:
+  cliente/agendamento.py:109-111 — valida ag.cliente_id == cliente.id ✓
+  cliente/planos.py:89-91        — valida cp.cliente_id == cli.id ✓
+  cliente/planos.py:104-106      — valida cp.cliente_id == cli.id ✓
+  barbeiro/agendamentos.py       — valida ag.barbeiro_id == b.id ✓
+  barbeiro/horario.py:146-148    — valida pausa.barbeiro_id == b.id ✓
+
+EXCEÇÃO IDENTIFICADA (ver Padrão 2, item ALTO):
+  pub/agendamento.py:605 — upload_comprovante() sem validação de barbearia_id
+  → Qualquer pessoa com agendamento_id pode enviar comprovante para outro agendamento
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 9 — Variáveis possivelmente não inicializadas                       ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+NENHUMA OCORRÊNCIA CRÍTICA ENCONTRADA ✓
+
+Verificados 2 casos suspeitos:
+  barbeiro/agendamentos.py:20-31 — protegido com ternário (s.nome if s else None)
+  gestor/agendamento.py:169-179  — variáveis inicializadas com defaults antes do loop
+
+Padrão seguro encontrado nos dois:
+  sv_nome = '—'    # inicializado antes
+  for it in itens:
+      sv = db.session.get(Servico, it.servico_id)
+      nome = sv.nome if sv else '—'  # protegido
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 10 — SQL Injection em queries raw                                   ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+NENHUMA OCORRÊNCIA ENCONTRADA ✓
+
+O código usa exclusivamente SQLAlchemy ORM. Nenhuma f-string em execute(),
+nenhum .filter(text(f"..."))
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 11 — Exposição de informação sensível em erros                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 2 ocorrências de risco baixo
+
+  [BAIXO] app/routes/pub/agendamento.py:598-599
+    Contexto: upload_comprovante() — upload para Cloudinary
+    Código: except Exception as exc: raise APIError(f'Cloudinary: {exc}', 502)
+    Problema: Expõe mensagem de erro do Cloudinary ao cliente (ex: "Invalid API key")
+    Solução:
+      except Exception:
+          raise APIError('Erro ao enviar comprovante. Tente novamente.', 502)
+
+POSITIVO: Nenhuma rota retorna stack trace. O sistema usa APIError centralizada.
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 12 — Cache global sem invalidação automática                        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 2 caches identificados
+RISCO: 1 MÉDIO
+
+  [MÉDIO] app/labels.py:90 — _RotuloStore._cache
+    O que é: dict{segmento_id → dict{chave → rotulo}}
+    Invalidação: método manual invalidar(segmento_id=None) existe ✓
+    Problema: Super admin pode editar rótulos via PUT /api/v1/super/segmentos/<id>/rotulos
+              mas se não chamar L.invalidar() depois, o cache continua com valor antigo.
+    Verificar: O endpoint de edição de rótulos chama L.invalidar() após salvar?
+    Risco real: Mudança de rótulo só reflete após restart do servidor
+
+  app/utils/scheduler.py:61 — configs_cache
+    Contexto: cache de ConfiguracaoAgendamento por barbearia
+    Invalidação: não verificado (arquivo não acessado completamente)
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 13 — try/except muito abrangente (erros silenciados)                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 26 ocorrências de except Exception ou except:
+RISCO: 15 de risco MÉDIO (erros de banco não logados)
+
+PROBLEMA: Os 13 commits protegidos com try/except (ver Padrão 6) fazem rollback
+mas NÃO fazem log do erro. Quando um commit falha em produção, não há rastreabilidade.
+
+PADRÃO ATUAL (sem log):
+  try:
+      db.session.commit()
+  except Exception:
+      db.session.rollback()
+      raise APIError('Erro ao salvar. Tente novamente.', 500)
+
+  ← Não sabe qual erro de banco ocorreu!
+
+PADRÃO RECOMENDADO (com log):
+  import logging
+  logger = logging.getLogger(__name__)
+
+  try:
+      db.session.commit()
+  except Exception as exc:
+      db.session.rollback()
+      logger.error('commit falhou em criar_plano(): %s', exc)
+      raise APIError('Erro ao salvar. Tente novamente.', 500)
+
+EXCEÇÕES BOAS (não são problema):
+  - 9 casos de except Exception para validação de formato (ex: time.fromisoformat())
+    → Transformam erro de parsing em mensagem de negócio. Correto.
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 14 — Imports circulares                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+NENHUMA OCORRÊNCIA ENCONTRADA ✓
+
+app/routes/__init__.py — vazio (apenas comentário)
+app/__init__.py — importa blueprints sequencialmente sem circularidade
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PADRÃO 15 — Configuração de JWT/Sessão insegura                            ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 5 itens verificados
+RISCO: 2 MÉDIO, 3 BAIXO
+
+  [BAIXO ✓] JWT_SECRET_KEY
+    Código: JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', '')
+    Mais: if len(jwt_key) < 32: raise RuntimeError(...)
+    Status: CORRETO — requer env var com mínimo 32 chars, não hardcoded ✓
+
+  [BAIXO ✓] SECRET_KEY do Flask
+    Código: SECRET_KEY = os.environ.get('SECRET_KEY', jwt_key)
+    Status: CORRETO — fallback para JWT_SECRET_KEY ✓
+
+  [MÉDIO] JWT_COOKIE_SECURE
+    Código: JWT_COOKIE_SECURE = os.environ.get('FLASK_ENV') == 'production'
+    Problema: Em desenvolvimento (FLASK_ENV != 'production') os cookies JWT são
+              transmitidos sem HTTPS. Aceitável para dev, mas risco se env var
+              for esquecida em staging/produção.
+    Verificar: FLASK_ENV está definido corretamente no servidor de produção?
+
+  [MÉDIO] SESSION_COOKIE_SECURE — NÃO CONFIGURADO
+    Problema: Usa padrão do Flask (False), o que permite transmissão da session
+              cookie por HTTP. Adicionar em app/__init__.py:
+              app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
+              app.config['SESSION_COOKIE_HTTPONLY'] = True
+              app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
+  [BAIXO] JWT_COOKIE_SAMESITE = 'Lax' — JÁ CONFIGURADO ✓
+    Protege contra CSRF em navegadores modernos.
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  RESUMO EXECUTIVO — TABELA DE RESULTADOS                                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────┬────────┬─────────┬──────┬───────┬───────┐
+│ Padrão                                   │ Total  │ CRÍTICO │ ALTO │ MÉDIO │ BAIXO │
+├──────────────────────────────────────────┼────────┼─────────┼──────┼───────┼───────┤
+│  1. Magic Strings                        │   107  │    —    │  —   │   5   │   —   │
+│  2. Tenant Isolation                     │     6  │    —    │  1   │   4   │   1   │
+│  3. N+1 Queries                          │    11  │    —    │  5   │   4   │   2   │
+│  4. Timezone (datetime.utcnow)           │     7  │    —    │  4   │   3   │   —   │
+│  5. request.json[] sem .get()           │     0  │    —    │  —   │   —   │   —   │
+│  6. commit() sem try/except   ★CRÍTICO★  │    71  │    —    │  71  │   —   │   —   │
+│  7. Soft Delete sem filtro               │     0  │    —    │  —   │   —   │   —   │
+│  8. IDOR                                 │     0  │    —    │  —   │   —   │   —   │
+│  9. Variáveis não inicializadas          │     2  │    —    │  —   │   —   │   2   │
+│ 10. SQL Injection                        │     0  │    —    │  —   │   —   │   —   │
+│ 11. Exposição de erro                    │     1  │    —    │  —   │   —   │   1   │
+│ 12. Cache sem invalidação                │     2  │    —    │  —   │   1   │   1   │
+│ 13. Exception genérica sem log           │    26  │    —    │  —   │  15   │  11   │
+│ 14. Imports circulares                   │     0  │    —    │  —   │   —   │   —   │
+│ 15. JWT/Sessão insegura                  │     5  │    —    │  —   │   2   │   3   │
+├──────────────────────────────────────────┼────────┼─────────┼──────┼───────┼───────┤
+│ TOTAL                                    │   238  │    0    │  81  │  34   │  21   │
+└──────────────────────────────────────────┴────────┴─────────┴──────┴───────┴───────┘
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  PLANO DE AÇÃO PRIORITIZADO                                                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+🔴 SPRINT 1 — ESTABILIDADE (fazer antes de ir a produção)
+───────────────────────────────────────────────────────────
+  1. Padrão 6 (71 commits sem try/except)
+     Arquivos a corrigir por ordem de risco:
+     ├─ app/routes/barbeiro/agendamentos.py  (5 commits: iniciar, concluir, cancelar, aprovar, nota)
+     ├─ app/routes/gestor/agendamento.py     (aprovar, cancelar com PIX)
+     ├─ app/routes/pub/agendamento.py        (commits restantes além do protegido)
+     ├─ app/routes/auth.py                   (trocar_senha)
+     └─ app/routes/barbeiro/horario.py       (atualizar, criar/editar/deletar pausa)
+
+  2. Padrão 4 (4 timestamps ALTO — datetime.utcnow() em armazenamento)
+     ├─ barbeiro/agendamentos.py:175  →  naive_brasilia()
+     ├─ gestor/agendamento.py:127     →  naive_brasilia()
+     ├─ gestor/agendamento.py:604     →  naive_brasilia()
+     └─ gestor/planos.py:329          →  naive_brasilia()
+
+  3. Padrão 2 (1 ALTO — upload_comprovante sem tenant validation)
+     pub/agendamento.py:605 — adicionar barbearia_id=barbearia.id no filter
+
+🟠 SPRINT 2 — PERFORMANCE (antes de escalar)
+──────────────────────────────────────────────
+  4. Padrão 3 (5 N+1 queries ALTO)
+     ├─ barbeiro/agendamentos.py:37-42  →  eager load com subqueryload
+     ├─ barbeiro/dashboard.py:70-73    →  eager load no relatório de comissão
+     ├─ barbeiro/dashboard.py:118-124  →  eager load no resumo mensal
+     └─ cliente/agendamento.py:37-48   →  eager load na listagem de histórico
+
+🟡 SPRINT 3 — QUALIDADE (manutenção a médio prazo)
+────────────────────────────────────────────────────
+  5. Padrão 1 — Criar app/constants.py com StatusAgendamento e MetodoPagamento
+     e refatorar todas as 107 ocorrências gradualmente
+
+  6. Padrão 13 — Adicionar logger.error() nos 15 excepts de commit sem log
+
+  7. Padrão 12 — Verificar se super/segmentos endpoint chama L.invalidar() após salvar
+
+  8. Padrão 15 — Adicionar SESSION_COOKIE_SECURE, SESSION_COOKIE_HTTPONLY em __init__.py
+
+🟢 SPRINT 4 — MELHORIAS FUTURAS
+─────────────────────────────────
+  9. Padrão 4 (3 MÉDIO) — corrigir display de UTC nos relatórios (estético)
+  10. Padrão 11 — ocultar mensagem do Cloudinary ao cliente
+  11. Padrão 2 (MÉDIOS) — adicionar barbearia_id em queries secundárias de joins
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  POSITIVOS — O QUE ESTÁ BEM IMPLEMENTADO                                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+✅ IDOR — Ownership validado em todos os endpoints de cliente e barbeiro
+✅ SQL Injection — Uso exclusivo do SQLAlchemy ORM (sem raw SQL)
+✅ request.json[] — Sempre via .get() com validação de presença
+✅ Soft Delete — Filtros de ativo=True presentes nas queries por ID
+✅ Imports circulares — Estrutura de módulos limpa
+✅ Variáveis não inicializadas — Defaults antes de loops, ternários para None
+✅ JWT_SECRET_KEY — Variável de ambiente obrigatória com validação de 32+ chars
+✅ SQL Stack trace — APIError unificada, sem exposição de stack trace ao cliente
+✅ CSRF — JWT_COOKIE_SAMESITE = 'Lax' configurado
+✅ Multi-tenant base — TenantMixin garante barbearia_id em models sensíveis
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM DA AUDITORIA DE PADRÕES — BarberOS v1.0  |  2026-07-01
+═══════════════════════════════════════════════════════════════════════════════

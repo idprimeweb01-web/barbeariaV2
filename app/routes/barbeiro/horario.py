@@ -19,10 +19,11 @@ def _fmt_config(cfg):
     if not cfg:
         return None
     return {
-        'horario_abertura':   cfg.horario_abertura.strftime('%H:%M') if cfg.horario_abertura else None,
-        'horario_fechamento': cfg.horario_fechamento.strftime('%H:%M') if cfg.horario_fechamento else None,
-        'intervalo_minutos':  cfg.intervalo_minutos,
-        'loja_aberta':        cfg.loja_aberta,
+        'horario_abertura':          cfg.horario_abertura.strftime('%H:%M') if cfg.horario_abertura else None,
+        'horario_fechamento':        cfg.horario_fechamento.strftime('%H:%M') if cfg.horario_fechamento else None,
+        'intervalo_minutos':         cfg.intervalo_minutos,
+        'loja_aberta':               cfg.loja_aberta,
+        'permite_horario_barbeiro':  cfg.permite_horario_barbeiro,
     }
 
 
@@ -45,7 +46,12 @@ def get_horario():
     pausas = (PausaBarbeiro.query
               .filter_by(barbeiro_id=b.id)
               .order_by(PausaBarbeiro.hora_inicio).all())
-    return jsonify({'config': _fmt_config(cfg), 'pausas': [_fmt_pausa(p) for p in pausas]}), 200
+    bloqueado = not (cfg and cfg.permite_horario_barbeiro)
+    return jsonify({
+        'config':    _fmt_config(cfg),
+        'pausas':    [_fmt_pausa(p) for p in pausas],
+        'bloqueado': bloqueado,
+    }), 200
 
 
 # ── PATCH /api/v1/barbeiro/horario ───────────────────────────────────────────
@@ -54,6 +60,9 @@ def get_horario():
 @barbeiro_required
 def atualizar_horario():
     b     = _get_barbeiro(g.user_id, g.barbearia_id)
+    cfg   = ConfiguracaoAgenda.query.filter_by(barbeiro_id=b.id).first()
+    if not (cfg and cfg.permite_horario_barbeiro):
+        raise APIError('Edição de horário não permitida pelo gestor.', 403)
     dados = request.get_json(silent=True) or {}
 
     cfg = ConfiguracaoAgenda.query.filter_by(barbeiro_id=b.id).first()
@@ -95,7 +104,10 @@ def atualizar_horario():
 @barbeiro_horario_bp.post('/pausas')
 @barbeiro_required
 def criar_pausa():
-    b     = _get_barbeiro(g.user_id, g.barbearia_id)
+    b   = _get_barbeiro(g.user_id, g.barbearia_id)
+    cfg = ConfiguracaoAgenda.query.filter_by(barbeiro_id=b.id).first()
+    if not (cfg and cfg.permite_horario_barbeiro):
+        raise APIError('Edição de pausas não permitida pelo gestor.', 403)
     dados = request.get_json(silent=True) or {}
 
     ini_str = (dados.get('hora_inicio') or '').strip()

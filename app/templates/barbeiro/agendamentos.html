@@ -13,7 +13,9 @@
 .st-em_atendimento   { background: rgba(243,156,18,.12);  color: #fbbf24; }
 .st-concluido        { background: rgba(34,197,94,.12);   color: #4ade80; }
 .st-cancelado        { background: rgba(220,38,38,.12);   color: #f87171; }
-.st-aguardando_pagamento { background: rgba(168,85,247,.12); color: #c4b5fd; }
+.st-aguardando_pagamento   { background: rgba(168,85,247,.12); color: #c4b5fd; }
+.st-aguardando_comprovante { background: rgba(245,158,11,.12); color: #fbbf24; }
+.st-aguardando_aprovacao   { background: rgba(59,130,246,.12); color: #93c5fd; }
 
 /* Drawer */
 .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none; z-index: 900; }
@@ -60,7 +62,9 @@
     <option value="em_atendimento">Em atendimento</option>
     <option value="concluido">Concluído</option>
     <option value="cancelado">Cancelado</option>
-    <option value="aguardando_pagamento">Aguardando pag.</option>
+    <option value="aguardando_comprovante">Aguard. comprovante</option>
+    <option value="aguardando_aprovacao">Aguard. aprovação</option>
+    <option value="aguardando_pagamento">Aguardando pag. (legado)</option>
   </select>
   <button class="btn btn-ghost" onclick="carregar()">Filtrar</button>
 </div>
@@ -166,7 +170,9 @@ const BADGE = {
   em_atendimento:     '<span class="st st-em_atendimento">Em atendimento</span>',
   concluido:          '<span class="st st-concluido">Concluído</span>',
   cancelado:          '<span class="st st-cancelado">Cancelado</span>',
-  aguardando_pagamento:'<span class="st st-aguardando_pagamento">Ag. pag.</span>',
+  aguardando_pagamento:   '<span class="st st-aguardando_pagamento">Ag. pag.</span>',
+  aguardando_comprovante: '<span class="st st-aguardando_comprovante">Ag. comprovante</span>',
+  aguardando_aprovacao:   '<span class="st st-aguardando_aprovacao">Ag. aprovação</span>',
 };
 
 // ── Init ────────────────────────────────────────────────────────────────────
@@ -277,6 +283,9 @@ function abrirDrawer(agId) {
   } else if (ag.status === 'em_atendimento') {
     acoes = `<button class="btn btn-primary" onclick="abrirConcluir()">Concluir</button>` + acoes;
     acoes += `<button class="btn btn-danger" onclick="abrirCancelar()">Cancelar</button>`;
+  } else if (ag.status === 'aguardando_aprovacao' || ag.status === 'aguardando_comprovante') {
+    acoes = `<button class="btn btn-primary" onclick="aprovarComprovante()">✓ Aprovar PIX</button>` + acoes;
+    acoes += `<button class="btn btn-danger" onclick="abrirCancelar()">Cancelar</button>`;
   }
   document.getElementById('drawerAcoes').innerHTML = acoes;
 
@@ -287,6 +296,17 @@ function abrirDrawer(agId) {
 function fecharDrawer() {
   document.getElementById('drawerOverlay').classList.remove('visible');
   document.getElementById('drawer').classList.remove('open');
+}
+
+// ── Aprovar comprovante PIX ──────────────────────────────────────────────────
+async function aprovarComprovante() {
+  if (!_agAtual) return;
+  try {
+    await Bos.patch(`/barbeiro/agendamentos/${_agAtual.id}/aprovar-comprovante`, {});
+    toast('PIX aprovado! Agendamento confirmado.', 'success');
+    fecharDrawer();
+    carregar();
+  } catch(e) { toast(e.message || 'Erro', 'error'); }
 }
 
 // ── Iniciar ─────────────────────────────────────────────────────────────────

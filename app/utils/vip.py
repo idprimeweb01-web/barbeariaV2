@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
+from app.utils.tz import hoje_brasilia
 
 
 def _get_or_create_cliente_vip(cliente_id, barbearia_id):
@@ -17,7 +18,7 @@ def incrementar_nivel_vip(cliente_id, barbearia_id):
     from app.extensions import db
     cv = _get_or_create_cliente_vip(cliente_id, barbearia_id)
     cv.nivel_vip_atual = (cv.nivel_vip_atual or 0) + 1
-    cv.data_proxima_renovacao = (datetime.utcnow() + timedelta(days=30)).date()
+    cv.data_proxima_renovacao = hoje_brasilia() + timedelta(days=30)
     db.session.commit()
     return cv.nivel_vip_atual
 

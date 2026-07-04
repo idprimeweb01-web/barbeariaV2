@@ -6,7 +6,7 @@ from werkzeug.security import generate_password_hash
 from app.extensions import db
 from app.models import (
     Barbearia, Usuario, FeatureMetadata, FeatureBarbearia,
-    BarbeariaCustomizacao, ConfiguracaoAgendamento,
+    BarbeariaCustomizacao, ConfiguracaoAgendamento, AuditoriaLog, SegmentoRotulo,
 )
 from app.exceptions import APIError
 from app.decorators.auth import super_required
@@ -421,6 +421,35 @@ def upload_imagem_customizacao(barbearia_id):
     return jsonify({'mensagem': 'Imagem atualizada.', 'tipo': tipo, 'url': url}), 200
 
 
+# ── DELETE /api/v1/super/barbearias/<id>/customizacao/imagens ───────────────
+# Remove a imagem do tipo informado (logo | capa | boas_vindas)
+
+@super_bp.delete('/barbearias/<int:barbearia_id>/customizacao/imagens')
+@super_required
+def remover_imagem_customizacao(barbearia_id):
+    _get_barbearia_or_404(barbearia_id)
+
+    tipo = (request.args.get('tipo') or '').strip()
+    if tipo not in _TIPOS_UPLOAD:
+        raise APIError(f'"tipo" deve ser: {", ".join(_TIPOS_UPLOAD)}.')
+
+    c = BarbeariaCustomizacao.query.filter_by(barbearia_id=barbearia_id).first()
+    campo = _TIPOS_UPLOAD[tipo]
+    if not c or not getattr(c, campo):
+        raise APIError('Esta barbearia não possui essa imagem.', 404)
+
+    _cfg_cloudinary()
+    try:
+        cloudinary.uploader.destroy(f'barberos/customizacao/barbearia_{barbearia_id}_{tipo}', resource_type='image')
+    except Exception:
+        pass  # imagem já pode não existir mais no Cloudinary; segue removendo a referência
+
+    setattr(c, campo, None)
+    db.session.commit()
+
+    return jsonify({'mensagem': 'Imagem removida.', 'tipo': tipo}), 200
+
+
 # ── Trigger manual do scheduler (apenas super, apenas em dev) ─────────────────
 
 @super_bp.post('/scheduler/executar-lembretes')
@@ -438,3 +467,212 @@ def executar_lembretes_agora():
         return jsonify({'mensagem': 'Job executado. Verifique as notificações geradas.'}), 200
     except Exception as exc:
         return jsonify({'erro': str(exc), 'traceback': traceback.format_exc()}), 500
+
+
+# ── GET /api/v1/super/gestores ───────────────────────────────────────────────
+
+@super_bp.get('/gestores')
+@super_required
+def listar_gestores():
+    gestores = (
+        db.session.query(Usuario, Barbearia)
+        .join(Barbearia, Barbearia.id == Usuario.barbearia_id, isouter=True)
+        .filter(Usuario.perfil == 'gestor')
+        .order_by(Usuario.nome)
+        .all()
+    )
+    return jsonify([{
+        'id':           u.id,
+        'nome':         u.nome,
+        'email':        u.email,
+        'telefone':     u.telefone,
+        'ativo':        u.ativo,
+        'barbearia_id': u.barbearia_id,
+        'barbearia':    b.nome if b else None,
+        'bk_slug':      b.slug if b else None,
+    } for u, b in gestores]), 200
+
+
+# ── GET /api/v1/super/features ───────────────────────────────────────────────
+
+@super_bp.get('/features')
+@super_required
+def listar_features_global():
+    todas = FeatureMetadata.query.order_by(FeatureMetadata.nome).all()
+    barbearias = Barbearia.query.order_by(Barbearia.nome).all()
+    flags_por_bk = {}
+    for fb in FeatureBarbearia.query.all():
+        flags_por_bk.setdefault(fb.barbearia_id, {})[fb.feature_id] = fb.ativo
+
+    resultado = []
+    for b in barbearias:
+        bk_flags = flags_por_bk.get(b.id, {})
+        resultado.append({
+            'id':       b.id,
+            'nome':     b.nome_exibicao or b.nome,
+            'slug':     b.slug,
+            'ativo':    b.ativo,
+            'features': {fm.nome: bk_flags.get(fm.id, False) for fm in todas},
+        })
+    return jsonify({'catalogo': [fm.nome for fm in todas], 'barbearias': resultado}), 200
+
+
+# ── GET /api/v1/super/relatorios ─────────────────────────────────────────────
+
+@super_bp.get('/relatorios')
+@super_required
+def relatorios_global():
+    from app.models import Agendamento, Cliente, Barbeiro
+    total_bk        = Barbearia.query.count()
+    total_bk_ativas = Barbearia.query.filter_by(ativo=True).count()
+    total_gestores  = Usuario.query.filter_by(perfil='gestor').count()
+    total_barbeiros = Barbeiro.query.count()
+    total_clientes  = Cliente.query.count()
+    total_ags       = Agendamento.query.count()
+    ags_concluidos  = Agendamento.query.filter_by(status='concluido').count()
+    ags_cancelados  = Agendamento.query.filter_by(status='cancelado').count()
+    ags_pendentes   = Agendamento.query.filter(
+        Agendamento.status.in_(['aguardando_comprovante', 'aguardando_aprovacao', 'aguardando_pagamento'])
+    ).count()
+
+    return jsonify({
+        'barbearias':        total_bk,
+        'barbearias_ativas': total_bk_ativas,
+        'gestores':          total_gestores,
+        'barbeiros':         total_barbeiros,
+        'clientes':          total_clientes,
+        'agendamentos':      total_ags,
+        'concluidos':        ags_concluidos,
+        'cancelados':        ags_cancelados,
+        'pendentes_pix':     ags_pendentes,
+    }), 200
+
+
+# ── GET /api/v1/super/auditoria ──────────────────────────────────────────────
+
+@super_bp.get('/auditoria')
+@super_required
+def auditoria_global():
+    q = AuditoriaLog.query
+
+    bk_id = request.args.get('barbearia_id', type=int)
+    if bk_id:
+        q = q.filter(AuditoriaLog.barbearia_id == bk_id)
+
+    tipo = request.args.get('tipo_acao')
+    if tipo:
+        q = q.filter(AuditoriaLog.tipo_acao == tipo)
+
+    try:
+        page     = max(1, int(request.args.get('page', 1)))
+        per_page = min(200, max(1, int(request.args.get('per_page', 50))))
+    except ValueError:
+        raise APIError('"page" e "per_page" devem ser inteiros.', 422)
+
+    paginado = q.order_by(AuditoriaLog.criado_em.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+
+    def _fmt(log):
+        u = db.session.get(Usuario, log.usuario_id) if log.usuario_id else None
+        b = db.session.get(Barbearia, log.barbearia_id) if log.barbearia_id else None
+        return {
+            'id':           log.id,
+            'tipo_acao':    log.tipo_acao,
+            'entidade':     log.entidade,
+            'entidade_id':  log.entidade_id,
+            'descricao':    log.descricao,
+            'usuario':      u.nome if u else None,
+            'barbearia':    (b.nome_exibicao or b.nome) if b else None,
+            'barbearia_id': log.barbearia_id,
+            'criado_em':    log.criado_em.strftime('%d/%m/%Y %H:%M') if log.criado_em else None,
+        }
+
+    return jsonify({
+        'total':     paginado.total,
+        'page':      paginado.page,
+        'per_page':  paginado.per_page,
+        'pages':     paginado.pages,
+        'registros': [_fmt(l) for l in paginado.items],
+    }), 200
+
+
+# ── Segmentos ─────────────────────────────────────────────────────────────────
+
+@super_bp.get('/segmentos')
+@super_required
+def listar_segmentos():
+    from app.models import Segmento
+    segs = Segmento.query.order_by(Segmento.nome).all()
+    return jsonify([{
+        'id':            s.id,
+        'nome':          s.nome,
+        'chave':         s.chave,
+        'n_barbearias':  Barbearia.query.filter_by(segmento_id=s.id).count(),
+    } for s in segs]), 200
+
+
+@super_bp.get('/segmentos/<int:seg_id>/rotulos')
+@super_required
+def get_segmento_rotulos(seg_id):
+    from app.models import Segmento, SegmentoRotulo
+    from app.labels import ROTULO_COLS
+    seg = db.session.get(Segmento, seg_id)
+    if not seg:
+        raise APIError('Segmento não encontrado.', 404)
+    row = SegmentoRotulo.query.filter_by(segmento_id=seg_id).first()
+    rotulos = {col: (getattr(row, col, '') or '') for col in ROTULO_COLS} if row else {col: '' for col in ROTULO_COLS}
+    return jsonify({
+        'segmento': {'id': seg.id, 'nome': seg.nome, 'chave': seg.chave},
+        'rotulos':  rotulos,
+    }), 200
+
+
+@super_bp.put('/segmentos/<int:seg_id>/rotulos')
+@super_required
+def put_segmento_rotulos(seg_id):
+    from app.models import Segmento, SegmentoRotulo
+    from app.labels import L, ROTULO_COLS
+    seg = db.session.get(Segmento, seg_id)
+    if not seg:
+        raise APIError('Segmento não encontrado.', 404)
+    dados = request.get_json(silent=True) or {}
+    row = SegmentoRotulo.query.filter_by(segmento_id=seg_id).first()
+    if not row:
+        row = SegmentoRotulo(segmento_id=seg_id)
+        db.session.add(row)
+    for col in ROTULO_COLS:
+        val = (dados.get(col) or '').strip()
+        if val:
+            setattr(row, col, val[:50])
+    db.session.commit()
+    L.invalidar(seg_id)
+    return jsonify({'mensagem': 'Rótulos atualizados com sucesso.'}), 200
+
+
+@super_bp.post('/segmentos/seed')
+@super_required
+def seed_segmentos_endpoint():
+    from app.seeds import seed_segmentos
+    seed_segmentos()
+    return jsonify({'mensagem': 'Segmentos padrão sincronizados com sucesso.'}), 200
+
+
+@super_bp.patch('/barbearias/<int:barbearia_id>/segmento')
+@super_required
+def patch_barbearia_segmento(barbearia_id):
+    from app.models import Segmento
+    b = db.session.get(Barbearia, barbearia_id)
+    if not b:
+        raise APIError('Estabelecimento não encontrado.', 404)
+    dados = request.get_json(silent=True) or {}
+    seg_id = dados.get('segmento_id')
+    if seg_id is None:
+        b.segmento_id = None
+    else:
+        seg = db.session.get(Segmento, int(seg_id))
+        if not seg:
+            raise APIError('Segmento não encontrado.', 404)
+        b.segmento_id = seg.id
+    db.session.commit()
+    return jsonify({'mensagem': 'Segmento atualizado.', 'segmento_id': b.segmento_id}), 200

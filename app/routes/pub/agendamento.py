@@ -4,6 +4,9 @@ Rotas públicas de agendamento (sem autenticação obrigatória).
 - slots disponíveis por recurso (A1: barbeiro como recurso agendável)
 - lista de barbeiros e serviços para exibição pública
 """
+import os
+import cloudinary
+import cloudinary.uploader
 from datetime import datetime, date
 from flask import Blueprint, request, jsonify
 from app.utils.tz import hoje_brasilia
@@ -20,6 +23,7 @@ from app.utils import normalizar_telefone, gerar_slots, verificar_conflito, gera
 from app.utils.agenda import fim_agendamento
 from app.utils.notificacoes import notificar_cliente
 from app.utils.features import feature_ativa
+from app.utils.cupons import validar_cupom, incrementar_uso_cupom
 from app.labels import L
 
 pub_bp = Blueprint('pub', __name__, url_prefix='/api/v1/pub')
@@ -51,15 +55,22 @@ def _get_config(barbearia_id: int) -> ConfiguracaoAgendamento:
 
 def _fmt_agendamento(ag, servicos_info):
     fim = fim_agendamento(ag.data_hora, ag.duracao_minutos)
+    br = db.session.get(Barbeiro, ag.barbeiro_id) if ag.barbeiro_id else None
+    br_usr = db.session.get(Usuario, br.usuario_id) if br else None
     return {
         'id':               ag.id,
         'status':           ag.status,
         'valor_total':      float(ag.valor_total),
+        'valor_desconto':   float(ag.valor_desconto or 0),
+        'subtotal':         float(ag.valor_total) + float(ag.valor_desconto or 0),
+        'cupom_id':         ag.cupom_id,
         'duracao_total':    ag.duracao_minutos,
         'inicio':           ag.data_hora.isoformat(),
         'fim':              fim.isoformat(),
         'metodo_pagamento': ag.metodo_pagamento,
         'observacao':       ag.observacao,
+        'barbeiro_id':      ag.barbeiro_id,
+        'barbeiro_nome':    br_usr.nome if br_usr else None,
         'servicos':         servicos_info,
     }
 
@@ -133,6 +144,7 @@ def _criar_agendamento_core(
     itens: list,       # list of {servico_id, is_plano_solicitado}
     metodo: str,
     observacao: str | None,
+    cupom_codigo: str | None = None,
 ):
     """
     Núcleo atômico de criação de agendamento.
@@ -195,10 +207,18 @@ def _criar_agendamento_core(
             'cliente_plano_id': cliente_plano_id,
         })
 
-    valor_total = sum(i['preco'] for i in itens_finais)
+    subtotal = sum(i['preco'] for i in itens_finais)
+
+    # Cupom de desconto (opcional)
+    cupom = None
+    valor_desconto = 0.0
+    if cupom_codigo:
+        cupom, valor_desconto = validar_cupom(barbearia_id, cupom_codigo, subtotal)
+
+    valor_total = round(subtotal - valor_desconto, 2)
 
     # Status inicial
-    status = 'aguardando_pagamento' if valor_total > 0 and metodo == 'pix' else 'agendado'
+    status = 'aguardando_comprovante' if valor_total > 0 and metodo == 'pix' else 'agendado'
 
     ag = Agendamento(
         barbearia_id=barbearia_id,
@@ -208,11 +228,17 @@ def _criar_agendamento_core(
         duracao_minutos=duracao_total,
         status=status,
         valor_total=valor_total,
+        valor_desconto=valor_desconto,
+        cupom_id=cupom.id if cupom else None,
         metodo_pagamento=metodo,
         observacao=observacao,
     )
     db.session.add(ag)
     db.session.flush()
+
+    # Cupom só conta uso quando o agendamento nasce confirmado (sem PIX pendente)
+    if cupom and status == 'agendado':
+        incrementar_uso_cupom(cupom.id)
 
     servicos_info = []
     for item in itens_finais:
@@ -248,7 +274,7 @@ def _criar_agendamento_core(
 
     # Gera PIX se necessário
     pix_info = None
-    if status == 'aguardando_pagamento':
+    if status == 'aguardando_comprovante':
         pix_solicitacao = AgendamentoSolicitacaoPix(
             barbearia_id=barbearia_id,
             agendamento_id=ag.id,
@@ -270,7 +296,11 @@ def _criar_agendamento_core(
 
         pix_info = {'status': 'pendente', 'codigo_pix': codigo_pix}
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise APIError('Erro ao criar agendamento. Tente novamente.', 500)
 
     # Notificação de confirmação de agendamento (stub — sem envio real)
     if feature_ativa(barbearia_id, 'notificacoes'):
@@ -503,3 +533,82 @@ def quick_booking(slug):
         },
         'pix': pix_info,
     }), 201
+
+
+# ── POST /api/v1/pub/<slug>/agendamentos/<id>/comprovante ─────────────────────
+# Público — identificação por slug + agendamento_id apenas.
+# Aceita multipart com campo "arquivo" (JPEG/PNG, max 5 MB).
+
+_TIPOS_COMPROVANTE = {'image/jpeg', 'image/jpg', 'image/png'}
+_MAX_BYTES_COMP    = 5 * 1024 * 1024
+
+
+def _cfg_cloudinary_pub():
+    cloudinary.config(
+        cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
+        api_key=os.environ.get('CLOUDINARY_API_KEY'),
+        api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
+    )
+
+
+@pub_bp.post('/<slug>/agendamentos/<int:agendamento_id>/comprovante')
+def upload_comprovante(slug, agendamento_id):
+    barbearia = _get_barbearia_ou_404(slug)
+
+    ag = Agendamento.query.filter_by(
+        id=agendamento_id, barbearia_id=barbearia.id
+    ).first()
+    if not ag:
+        raise APIError('Agendamento não encontrado.', 404)
+
+    if ag.metodo_pagamento != 'pix':
+        raise APIError('Este agendamento não é via PIX.', 400)
+
+    if 'arquivo' not in request.files:
+        raise APIError('Campo "arquivo" é obrigatório.', 400)
+
+    arq = request.files['arquivo']
+    if not arq.filename:
+        raise APIError('Nenhum arquivo enviado.', 400)
+    if arq.mimetype not in _TIPOS_COMPROVANTE:
+        raise APIError('Tipo não permitido. Use JPEG ou PNG.', 400)
+    arq.seek(0, 2)
+    if arq.tell() > _MAX_BYTES_COMP:
+        raise APIError('Arquivo muito grande. Máximo 5 MB.', 400)
+    arq.seek(0)
+
+    from datetime import datetime as _dt
+    now  = _dt.utcnow()
+    ano  = now.strftime('%Y')
+    mes  = now.strftime('%m')
+    folder    = f'barbearia/{barbearia.id}/comprovantes/{ano}/{mes}'
+    public_id = f'ag_{agendamento_id}'
+
+    _cfg_cloudinary_pub()
+    try:
+        resultado = cloudinary.uploader.upload(
+            arq.stream,
+            folder=folder,
+            public_id=public_id,
+            overwrite=True,
+            unique_filename=False,
+            invalidate=True,
+            resource_type='image',
+        )
+    except Exception as exc:
+        raise APIError(f'Cloudinary: {exc}', 502)
+
+    url = resultado.get('secure_url')
+    if not url:
+        raise APIError('Cloudinary não retornou URL.', 502)
+
+    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=agendamento_id).first()
+    if pix:
+        pix.comprovante_url = url
+
+    if ag.status == 'aguardando_comprovante':
+        ag.status = 'aguardando_aprovacao'
+
+    db.session.commit()
+
+    return jsonify({'mensagem': 'Comprovante enviado com sucesso.', 'url': url, 'status': ag.status}), 200

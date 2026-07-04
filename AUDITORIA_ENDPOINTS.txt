@@ -1,0 +1,486 @@
+═══════════════════════════════════════════════════════════════════════════════
+AUDITORIA DE ENDPOINTS — BarberOS
+Fonte: app/routes/**/*.py — análise de consistência, HTTP, paginação, segurança
+Gerado em: 2026-07-02
+═══════════════════════════════════════════════════════════════════════════════
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 3.1 — Formato de Resposta dos POSTs (Inconsistência)                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+RESULTADO: INCONSISTENTE — 3 padrões diferentes misturados
+
+PADRÃO A — Retorna objeto completo via _fmt_*() (correto para criação):
+  POST /api/v1/gestor/planos            → _fmt_plano(p, com_servicos=True)
+  POST /api/v1/gestor/cupons            → _fmt_cupom(c)
+  POST /api/v1/gestor/servicos          → _fmt_servico(s)
+  POST /api/v1/gestor/produtos          → _fmt_produto(p)
+  POST /api/v1/gestor/barbeiros         → _fmt_barbeiro(barbeiro)
+
+PADRÃO B — Retorna objeto parcial com mensagem (inconsistente):
+  POST /api/v1/gestor/planos/<id>/servicos  → {mensagem, servico_id, nome, limite_uso_mensal, ilimitado}
+  POST /api/v1/gestor/barbeiros/<id>/servicos → {mensagem, barbeiro_id, servico_id, servico_nome}
+  POST /api/v1/gestor/barbeiros/<id>/bloqueios → {mensagem: 'Horário bloqueado.'}  ← SEM dados!
+  POST /api/v1/super/barbearias         → {mensagem, barbearia: {...}, gestor: {...}}
+  POST /pub/<slug>/planos/<id>/solicitar → {mensagem, solicitacao_id, plano, valor, status, pix_copia_cola?}
+
+PADRÃO C — Retorna apenas ID + mensagem (minimalista):
+  POST /api/v1/gestor/agenda/agendamento-manual → {mensagem: 'Agendamento criado.', id: ag.id}
+  POST /api/v1/gestor/agenda/bloqueios           → {mensagem: 'X bloqueio(s) criado(s).', total: criados}
+
+IMPACTO:
+  → Frontend precisa tratar respostas de formas diferentes para cada recurso
+  → Impossível criar um SDK/cliente genérico de API
+  → Após criar um plano, client recebe objeto completo para atualizar a UI
+    Após criar um bloqueio, recebe apenas {mensagem} — precisa fazer novo GET
+
+SOLUÇÃO RECOMENDADA (padrão único):
+  Todo POST de criação deve retornar o recurso criado + status 201:
+  → {id, campo1, campo2, ...}  ← o que _fmt_*() já faz corretamente
+  Aplicar _fmt_*() em TODOS os POSTs, inclusive os do Padrão B e C.
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 3.2 — Status HTTP Incorretos                                        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+POSITIVO: Todos os POSTs de criação já retornam 201 ✓
+POSITIVO: Todos os GETs de leitura retornam 200 ✓
+POSITIVO: Todos os PATCHs de atualização retornam 200 ✓
+
+PROBLEMAS ENCONTRADOS (menores, mas inconsistentes):
+
+  [1] BAIXO — Upload de imagem retorna 200 em vez de 201
+      Endpoint: POST /api/v1/super/barbearias/<id>/customizacao/imagens
+      Status atual: 200
+      Status esperado: 201 (cria recurso de imagem)
+      Localização: super/barbearias.py:421
+      Impacto: Inconsistente com outros POSTs de criação
+
+  [2] BAIXO — Upload de comprovante PIX retorna 200 em vez de 202
+      Endpoint: POST /api/v1/pub/<slug>/agendamentos/<id>/comprovante
+      Status atual: 200
+      Status esperado: 201 ou 202 (Accepted — processamento assíncrono implícito)
+      Localização: pub/agendamento.py:614
+
+  [3] INFORMAÇÃO — DELETEs retornam 200 com mensagem em vez de 204 No Content
+      Afeta TODOS os endpoints de deleção/desativação:
+      ├─ DELETE /api/v1/gestor/planos/<id>              (planos.py:162)
+      ├─ DELETE /api/v1/gestor/planos/<id>/servicos/<sid> (planos.py:237)
+      ├─ DELETE /api/v1/gestor/cupons/<id>              (cupons.py:179)
+      ├─ DELETE /api/v1/gestor/servicos/<id>            (catalogo.py:146)
+      ├─ DELETE /api/v1/gestor/produtos/<id>            (catalogo.py:249)
+      ├─ DELETE /api/v1/gestor/barbeiros/<id>/servicos/<sid> (profissionais.py:267)
+      ├─ DELETE /api/v1/gestor/barbeiros/<id>/agenda/pausas/<id> (profissionais.py:402)
+      ├─ DELETE /api/v1/gestor/agenda/bloqueios/<id>    (agendamento.py:516)
+      └─ DELETE /api/v1/super/barbearias/<id>/customizacao/imagens (barbearias.py:450)
+      Nota: 200 com mensagem é aceitável e muito comum em APIs REST modernas.
+            204 seria mais semântico mas o padrão atual é consistente internamente.
+            Recomendação: manter 200 pois o frontend pode exibir a mensagem.
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 3.3 — Endpoints sem Docstrings                                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+RESULTADO: 0 docstrings nos endpoints de gestor/ e 2/11 em pub/ (apenas helpers)
+
+gestor/planos.py — 0 de 11 endpoints com docstring:
+  listar_planos(), criar_plano(), detalhar_plano(), editar_plano(),
+  desativar_plano(), adicionar_servico_plano(), remover_servico_plano(),
+  listar_assinaturas(), listar_solicitacoes(), aprovar_solicitacao(),
+  rejeitar_solicitacao()
+
+gestor/cupons.py — 0 de 4 endpoints com docstring:
+  listar_cupons(), criar_cupom(), editar_cupom(), excluir_cupom()
+
+pub/agendamento.py — 2 de 11 com docstring (ambos são helpers internos, não endpoints):
+  ✓ _resolver_plano() — docstring detalhada sobre lógica de plano
+  ✓ _criar_agendamento_core() — docstring de 4 linhas
+  ✗ quick_booking(), slots_disponiveis(), upload_comprovante(), etc. — sem docstring
+
+EXEMPLO COM DOCSTRING (padrão a seguir):
+  def _resolver_plano(cliente_id, barbearia_id, servico_id, barbeiro_id, ...):
+      """
+      Verifica se o cliente tem ClientePlano ativo que cobre este serviço,
+      respeitando compatibilidade de barbeiro e limite de uso mensal.
+
+      Plano aberto  (Plano.barbeiro_id = NULL) → vale para qualquer barbeiro.
+      Plano vinculado (Plano.barbeiro_id != NULL) → vale somente para esse barbeiro.
+
+      Retorna (cliente_plano_id, True) se coberto e dentro do limite.
+      Retorna (None, False) caso contrário → serviço cobrado como avulso.
+      """
+
+EXEMPLO SEM DOCSTRING (problema a corrigir):
+  @planos_bp.post('/planos')
+  @gestor_required
+  def criar_plano():
+      dados = request.get_json(silent=True)  # ← nenhuma explicação de payload, retorno ou erros
+      ...
+
+RISCO: Baixo (não afeta funcionamento). Alto para manutenibilidade a longo prazo.
+
+RECOMENDAÇÃO:
+  Adicionar ao menos uma linha de docstring em cada endpoint público indicando:
+  - Método + URL
+  - O que faz (1 frase)
+  - Campos obrigatórios do payload (POSTs)
+  - O que retorna
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 3.4 — Endpoints sem Paginação (CRÍTICO)                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 19 endpoints retornam listas sem paginação
+COM PAGINAÇÃO: 1 endpoint (GET /api/v1/super/auditoria usa .paginate() ✓)
+
+CRÍTICOS — tabelas que crescem sem limite:
+
+  [1] CRÍTICO — GET /api/v1/gestor/clientes
+      Problema: Linha 80 carrega TODOS os clientes com .all() em Python,
+                depois filtra em memória. Com 10k clientes:
+                → 10k objetos SQLAlchemy em RAM
+                → Cada cliente com join de stats (total_visitas, total_gasto, etc.)
+                → Timeout de request e OOM
+      Arquivo: gestor/clientes.py:80
+      Causa extra: N+1 queries para calcular stats por cliente (ver Padrão 3 da outra auditoria)
+
+  [2] CRÍTICO — GET /api/v1/gestor/agendamentos
+      Problema: .all() sem limit. Com 100k agendamentos históricos, retorna TUDO.
+                Página de agenda fica inutilizável.
+      Arquivo: gestor/agendamento.py:93
+      Mitigação existente: filtro por ?data= reduz o escopo — mas SEM filtro retorna tudo
+
+  [3] ALTO — GET /api/v1/gestor/planos
+      Retorna todos os planos sem limite. Baixo risco atual (poucos planos por barbearia),
+      mas sem proteção para crescimento futuro.
+      Arquivo: gestor/planos.py:63
+
+  [4] ALTO — GET /api/v1/gestor/planos/solicitacoes
+      Retorna TODAS as solicitações históricas de plano sem paginação.
+      Cresce indefinidamente ao longo dos anos.
+      Arquivo: gestor/planos.py:267
+
+  [5] ALTO — GET /api/v1/gestor/cupons
+      Todos os cupons sem limite.
+      Arquivo: gestor/cupons.py:41
+
+  [6] MÉDIO — GET /api/v1/super/barbearias e /super/gestores
+      Retornam TODOS os tenants do sistema sem paginação.
+      Com 1000+ barbearias, problema real.
+      Arquivo: super/barbearias.py
+
+  [7] MÉDIO — GET /api/v1/cliente/agendamentos
+      Retorna TODO o histórico do cliente sem paginação.
+      Um cliente com 500 agendamentos recebe tudo de uma vez.
+      Arquivo: cliente/agendamento.py
+
+LISTA COMPLETA DOS 19 SEM PAGINAÇÃO:
+  GET /api/v1/gestor/planos              ← tabela cresce
+  GET /api/v1/gestor/cupons              ← tabela cresce
+  GET /api/v1/gestor/servicos            ← pequeno, baixo risco
+  GET /api/v1/gestor/produtos            ← pequeno, baixo risco
+  GET /api/v1/gestor/clientes            ← ★★★ CRÍTICO (carrega em memória)
+  GET /api/v1/gestor/agendamentos        ← ★★★ CRÍTICO (100k+ registros)
+  GET /api/v1/gestor/barbeiros           ← pequeno, baixo risco
+  GET /api/v1/gestor/planos/<id>/assinaturas  ← cresce
+  GET /api/v1/gestor/planos/solicitacoes ← cresce historicamente
+  GET /api/v1/gestor/agenda/solicitacoes-liberacao ← cresce
+  GET /api/v1/cliente/agendamentos       ← cresce por cliente
+  GET /api/v1/cliente/planos             ← pequeno por cliente
+  GET /api/v1/cliente/planos/solicitacoes ← pequeno por cliente
+  GET /pub/<slug>/servicos               ← pequeno, sem autenticação
+  GET /pub/<slug>/barbeiros              ← pequeno, sem autenticação
+  GET /pub/<slug>/barbeiros/<id>/servicos ← pequeno
+  GET /api/v1/super/barbearias           ← cresce com novos tenants
+  GET /api/v1/super/gestores             ← cresce com novos tenants
+  GET /api/v1/super/features             ← pequeno (catálogo fixo)
+
+SOLUÇÃO PARA OS CRÍTICOS:
+
+  Para gestor/clientes.py — paginação + filtro no banco (não em Python):
+
+    page     = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 50, type=int), 100)
+
+    q = Cliente.query_tenant().filter_by(ativo=True)
+    if busca:
+        q = q.filter(Cliente.nome.ilike(f'%{busca}%'))
+
+    paginado = q.paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        'dados': [_fmt_cliente(c) for c in paginado.items],
+        'total': paginado.total,
+        'page': page,
+        'pages': paginado.pages,
+    })
+
+  Para gestor/agendamentos.py — exigir filtro de data:
+
+    if not data_str:
+        data_str = hoje_brasilia().isoformat()  # default: hoje
+
+    # Já existe filtro por data — garantir que seja obrigatório ou tenha default
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 3.5 — Filtros Inseguros e IDOR                                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL: 2 IDORs confirmados + 4 filtros sem validação
+
+IDORs CONFIRMADOS (acesso a dados de outro tenant via query param):
+
+  [1] IDOR ALTO — GET /api/v1/gestor/clientes?barbeiro_id=<qualquer_id>
+      Localização: gestor/clientes.py:77-95
+      Cenário:
+        - Gestor da Barbearia A faz: GET /api/v1/gestor/clientes?barbeiro_id=99
+        - barbeiro_id=99 pertence à Barbearia B
+        - O sistema filtra clientes por barbeiro_id=99 SEM verificar se o barbeiro
+          pertence à barbearia do gestor logado
+        - Resultado: gestor vê clientes de outra barbearia
+      Prova: clientes.py:77-95 — `barbeiro_id_filter = request.args.get('barbeiro_id')`
+             sem validação `Barbeiro.query.filter_by(id=..., barbearia_id=g.barbearia_id)`
+      Solução:
+        if barbeiro_id_filter:
+            b = Barbeiro.query.filter_by(id=barbeiro_id_filter,
+                                         barbearia_id=g.barbearia_id).first()
+            if not b:
+                raise APIError('Barbeiro não encontrado.', 404)
+            q = q.filter_by(barbeiro_id=b.id)
+
+  [2] IDOR ALTO — GET /api/v1/gestor/agendamentos?barbeiro_id=<qualquer_id>
+      Localização: gestor/agendamento.py:85-87
+      Mesmo problema: barbeiro_id passado sem validar se pertence à barbearia
+      Cenário: Gestor vê agenda de barbeiro de outra barbearia
+      Solução: Mesmo padrão — validar Barbeiro.barbearia_id == g.barbearia_id
+
+FILTROS SEM WHITELIST (status recebe qualquer string):
+
+  [3] PROBLEMA MÉDIO — GET /api/v1/gestor/clientes?status=<qualquer_valor>
+      Localização: gestor/clientes.py:102-113
+      Problema: status não é validado contra lista de valores permitidos
+      Valores válidos: 'ativo', 'novos', 'em_risco', 'vip', 'inativos'
+      Status inválido: simplesmente ignora o filtro (falha silenciosa)
+      Solução:
+        STATUS_VALIDOS = {'ativo', 'novos', 'em_risco', 'vip', 'inativos'}
+        if status and status not in STATUS_VALIDOS:
+            raise APIError(f'Status inválido. Valores aceitos: {STATUS_VALIDOS}', 422)
+
+  [4] PROBLEMA MÉDIO — GET /api/v1/gestor/agendamentos?status=<qualquer_valor>
+      Localização: gestor/agendamento.py:89-91
+      Problema: status passado diretamente para .filter_by(status=status_param)
+      Risco: Typo silencioso — `status=agendadoo` retorna lista vazia sem aviso
+      Solução: Whitelist de status válidos (ver PADRÃO 1 da auditoria de código)
+
+  [5] PROBLEMA MÉDIO — GET /api/v1/gestor/planos/solicitacoes?status=<valor>
+      Localização: gestor/planos.py:267-269
+      Default: 'pendente', mas sem validação ao receber 'aprovado', 'rejeitado', etc.
+      Risco: Baixo (apenas filtra diferente do esperado), mas poderia retornar
+             dados inconsistentes se status for inválido
+
+  [6] INFORMAÇÃO — GET /api/v1/gestor/clientes?status=X com filtro em Python
+      O filtro de status por 'vip', 'em_risco', etc. é feito em Python DEPOIS de
+      carregar todos os clientes com .all(). Isso é:
+      a) Ineficiente (ver TAREFA 3.4 — paginação)
+      b) Não usa índice do banco para filtrar
+      Solução: Migrar lógica de classificação para SQL (subqueries ou expressions)
+
+FILTROS OK ✓:
+  ?ativo=true/false — whitelist implementada em todos os endpoints que usam ✓
+  ?data=YYYY-MM-DD — parse + tratamento de ValueError ✓
+  ?servico_ids=1,2,3 — try/except para validação de int ✓
+  Filtros de barbeiro_id em endpoints de cliente — não encontrados (OK) ✓
+  Filtros de barbearia_id em endpoints públicos — não encontrados ✓
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 3.6 — Rate Limiting                                                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+RESULTADO: NENHUM rate limiting configurado em qualquer parte do sistema
+
+Verificado em app/__init__.py:
+  ✗ flask_limiter não importado
+  ✗ @limiter.limit(...) não encontrado em nenhum endpoint
+  ✗ RATELIMIT_* configs ausentes
+  ✗ Nenhum middleware de throttling
+
+ENDPOINTS EM MAIOR RISCO:
+
+  [1] CRÍTICO — POST /b/<slug>/entrar (login de cliente)
+      Sem rate limiting → brute force de senhas
+      Cenário: Atacante testa 10.000 senhas/segundo na conta de um cliente
+      Custo: Zero para o atacante, sessão bloqueada para o usuário
+
+  [2] CRÍTICO — POST /entrar (login de gestor/barbeiro)
+      Mesmo problema — credenciais de gestor têm acesso a dados financeiros
+
+  [3] ALTO — GET /pub/<slug>/barbeiros/<id>/slots (cálculo de slots)
+      Endpoint computacionalmente intensivo (calcula horários disponíveis)
+      Sem limite → possível DoS via requisições paralelas
+
+  [4] ALTO — POST /api/v1/pub/<slug>/agendar (quick booking)
+      Cria agendamentos sem login. Sem rate limiting → spam de agendamentos falsos
+
+  [5] ALTO — POST /pub/<slug>/planos/<id>/solicitar
+      Cria solicitações de plano. Sem limite → spam de solicitações
+
+  [6] MÉDIO — POST /api/v1/cliente/cupons/validar
+      Validação de cupom por código. Sem limite → brute force de códigos de cupom
+      (ex: testar todos os códigos de 6 letras até achar um válido)
+
+  [7] MÉDIO — GET /pub/<slug>/servicos, /pub/<slug>/barbeiros
+      Endpoints públicos sem autenticação. Sem limite → scraping/DDoS
+
+SOLUÇÃO RECOMENDADA (flask-limiter):
+  pip install flask-limiter
+
+  Em app/__init__.py:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=["200 per minute"],
+        storage_uri="memory://"  # Redis em produção
+    )
+
+  Em auth.py (login):
+    @auth_bp.post('/entrar')
+    @limiter.limit("5 per minute")  ← máximo 5 tentativas por minuto por IP
+    def login():
+        ...
+
+  Em pub/agendamento.py:
+    @pub_bp.post('/<slug>/agendar')
+    @limiter.limit("10 per minute")
+    def quick_booking(slug):
+        ...
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  TAREFA 3.7 — Versionamento de API (Prefixo Inconsistente)                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+RESULTADO: INCONSISTÊNCIA — pub/planos.py não usa prefixo /api/v1/
+
+COMPARAÇÃO:
+
+  pub/agendamento.py (CORRETO):
+    pub_bp = Blueprint('pub', __name__, url_prefix='/api/v1/pub')
+    @pub_bp.get('/<slug>/servicos')        → URL: /api/v1/pub/<slug>/servicos
+    @pub_bp.post('/<slug>/agendar')        → URL: /api/v1/pub/<slug>/agendar
+
+  pub/planos.py (INCONSISTENTE):
+    pub_planos_bp = Blueprint('pub_planos', __name__)  ← sem url_prefix!
+    @pub_planos_bp.get('/pub/<slug>/planos')           → URL: /pub/<slug>/planos
+    @pub_planos_bp.post('/pub/<slug>/planos/<id>/solicitar') → URL: /pub/<slug>/planos/<id>/solicitar
+
+URLs REAIS resultantes:
+  ✓ GET  /api/v1/pub/<slug>/servicos        (via pub_bp com url_prefix)
+  ✓ GET  /api/v1/pub/<slug>/barbeiros
+  ✓ POST /api/v1/pub/<slug>/agendar
+  ✗ GET  /pub/<slug>/planos                 (sem /api/v1 — inconsistente)
+  ✗ POST /pub/<slug>/planos/<id>/solicitar  (sem /api/v1 — inconsistente)
+
+IMPACTO:
+  → frontend/src/api.js já usa os endpoints sem /api/v1/:
+    api.planos.listar()    → GET /pub/${SLUG}/planos        (funciona, mas sem versionamento)
+    api.planos.solicitar() → POST /pub/${SLUG}/planos/${id}/solicitar
+  → O frontend foi escrito assumindo essa inconsistência — mudá-la quebra o React SPA
+  → Se/quando for versionado para v2, dois padrões diferentes precisarão ser mantidos
+
+CAUSA:
+  pub/planos.py define prefixo manualmente em cada rota (`'/pub/<slug>/...'`)
+  em vez de usar url_prefix no Blueprint.
+
+SOLUÇÃO (breaking change — precisa atualizar frontend junto):
+  Em pub/planos.py:
+    pub_planos_bp = Blueprint('pub_planos', __name__, url_prefix='/api/v1/pub')
+
+    @pub_planos_bp.get('/<string:slug>/planos')           ← remove /pub/ manual
+    @pub_planos_bp.post('/<string:slug>/planos/<int:plano_id>/solicitar')
+
+  Em frontend/src/api.js:
+    api.planos.listar()    → GET /api/v1/pub/${SLUG}/planos
+    api.planos.solicitar() → POST /api/v1/pub/${SLUG}/planos/${id}/solicitar
+
+ALTERNATIVA (sem breaking change):
+  Manter as URLs atuais e registrar aliases com /api/v1/:
+    pub_planos_bp = Blueprint('pub_planos', __name__)
+    @pub_planos_bp.get('/api/v1/pub/<slug>/planos')      ← novo, com versão
+    @pub_planos_bp.get('/pub/<slug>/planos')              ← manter compat
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  RESUMO EXECUTIVO — TABELA DE PRIORIDADES                                   ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────┬───────┬─────────┬──────┬───────┬───────┐
+│ Tarefa                                  │ Total │ CRÍTICO │ ALTO │ MÉDIO │ BAIXO │
+├─────────────────────────────────────────┼───────┼─────────┼──────┼───────┼───────┤
+│ 3.1 Formato resposta POST               │   15  │    —    │  —   │  3    │   —   │
+│ 3.2 Status HTTP incorretos              │    3  │    —    │  —   │  —    │   3   │
+│ 3.3 Docstrings ausentes                 │  25+  │    —    │  —   │  —    │  25+  │
+│ 3.4 Sem paginação                       │  19   │   2     │  4   │  5    │   8   │
+│ 3.5 Filtros inseguros + IDOR            │   6   │    —    │  2   │  3    │   1   │
+│ 3.6 Rate limiting ausente               │   7   │   2     │  4   │  1    │   —   │
+│ 3.7 Prefixo de API inconsistente        │   2   │    —    │  —   │  1    │   1   │
+├─────────────────────────────────────────┼───────┼─────────┼──────┼───────┼───────┤
+│ TOTAL                                   │  77   │   4     │  10  │  13   │  37   │
+└─────────────────────────────────────────┴───────┴─────────┴──────┴───────┴───────┘
+
+
+PLANO DE AÇÃO:
+
+🔴 SPRINT 1 — Antes de ir a produção
+──────────────────────────────────────
+  1. Implementar rate limiting no login (5 req/min por IP)
+     → flask-limiter em POST /entrar e POST /b/<slug>/entrar
+
+  2. Corrigir IDOR em ?barbeiro_id sem validação de tenant
+     → gestor/clientes.py: validar Barbeiro.barbearia_id == g.barbearia_id
+     → gestor/agendamento.py: mesma validação
+
+  3. Adicionar paginação em gestor/clientes
+     → remover .all() + filtro Python
+     → migrar para .paginate() + filtros SQL
+
+  4. Adicionar paginação em gestor/agendamentos
+     → garantir default de data = hoje quando não especificada
+     → adicionar page/per_page
+
+🟠 SPRINT 2 — Alta prioridade
+────────────────────────────────
+  5. Rate limiting nos endpoints públicos mais sensíveis
+     → POST /pub/<slug>/agendar: 10 req/min
+     → POST /pub/<slug>/planos/<id>/solicitar: 5 req/min
+     → POST /api/v1/cliente/cupons/validar: 20 req/min
+
+  6. Whitelist de status válidos nos filtros
+     → GET /api/v1/gestor/agendamentos?status=
+     → GET /api/v1/gestor/clientes?status=
+     → GET /api/v1/gestor/planos/solicitacoes?status=
+
+  7. Padronizar formato de resposta dos POSTs (Padrão A para todos)
+     → POST de bloqueios: retornar _fmt_bloqueio(b) em vez de {mensagem}
+     → POST /gestor/planos/<id>/servicos: retornar _fmt_plano_servico(ps)
+
+🟡 SPRINT 3 — Qualidade
+─────────────────────────
+  8. Corrigir prefixo de pub/planos.py para /api/v1/pub
+     → Atualizar frontend/src/api.js junto
+
+  9. Paginação nos demais endpoints que crescem
+     → /gestor/planos/solicitacoes, /super/barbearias, /cliente/agendamentos
+
+ 10. Adicionar docstrings mínimas nos endpoints públicos
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM DA AUDITORIA DE ENDPOINTS — BarberOS v1.0  |  2026-07-02
+═══════════════════════════════════════════════════════════════════════════════

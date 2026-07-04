@@ -1,0 +1,164 @@
+{% extends "super/base.html" %}
+{% block title %}Rótulos{% endblock %}
+{% block page_title %}Editar Rótulos{% endblock %}
+
+{% block styles %}
+<style>
+  .rot-form { max-width: 680px; }
+  .rot-group { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+  .rot-group-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--cor-primaria); margin-bottom: 14px; }
+  .rot-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .rot-pair:last-child { margin-bottom: 0; }
+  .rot-field label { font-size: 11px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: .3px; display: block; margin-bottom: 5px; }
+  .rot-field input { width: 100%; padding: 9px 12px; background: #181818; border: 1.5px solid #2a2a2a; border-radius: 8px; color: #ddd; font-size: 14px; font-family: inherit; box-sizing: border-box; outline: none; transition: border-color .2s; }
+  .rot-field input:focus { border-color: var(--cor-primaria); }
+  .rot-field input::placeholder { color: #333; }
+  .rot-single { margin-bottom: 12px; }
+  .rot-single:last-child { margin-bottom: 0; }
+  .rot-actions { display: flex; gap: 10px; align-items: center; margin-top: 20px; }
+  .rot-back { font-size: 13px; color: #555; text-decoration: none; padding: 9px 16px; border: 1px solid #2a2a2a; border-radius: 8px; }
+  .rot-back:hover { color: #ccc; border-color: #444; }
+  .rot-info { font-size: 12px; color: #555; margin-top: 8px; }
+  @media (max-width: 560px) { .rot-pair { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:16px">
+  <a href="/super/segmentos" style="font-size:13px;color:#555;text-decoration:none">← Voltar a Segmentos</a>
+</div>
+
+<div id="loadingMsg" style="color:#444;padding:20px">Carregando…</div>
+<div id="formWrap" style="display:none" class="rot-form">
+  <div style="font-size:22px;font-weight:700;color:#eee;margin-bottom:4px" id="segNome"></div>
+  <div style="font-size:13px;color:#555;margin-bottom:20px">Chave: <code id="segChave" style="color:#888"></code></div>
+
+  <!-- Estabelecimento -->
+  <div class="rot-group">
+    <div class="rot-group-title">Estabelecimento (tenant)</div>
+    <div class="rot-pair">
+      <div class="rot-field"><label>Singular</label><input id="rotulo_tenant" placeholder="ex: Barbearia"></div>
+      <div class="rot-field"><label>Plural</label><input id="rotulo_tenant_plural" placeholder="ex: Barbearias"></div>
+    </div>
+  </div>
+
+  <!-- Profissional -->
+  <div class="rot-group">
+    <div class="rot-group-title">Profissional</div>
+    <div class="rot-pair">
+      <div class="rot-field"><label>Singular</label><input id="rotulo_profissional" placeholder="ex: Barbeiro"></div>
+      <div class="rot-field"><label>Plural</label><input id="rotulo_profissional_plural" placeholder="ex: Barbeiros"></div>
+    </div>
+  </div>
+
+  <!-- Serviço -->
+  <div class="rot-group">
+    <div class="rot-group-title">Serviço</div>
+    <div class="rot-pair">
+      <div class="rot-field"><label>Singular</label><input id="rotulo_servico" placeholder="ex: Serviço"></div>
+      <div class="rot-field"><label>Plural</label><input id="rotulo_servico_plural" placeholder="ex: Serviços"></div>
+    </div>
+  </div>
+
+  <!-- Agendamento -->
+  <div class="rot-group">
+    <div class="rot-group-title">Agendamento</div>
+    <div class="rot-pair">
+      <div class="rot-field"><label>Singular</label><input id="rotulo_agendamento" placeholder="ex: Agendamento"></div>
+      <div class="rot-field"><label>Plural</label><input id="rotulo_agendamento_plural" placeholder="ex: Agendamentos"></div>
+    </div>
+  </div>
+
+  <!-- Cliente -->
+  <div class="rot-group">
+    <div class="rot-group-title">Cliente</div>
+    <div class="rot-pair">
+      <div class="rot-field"><label>Singular</label><input id="rotulo_cliente" placeholder="ex: Cliente"></div>
+      <div class="rot-field"><label>Plural</label><input id="rotulo_cliente_plural" placeholder="ex: Clientes"></div>
+    </div>
+  </div>
+
+  <!-- Produto -->
+  <div class="rot-group">
+    <div class="rot-group-title">Produto</div>
+    <div class="rot-pair">
+      <div class="rot-field"><label>Singular</label><input id="rotulo_produto" placeholder="ex: Produto"></div>
+      <div class="rot-field"><label>Plural</label><input id="rotulo_produto_plural" placeholder="ex: Produtos"></div>
+    </div>
+  </div>
+
+  <!-- Plano -->
+  <div class="rot-group">
+    <div class="rot-group-title">Plano / Pacote</div>
+    <div class="rot-pair">
+      <div class="rot-field"><label>Singular</label><input id="rotulo_plano" placeholder="ex: Plano"></div>
+      <div class="rot-field"><label>Plural</label><input id="rotulo_plano_plural" placeholder="ex: Planos"></div>
+    </div>
+  </div>
+
+  <!-- Genéricos -->
+  <div class="rot-group">
+    <div class="rot-group-title">Termos Genéricos</div>
+    <div class="rot-pair">
+      <div class="rot-field"><label>Pagamento</label><input id="rotulo_pagamento" placeholder="ex: Pagamento"></div>
+      <div class="rot-field"><label>Faturamento / Receita</label><input id="rotulo_faturamento" placeholder="ex: Faturamento"></div>
+    </div>
+    <div class="rot-single">
+      <div class="rot-field"><label>Relatório</label><input id="rotulo_relatorio" placeholder="ex: Relatório"></div>
+    </div>
+  </div>
+
+  <div class="rot-actions">
+    <a href="/super/segmentos" class="rot-back">Cancelar</a>
+    <button class="btn btn-primary" style="width:auto;padding:10px 24px" id="btnSalvar" onclick="salvar()">Salvar rótulos</button>
+  </div>
+  <div class="rot-info">Campos vazios mantêm o valor padrão do sistema. Máximo 50 caracteres por campo.</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SEG_ID = {{ seg_id }};
+const _COLS = [
+  'rotulo_tenant','rotulo_tenant_plural',
+  'rotulo_profissional','rotulo_profissional_plural',
+  'rotulo_servico','rotulo_servico_plural',
+  'rotulo_agendamento','rotulo_agendamento_plural',
+  'rotulo_cliente','rotulo_cliente_plural',
+  'rotulo_produto','rotulo_produto_plural',
+  'rotulo_plano','rotulo_plano_plural',
+  'rotulo_pagamento','rotulo_faturamento','rotulo_relatorio',
+];
+
+(async function carregar() {
+  try {
+    const d = await Bos.get('/super/segmentos/' + SEG_ID + '/rotulos');
+    document.getElementById('loadingMsg').style.display = 'none';
+    document.getElementById('formWrap').style.display = '';
+    document.getElementById('segNome').textContent  = d.segmento.nome;
+    document.getElementById('segChave').textContent = d.segmento.chave;
+    _COLS.forEach(col => {
+      const el = document.getElementById(col);
+      if (el) el.value = d.rotulos[col] || '';
+    });
+  } catch(e) {
+    document.getElementById('loadingMsg').textContent = 'Erro: ' + e.message;
+  }
+})();
+
+async function salvar() {
+  const btn = document.getElementById('btnSalvar');
+  btn.disabled = true; btn.textContent = 'Salvando…';
+  const payload = {};
+  _COLS.forEach(col => {
+    const el = document.getElementById(col);
+    if (el) payload[col] = el.value.trim();
+  });
+  try {
+    await Bos.put('/super/segmentos/' + SEG_ID + '/rotulos', payload);
+    toast('Rótulos salvos com sucesso!', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = 'Salvar rótulos'; }
+}
+</script>
+{% endblock %}

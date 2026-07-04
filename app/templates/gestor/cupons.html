@@ -1,0 +1,166 @@
+{% extends "gestor/base.html" %}
+{% block title %}Cupons{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Cupons</span>
+{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <span class="section-title">Cupons</span>
+  <button class="btn btn-primary" style="width:auto;padding:9px 18px;font-size:14px" onclick="novoModal()">+ Cupom</button>
+</div>
+
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr><th>Nome</th><th>Código</th><th>Tipo</th><th>Valor</th><th>Validade</th><th>Usos</th><th>Status</th><th>Ações</th></tr>
+    </thead>
+    <tbody id="tbody">
+      <tr><td colspan="8" style="text-align:center;color:#555;padding:32px">Carregando…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)fecharModal('modal')">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="modalTitulo">Novo Cupom</h3>
+      <button class="modal-close" onclick="fecharModal('modal')">×</button>
+    </div>
+    <form id="form" onsubmit="salvar(event)">
+      <div class="field"><label>Nome *</label><input type="text" id="fNome" required placeholder="Ex: Páscoa 20%"></div>
+      <div class="field"><label>Código *</label><input type="text" id="fCodigo" required placeholder="Ex: PASCOA20" style="text-transform:uppercase"></div>
+      <div class="field"><label>Tipo *</label>
+        <select id="fTipo" required>
+          <option value="percentual">Percentual (%)</option>
+          <option value="valor_fixo">Valor Fixo (R$)</option>
+        </select>
+      </div>
+      <div class="field"><label>Valor *</label><input type="number" id="fValor" min="0.01" step="0.01" required></div>
+      <div class="field"><label>Data de Expiração *</label><input type="date" id="fData" required></div>
+      <div class="field"><label>Quantidade Máxima de Utilizações</label><input type="number" id="fMax" min="1" step="1" placeholder="Deixe vazio para ilimitado"></div>
+      <div class="field" id="wrAtivo" style="display:none">
+        <label class="toggle-label">
+          <input type="checkbox" id="fAtivo" checked>
+          <span class="toggle-track"></span>
+          Cupom ativo
+        </label>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modal')">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="btnSalvar" style="width:auto;padding:9px 24px">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let _todos = [];
+  let _editId = null;
+
+  async function carregar() {
+    try {
+      _todos = await Bos.get('/gestor/cupons');
+    } catch(e) {
+      _todos = [];
+      toast(e.message, 'error');
+    }
+    renderTabela();
+  }
+
+  function fmtTipo(t) { return t === 'percentual' ? 'Percentual' : 'Valor Fixo'; }
+  function fmtValor(c) { return c.tipo_desconto === 'percentual' ? `${c.valor_desconto}%` : `R$ ${c.valor_desconto.toFixed(2)}`; }
+  function fmtData(d) { const [a,m,dd] = d.split('-'); return `${dd}/${m}/${a}`; }
+
+  function renderTabela() {
+    const tb = document.getElementById('tbody');
+    if (!_todos.length) {
+      tb.innerHTML = '<tr><td colspan="8"><div class="empty-state"><p>Nenhum cupom cadastrado.</p></div></td></tr>';
+      return;
+    }
+    tb.innerHTML = _todos.map(c => `
+      <tr>
+        <td style="font-weight:600">${esc(c.nome)}</td>
+        <td><code>${esc(c.codigo)}</code></td>
+        <td>${fmtTipo(c.tipo_desconto)}</td>
+        <td>${fmtValor(c)}</td>
+        <td>${c.expirado ? '<span style="color:#e06060">' + fmtData(c.data_expiracao) + '</span>' : fmtData(c.data_expiracao)}</td>
+        <td>${c.quantidade_usos}${c.quantidade_maxima_usos ? ' / ' + c.quantidade_maxima_usos : ''}</td>
+        <td>${c.ativo ? '<span class="badge-green">Ativo</span>' : '<span class="badge-gray">Inativo</span>'}</td>
+        <td><div class="td-actions">
+          <button class="btn-icon" onclick="editarModal(${c.id})">Editar</button>
+          <button class="btn-icon danger" onclick="deletar(${c.id})">Remover</button>
+        </div></td>
+      </tr>
+    `).join('');
+  }
+
+  function novoModal() {
+    _editId = null;
+    document.getElementById('modalTitulo').textContent = 'Novo Cupom';
+    document.getElementById('form').reset();
+    document.getElementById('fTipo').value = 'percentual';
+    document.getElementById('wrAtivo').style.display = 'none';
+    abrirModal('modal');
+  }
+
+  function editarModal(id) {
+    const c = _todos.find(x => x.id === id);
+    if (!c) return;
+    _editId = id;
+    document.getElementById('modalTitulo').textContent = 'Editar Cupom';
+    document.getElementById('fNome').value   = c.nome;
+    document.getElementById('fCodigo').value = c.codigo;
+    document.getElementById('fTipo').value   = c.tipo_desconto;
+    document.getElementById('fValor').value  = c.valor_desconto;
+    document.getElementById('fData').value   = c.data_expiracao;
+    document.getElementById('fMax').value    = c.quantidade_maxima_usos ?? '';
+    document.getElementById('fAtivo').checked = c.ativo;
+    document.getElementById('wrAtivo').style.display = '';
+    abrirModal('modal');
+  }
+
+  async function salvar(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btnSalvar');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    const max = document.getElementById('fMax').value;
+    const dados = {
+      nome:                   document.getElementById('fNome').value.trim(),
+      codigo:                 document.getElementById('fCodigo').value.trim().toUpperCase(),
+      tipo_desconto:          document.getElementById('fTipo').value,
+      valor_desconto:         parseFloat(document.getElementById('fValor').value),
+      data_expiracao:         document.getElementById('fData').value,
+      quantidade_maxima_usos: max ? parseInt(max) : null,
+    };
+    if (_editId) dados.ativo = document.getElementById('fAtivo').checked;
+    try {
+      if (_editId) await Bos.patch('/gestor/cupons/' + _editId, dados);
+      else         await Bos.post('/gestor/cupons', dados);
+      fecharModal('modal');
+      toast(_editId ? 'Cupom atualizado!' : 'Cupom criado!');
+      await carregar();
+    } catch(err) { toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Salvar'; }
+  }
+
+  async function deletar(id) {
+    const c = _todos.find(x => x.id === id);
+    if (!confirm(`Desativar o cupom "${c?.nome}"?`)) return;
+    try {
+      await Bos.delete('/gestor/cupons/' + id);
+      toast('Cupom desativado.');
+      await carregar();
+    } catch(e) { toast(e.message, 'error'); }
+  }
+
+  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  carregar();
+</script>
+{% endblock %}

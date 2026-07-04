@@ -4,187 +4,351 @@
 
 {% block styles %}
 <style>
-  .custom-grid {
+  /* ── Layout ─────────────────────────────────────────────────── */
+  .cust-grid {
     display: grid;
-    grid-template-columns: 260px 1fr;
+    grid-template-columns: 240px 1fr;
     gap: 20px;
     align-items: start;
   }
+
+  /* ── Sidebar de estabelecimentos ───────────────────────────── */
   .barb-list { display: flex; flex-direction: column; gap: 6px; }
   .barb-item {
-    padding: 10px 14px; background: #1e1e1e; border: 1px solid #2a2a2a;
+    padding: 10px 12px; background: #1e1e1e; border: 1px solid #2a2a2a;
     border-radius: 8px; cursor: pointer; transition: all .15s;
     display: flex; align-items: center; gap: 10px;
   }
   .barb-item:hover { border-color: #444; }
   .barb-item.selected { border-color: var(--cor-primaria); background: rgba(186,117,23,.06); }
-  .barb-item-avatar {
-    width: 34px; height: 34px; border-radius: 7px; flex-shrink: 0;
+  .barb-avatar {
+    width: 32px; height: 32px; border-radius: 7px; flex-shrink: 0;
     background: rgba(186,117,23,.1); border: 1px solid rgba(186,117,23,.2);
     display: flex; align-items: center; justify-content: center;
-    font-weight: 800; font-size: 13px; color: var(--cor-primaria); overflow: hidden;
+    font-weight: 800; font-size: 12px; color: var(--cor-primaria); overflow: hidden;
   }
-  .barb-item-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 7px; }
-  .barb-item-info { flex: 1; min-width: 0; }
-  .barb-item-nome { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .barb-item-slug { font-size: 11px; color: #555; }
+  .barb-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 7px; }
+  .barb-info { flex: 1; min-width: 0; }
+  .barb-nome { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .barb-slug { font-size: 11px; color: #555; }
 
-  .custom-panel { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; padding: 24px; }
-  .custom-panel-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px; color: #444; gap: 10px; }
+  /* ── Painel direito ─────────────────────────────────────────── */
+  .cust-panel-empty {
+    background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px;
+    min-height: 400px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px; color: #444;
+  }
 
-  .upload-zones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 24px; }
+  /* ── 3 cards de imagem ──────────────────────────────────────── */
+  .img-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
+
+  .img-card {
+    background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 12px;
+    padding: 18px; display: flex; flex-direction: column; gap: 12px;
+    transition: border-color .15s;
+  }
+  .img-card:hover { border-color: #3a3a3a; }
+
+  .img-card-hdr { display: flex; align-items: center; gap: 10px; }
+  .img-card-num {
+    width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+    background: var(--cor-primaria); color: #111;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 800;
+  }
+  .img-card-title { font-size: 14px; font-weight: 700; }
+
+  .img-card-desc { font-size: 12px; color: #666; line-height: 1.5; }
+  .img-card-hint {
+    background: #181818; border: 1px solid #2a2a2a; border-radius: 6px;
+    padding: 8px 10px; font-size: 11px; color: #555;
+  }
+  .img-card-hint strong { color: #777; }
+
+  /* ── Upload zone ────────────────────────────────────────────── */
   .upload-zone {
-    border: 1.5px dashed #333; border-radius: 10px; padding: 14px 10px;
-    display: flex; flex-direction: column; align-items: center; gap: 8px;
-    cursor: pointer; transition: border-color .15s; position: relative;
-    min-height: 140px; justify-content: center; text-align: center;
+    border: 1.5px dashed #333; border-radius: 8px;
+    position: relative; overflow: hidden; cursor: pointer;
+    transition: border-color .15s; min-height: 130px;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 6px;
   }
   .upload-zone:hover { border-color: var(--cor-primaria); }
-  .upload-zone.has-img { border-style: solid; border-color: #2a2a2a; }
+  .upload-zone.has-img { border-style: solid; border-color: #2a2a2a; padding: 0; }
   .upload-zone input[type="file"] { display: none; }
-  .zone-preview { width: 100%; aspect-ratio: 1; border-radius: 6px; object-fit: cover; display: none; }
-  .upload-zone.has-img .zone-preview   { display: block; }
-  .upload-zone.has-img .zone-ph        { display: none; }
-  .zone-ph { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-  .zone-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #555; }
-  .zone-sub   { font-size: 10px; color: #444; }
-  .zone-spin  { position: absolute; inset: 0; background: rgba(0,0,0,.55); border-radius: 10px;
-                display: none; align-items: center; justify-content: center; }
-  .zone-spin.on { display: flex; }
-  .zone-chg { font-size: 10px; color: var(--cor-primaria); background: none; border: none;
-              cursor: pointer; font-family: inherit; padding: 0; display: none; margin-top: 4px; }
-  .upload-zone.has-img .zone-chg { display: block; }
 
-  .cor-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  .cor-box { width: 36px; height: 36px; border-radius: 8px; border: 1px solid #333; flex-shrink: 0; transition: background .1s; }
-  input[type="color"] { width: 80px; height: 36px; padding: 2px; border: 1.5px solid #333; border-radius: 8px; background: #1a1a1a; cursor: pointer; }
-
-  @media (max-width: 768px) {
-    .custom-grid   { grid-template-columns: 1fr; }
-    .upload-zones  { grid-template-columns: repeat(2, 1fr); }
+  .zone-preview {
+    width: 100%; height: 130px; object-fit: cover;
+    display: none; border-radius: 6px;
   }
-  @media (max-width: 480px) {
-    .upload-zones  { grid-template-columns: 1fr; }
+  .upload-zone.has-img .zone-preview { display: block; }
+  .upload-zone.has-img .zone-ph      { display: none; }
+
+  .zone-ph { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 16px; text-align: center; }
+  .zone-ph-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #555; }
+  .zone-ph-sub   { font-size: 10px; color: #3a3a3a; }
+
+  .zone-spin {
+    position: absolute; inset: 0; background: rgba(0,0,0,.6);
+    display: none; align-items: center; justify-content: center; border-radius: 6px;
+  }
+  .zone-spin.on { display: flex; }
+  .spinner { width: 20px; height: 20px; border: 2px solid #333; border-top-color: var(--cor-primaria); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .zone-btns {
+    position: absolute; bottom: 6px; left: 0; right: 0;
+    display: none; align-items: center; justify-content: center; gap: 6px;
+  }
+  .upload-zone.has-img .zone-btns { display: flex; }
+  .zone-change-btn, .zone-remove-btn {
+    background: rgba(0,0,0,.7); border-radius: 4px; padding: 3px 10px; font-size: 10px; font-weight: 700;
+    cursor: pointer; font-family: inherit; white-space: nowrap; border: 1px solid rgba(186,117,23,.4);
+    color: var(--cor-primaria);
+  }
+  .zone-remove-btn { border-color: rgba(220,60,60,.5); color: #e06060; }
+
+  /* ── Cor + preview ──────────────────────────────────────────── */
+  .bottom-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  .color-card {
+    background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 12px; padding: 18px;
+  }
+  .color-card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #555; margin-bottom: 14px; }
+  .color-row { display: flex; align-items: center; gap: 10px; }
+  .color-swatch { width: 40px; height: 40px; border-radius: 8px; border: 1px solid #333; flex-shrink: 0; transition: background .1s; }
+  input[type="color"] {
+    width: 40px; height: 40px; padding: 2px 3px; border: 1.5px solid #333;
+    border-radius: 8px; background: #181818; cursor: pointer; flex-shrink: 0;
+  }
+  .color-hex { font-size: 14px; font-family: monospace; color: #888; flex: 1; }
+  .btn-cor { padding: 9px 18px; font-size: 13px; font-weight: 700; background: var(--cor-primaria); color: #111; border: none; border-radius: 8px; cursor: pointer; font-family: inherit; transition: opacity .15s; display: flex; align-items: center; gap: 6px; }
+  .btn-cor:hover { opacity: .85; }
+  .btn-cor:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── Mockup de preview ──────────────────────────────────────── */
+  .mockup-card {
+    background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 12px; padding: 18px;
+  }
+  .mockup-card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #555; margin-bottom: 14px; }
+  .mockup-frame { border: 1px solid #2a2a2a; border-radius: 8px; overflow: hidden; }
+  .mockup-header {
+    height: 110px; background: #111; position: relative;
+    display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px;
+  }
+  .mockup-bg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; opacity: .55; display: none;
+  }
+  .mockup-bg.visible { display: block; }
+  .mockup-overlay { position: absolute; inset: 0; background: rgba(0,0,0,.35); }
+  .mockup-logo-wrap {
+    width: 44px; height: 44px; border-radius: 50%; background: #1e1e1e;
+    border: 2px solid rgba(255,255,255,.15); overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    position: relative; z-index: 1; flex-shrink: 0;
+  }
+  .mockup-logo-wrap img { width: 100%; height: 100%; object-fit: cover; display: none; }
+  .mockup-logo-wrap img.visible { display: block; }
+  .mockup-logo-placeholder { font-size: 18px; font-weight: 800; color: var(--cor-primaria); }
+  .mockup-name { position: relative; z-index: 1; font-size: 13px; font-weight: 700; color: #fff; }
+  .mockup-body { background: #181818; padding: 12px; }
+  .mockup-body p { font-size: 11px; color: #333; text-align: center; }
+
+  @media (max-width: 900px) {
+    .img-cards   { grid-template-columns: 1fr; }
+    .bottom-row  { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 768px) {
+    .cust-grid { grid-template-columns: 1fr; }
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<div id="loadingState" style="color:#555;padding:20px 0;font-size:14px">Carregando…</div>
+<div id="loadingState" style="color:#555;padding:20px 0;font-size:14px">Carregando estabelecimentos…</div>
 
 <div id="mainContent" style="display:none">
-  <div class="custom-grid">
+<div class="cust-grid">
 
-    <!-- Coluna esquerda: lista de estabelecimentos -->
-    <div>
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#555;margin-bottom:10px">
-        Estabelecimento
-      </div>
-      <div class="barb-list" id="barbList"></div>
+  <!-- ── Sidebar: lista de estabelecimentos ── -->
+  <div>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#555;margin-bottom:10px">
+      Estabelecimento
+    </div>
+    <div id="barbList" class="barb-list"></div>
+  </div>
+
+  <!-- ── Painel direito ── -->
+  <div>
+
+    <!-- Estado vazio -->
+    <div id="panelEmpty" class="cust-panel-empty">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.5">
+        <circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/>
+        <circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/>
+        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688
+                 0-.437-.18-.835-.437-1.125-.247-.28-.43-.69-.43-1.125a1.64 1.64 0 0 1
+                 1.668-1.668h1.96c3.011 0 5.591-2.58 5.591-5.591C22 6.477 17.523 2 12 2z"/>
+      </svg>
+      <span style="font-size:14px">Selecione um estabelecimento para personalizar</span>
     </div>
 
-    <!-- Coluna direita: painel de customização -->
-    <div class="custom-panel" id="panel">
+    <!-- Conteúdo do painel -->
+    <div id="panelContent" style="display:none">
 
-      <div class="custom-panel-empty" id="panelEmpty">
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.5">
-          <circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/>
-          <circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/>
-          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688
-                   0-.437-.18-.835-.437-1.125-.247-.28-.43-.69-.43-1.125a1.64 1.64 0 0 1
-                   1.668-1.668h1.96c3.011 0 5.591-2.58 5.591-5.591C22 6.477 17.523 2 12 2z"/>
-        </svg>
-        <span style="font-size:14px">Selecione um estabelecimento</span>
+      <!-- Cabeçalho do painel -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div>
+          <div style="font-size:18px;font-weight:700" id="panelNome"></div>
+          <div style="font-size:12px;color:#555;margin-top:2px">Aparência na página pública de agendamento</div>
+        </div>
+        <a id="panelLink" href="#" target="_blank" class="btn-icon" style="font-size:12px">Ver página</a>
       </div>
 
-      <div id="panelContent" style="display:none">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-          <h3 id="panelNome" style="font-size:15px;font-weight:700"></h3>
-          <a id="panelLink" href="#" target="_blank" class="btn-icon" style="font-size:12px">Ver site</a>
-        </div>
+      <!-- ── 3 Cards de imagem ── -->
+      <div class="img-cards">
 
-        <!-- ── Imagens ── -->
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#555;margin-bottom:12px">
-          Imagens
-        </div>
-        <div class="upload-zones">
-
+        <!-- Card 1: Logo -->
+        <div class="img-card">
+          <div class="img-card-hdr">
+            <div class="img-card-num">1</div>
+            <div class="img-card-title">Logo</div>
+          </div>
+          <div class="img-card-desc">
+            Marca circular que aparece no cabeçalho da página de agendamento, em destaque sobre a capa.
+          </div>
+          <div class="img-card-hint">
+            <strong>Formato:</strong> PNG com fundo transparente &nbsp;·&nbsp; <strong>Ideal:</strong> 500×500px
+          </div>
           <div class="upload-zone" id="zLogo" onclick="triggerUpload('logo')">
-            <input type="file" id="inputLogo" accept="image/jpeg,image/png,image/webp"
-                   onchange="fazerUpload('logo',this)">
-            <div class="zone-spin" id="spinLogo">
-              <div class="spinner" style="border-top-color:var(--cor-primaria)"></div>
-            </div>
+            <input type="file" id="inputLogo" accept="image/jpeg,image/png,image/webp" onchange="fazerUpload('logo',this)">
+            <div class="zone-spin" id="spinLogo"><div class="spinner"></div></div>
             <img class="zone-preview" id="prevLogo" alt="Logo">
             <div class="zone-ph">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
               </svg>
-              <div class="zone-label">Logo</div>
-              <div class="zone-sub">Topo das telas</div>
+              <div class="zone-ph-label">Selecionar logo</div>
+              <div class="zone-ph-sub">JPG · PNG · WEBP · máx. 5 MB</div>
             </div>
-            <button class="zone-chg" onclick="event.stopPropagation();triggerUpload('logo')">Trocar</button>
+            <div class="zone-btns">
+              <button class="zone-change-btn" onclick="event.stopPropagation();triggerUpload('logo')">Trocar</button>
+              <button class="zone-remove-btn" onclick="event.stopPropagation();removerImagem('logo')">Remover</button>
+            </div>
           </div>
+        </div>
 
+        <!-- Card 2: Capa -->
+        <div class="img-card">
+          <div class="img-card-hdr">
+            <div class="img-card-num">2</div>
+            <div class="img-card-title">Capa do Cabeçalho</div>
+          </div>
+          <div class="img-card-desc">
+            Banner que aparece atrás do logo e nome na página pública. Cobre toda a largura do cabeçalho.
+          </div>
+          <div class="img-card-hint">
+            <strong>Formato:</strong> JPG ou PNG &nbsp;·&nbsp; <strong>Ideal:</strong> 1200×300px (paisagem)
+          </div>
           <div class="upload-zone" id="zCapa" onclick="triggerUpload('capa')">
-            <input type="file" id="inputCapa" accept="image/jpeg,image/png,image/webp"
-                   onchange="fazerUpload('capa',this)">
-            <div class="zone-spin" id="spinCapa">
-              <div class="spinner" style="border-top-color:var(--cor-primaria)"></div>
-            </div>
+            <input type="file" id="inputCapa" accept="image/jpeg,image/png,image/webp" onchange="fazerUpload('capa',this)">
+            <div class="zone-spin" id="spinCapa"><div class="spinner"></div></div>
             <img class="zone-preview" id="prevCapa" alt="Capa">
             <div class="zone-ph">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
               </svg>
-              <div class="zone-label">Capa</div>
-              <div class="zone-sub">Página pública</div>
+              <div class="zone-ph-label">Selecionar capa</div>
+              <div class="zone-ph-sub">JPG · PNG · WEBP · máx. 5 MB</div>
             </div>
-            <button class="zone-chg" onclick="event.stopPropagation();triggerUpload('capa')">Trocar</button>
+            <div class="zone-btns">
+              <button class="zone-change-btn" onclick="event.stopPropagation();triggerUpload('capa')">Trocar</button>
+              <button class="zone-remove-btn" onclick="event.stopPropagation();removerImagem('capa')">Remover</button>
+            </div>
           </div>
+        </div>
 
+        <!-- Card 3: Fundo da página -->
+        <div class="img-card">
+          <div class="img-card-hdr">
+            <div class="img-card-num">3</div>
+            <div class="img-card-title">Fundo da Página</div>
+          </div>
+          <div class="img-card-desc">
+            Imagem de fundo atrás do formulário de agendamento do cliente. Textura sutil funciona bem.
+          </div>
+          <div class="img-card-hint">
+            <strong>Formato:</strong> JPG ou PNG &nbsp;·&nbsp; <strong>Ideal:</strong> 1920×1080px
+          </div>
           <div class="upload-zone" id="zBoas" onclick="triggerUpload('boas_vindas')">
-            <input type="file" id="inputBoas" accept="image/jpeg,image/png,image/webp"
-                   onchange="fazerUpload('boas_vindas',this)">
-            <div class="zone-spin" id="spinBoas">
-              <div class="spinner" style="border-top-color:var(--cor-primaria)"></div>
-            </div>
-            <img class="zone-preview" id="prevBoas" alt="Boas-vindas">
+            <input type="file" id="inputBoas" accept="image/jpeg,image/png,image/webp" onchange="fazerUpload('boas_vindas',this)">
+            <div class="zone-spin" id="spinBoas"><div class="spinner"></div></div>
+            <img class="zone-preview" id="prevBoas" alt="Fundo">
             <div class="zone-ph">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
               </svg>
-              <div class="zone-label">Boas-vindas</div>
-              <div class="zone-sub">Login do cliente</div>
+              <div class="zone-ph-label">Selecionar fundo</div>
+              <div class="zone-ph-sub">JPG · PNG · WEBP · máx. 5 MB</div>
             </div>
-            <button class="zone-chg" onclick="event.stopPropagation();triggerUpload('boas_vindas')">Trocar</button>
+            <div class="zone-btns">
+              <button class="zone-change-btn" onclick="event.stopPropagation();triggerUpload('boas_vindas')">Trocar</button>
+              <button class="zone-remove-btn" onclick="event.stopPropagation();removerImagem('boas_vindas')">Remover</button>
+            </div>
           </div>
-
         </div>
 
-        <!-- ── Cor principal ── -->
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
-                    color:#555;margin-bottom:12px;padding-top:20px;border-top:1px solid #2a2a2a">
-          Cor Principal
-        </div>
-        <div class="cor-row">
-          <div class="cor-box" id="corBox"></div>
-          <input type="color" id="corPicker" value="#BA7517" oninput="atualizarCor()">
-          <span style="font-size:13px;color:#555;font-family:monospace" id="corHex">#BA7517</span>
-          <button class="btn btn-primary" style="width:auto;padding:9px 18px;font-size:13px" onclick="salvarCor()">
-            <span id="btnCorTxt">Salvar cor</span>
-            <span class="spinner" id="btnCorSpin" style="display:none"></span>
-          </button>
+      </div><!-- /img-cards -->
+
+      <!-- ── Linha inferior: cor + mockup ── -->
+      <div class="bottom-row">
+
+        <!-- Cor primária -->
+        <div class="color-card">
+          <div class="color-card-title">Cor Primária</div>
+          <p style="font-size:12px;color:#666;margin-bottom:14px">
+            Usada em botões, destaques e elementos interativos na página do cliente.
+          </p>
+          <div class="color-row">
+            <div class="color-swatch" id="corSwatch"></div>
+            <input type="color" id="corPicker" value="#BA7517" oninput="atualizarCor()">
+            <span class="color-hex" id="corHex">#BA7517</span>
+            <button class="btn-cor" id="btnCor" onclick="salvarCor()">
+              <span id="btnCorTxt">Salvar</span>
+              <div class="spinner" id="btnCorSpin" style="display:none;width:14px;height:14px;border-width:2px"></div>
+            </button>
+          </div>
         </div>
 
-      </div><!-- /panelContent -->
-    </div><!-- /custom-panel -->
+        <!-- Mockup de preview -->
+        <div class="mockup-card">
+          <div class="mockup-card-title">Pré-visualização</div>
+          <div class="mockup-frame">
+            <div class="mockup-header">
+              <img class="mockup-bg" id="mockupBg" src="" alt="">
+              <div class="mockup-overlay"></div>
+              <div class="mockup-logo-wrap">
+                <img id="mockupLogo" src="" alt="">
+                <span class="mockup-logo-placeholder" id="mockupLogoLetter"></span>
+              </div>
+              <div class="mockup-name" id="mockupNome">Nome da Barbearia</div>
+            </div>
+            <div class="mockup-body">
+              <p>Formulário de agendamento…</p>
+            </div>
+          </div>
+        </div>
 
-  </div><!-- /custom-grid -->
-</div>
+      </div><!-- /bottom-row -->
+
+    </div><!-- /panelContent -->
+  </div><!-- /painel -->
+</div><!-- /cust-grid -->
+</div><!-- /mainContent -->
 {% endblock %}
 
 {% block scripts %}
@@ -198,6 +362,7 @@ const _ZONAS = {
   boas_vindas: { z: 'zBoas',  p: 'prevBoas', s: 'spinBoas', i: 'inputBoas' },
 };
 
+// ── Init ─────────────────────────────────────────────────────────
 async function carregar() {
   try {
     _barbearias = await Bos.get('/super/barbearias');
@@ -218,16 +383,15 @@ function renderLista() {
   }
   el.innerHTML = _barbearias.map(b => `
     <div class="barb-item" id="item_${b.id}" onclick="selecionarBarb(${b.id})">
-      <div class="barb-item-avatar" id="av_${b.id}">
-        ${esc((b.nome_exibicao || b.nome)[0])}
-      </div>
-      <div class="barb-item-info">
-        <div class="barb-item-nome">${esc(b.nome_exibicao || b.nome)}</div>
-        <div class="barb-item-slug">${esc(b.slug)}</div>
+      <div class="barb-avatar" id="av_${b.id}">${esc((b.nome_exibicao || b.nome)[0])}</div>
+      <div class="barb-info">
+        <div class="barb-nome">${esc(b.nome_exibicao || b.nome)}</div>
+        <div class="barb-slug">${esc(b.slug)}</div>
       </div>
     </div>`).join('');
 }
 
+// ── Selecionar estabelecimento ────────────────────────────────────
 async function selecionarBarb(id) {
   document.querySelectorAll('.barb-item').forEach(el => el.classList.remove('selected'));
   const itemEl = document.getElementById('item_' + id);
@@ -238,21 +402,26 @@ async function selecionarBarb(id) {
   document.getElementById('panelContent').style.display = '';
 
   try {
-    const d = await Bos.get(`/super/barbearias/${id}`);
+    const d   = await Bos.get(`/super/barbearias/${id}`);
     const nome = d.nome_exibicao || d.nome;
 
-    document.getElementById('panelNome').textContent = nome;
-    document.getElementById('panelLink').href = d.url_agendamento || `/b/${d.slug}/`;
+    document.getElementById('panelNome').textContent         = nome;
+    document.getElementById('panelLink').href                = d.url_agendamento || `/b/${d.slug}/`;
+    document.getElementById('mockupNome').textContent        = nome;
+    document.getElementById('mockupLogoLetter').textContent  = nome[0];
 
     const c = d.customizacao || {};
     setImagem('logo',        c.logo_url);
     setImagem('capa',        c.imagem_capa_url);
     setImagem('boas_vindas', c.imagem_boas_vindas_url);
 
+    // Atualizar mockup
+    atualizarMockup(c.logo_url, c.imagem_capa_url);
+
     const cor = c.cor_primaria || '#BA7517';
-    document.getElementById('corPicker').value = cor;
-    document.getElementById('corHex').textContent  = cor;
-    document.getElementById('corBox').style.background = cor;
+    document.getElementById('corPicker').value          = cor;
+    document.getElementById('corHex').textContent       = cor;
+    document.getElementById('corSwatch').style.background = cor;
 
     if (c.logo_url) {
       const avEl = document.getElementById('av_' + id);
@@ -263,6 +432,20 @@ async function selecionarBarb(id) {
   }
 }
 
+// ── Mockup ───────────────────────────────────────────────────────
+function atualizarMockup(logoUrl, capaUrl) {
+  const bgEl   = document.getElementById('mockupBg');
+  const logoEl = document.getElementById('mockupLogo');
+  const letter = document.getElementById('mockupLogoLetter');
+
+  if (capaUrl) { bgEl.src = capaUrl; bgEl.classList.add('visible'); }
+  else          { bgEl.src = '';      bgEl.classList.remove('visible'); }
+
+  if (logoUrl) { logoEl.src = logoUrl; logoEl.classList.add('visible'); letter.style.display = 'none'; }
+  else          { logoEl.src = '';      logoEl.classList.remove('visible'); letter.style.display = ''; }
+}
+
+// ── Imagens ──────────────────────────────────────────────────────
 function setImagem(tipo, url) {
   const m = _ZONAS[tipo];
   const z = document.getElementById(m.z);
@@ -278,8 +461,7 @@ function triggerUpload(tipo) {
 async function fazerUpload(tipo, inputEl) {
   if (!inputEl.files.length || !_selectedId) return;
   const m = _ZONAS[tipo];
-  const spinEl = document.getElementById(m.s);
-  spinEl.classList.add('on');
+  document.getElementById(m.s).classList.add('on');
 
   const fd = new FormData();
   fd.append('arquivo', inputEl.files[0]);
@@ -292,24 +474,65 @@ async function fazerUpload(tipo, inputEl) {
       const avEl = document.getElementById('av_' + _selectedId);
       if (avEl) avEl.innerHTML = `<img src="${esc(res.url)}" alt="">`;
     }
-    toast('Imagem salva!');
+    // Atualizar mockup com a URL retornada
+    if (tipo === 'logo' || tipo === 'capa') {
+      const logoSrc = document.getElementById('prevLogo').src;
+      const capaSrc = document.getElementById('prevCapa').src;
+      atualizarMockup(
+        tipo === 'logo' ? res.url : (logoSrc || null),
+        tipo === 'capa' ? res.url : (capaSrc || null),
+      );
+    }
+    toast('Imagem salva com sucesso!');
   } catch(e) {
     toast('Erro no upload: ' + e.message, 'error');
   } finally {
-    spinEl.classList.remove('on');
+    document.getElementById(m.s).classList.remove('on');
     inputEl.value = '';
   }
 }
 
+async function removerImagem(tipo) {
+  if (!_selectedId) return;
+  if (!confirm('Remover esta imagem?')) return;
+  const m = _ZONAS[tipo];
+  document.getElementById(m.s).classList.add('on');
+  try {
+    await Bos.delete(`/super/barbearias/${_selectedId}/customizacao/imagens?tipo=${tipo}`);
+    setImagem(tipo, null);
+    if (tipo === 'logo') {
+      const avEl = document.getElementById('av_' + _selectedId);
+      const b = _barbearias.find(x => x.id === _selectedId);
+      if (avEl && b) avEl.innerHTML = esc((b.nome_exibicao || b.nome)[0]);
+    }
+    if (tipo === 'logo' || tipo === 'capa') {
+      const logoSrc = document.getElementById('prevLogo').src;
+      const capaSrc = document.getElementById('prevCapa').src;
+      atualizarMockup(
+        tipo === 'logo' ? null : (logoSrc || null),
+        tipo === 'capa' ? null : (capaSrc || null),
+      );
+    }
+    toast('Imagem removida.');
+  } catch(e) {
+    toast('Erro ao remover: ' + e.message, 'error');
+  } finally {
+    document.getElementById(m.s).classList.remove('on');
+  }
+}
+
+// ── Cor ──────────────────────────────────────────────────────────
 function atualizarCor() {
   const cor = document.getElementById('corPicker').value;
-  document.getElementById('corHex').textContent = cor;
-  document.getElementById('corBox').style.background = cor;
+  document.getElementById('corHex').textContent          = cor;
+  document.getElementById('corSwatch').style.background  = cor;
 }
 
 async function salvarCor() {
   if (!_selectedId) return;
   const cor = document.getElementById('corPicker').value;
+  const btn = document.getElementById('btnCor');
+  btn.disabled = true;
   document.getElementById('btnCorTxt').style.display  = 'none';
   document.getElementById('btnCorSpin').style.display = '';
   try {
@@ -318,6 +541,7 @@ async function salvarCor() {
   } catch(e) {
     toast('Erro: ' + e.message, 'error');
   } finally {
+    btn.disabled = false;
     document.getElementById('btnCorTxt').style.display  = '';
     document.getElementById('btnCorSpin').style.display = 'none';
   }

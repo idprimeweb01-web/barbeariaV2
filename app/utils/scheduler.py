@@ -12,7 +12,8 @@ A antecedência é lida de ConfiguracaoAgendamento (A3: regras como config, nunc
 Deduplicação: uma notificação por (agendamento_id, tipo) — skip se já existe.
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
+from app.utils.tz import naive_brasilia
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def _executar_lembretes() -> None:
     )
     from app.utils.notificacoes import criar_notificacao
 
-    agora = datetime.utcnow()
+    agora = naive_brasilia()
 
     # ── Coleta todas as barbearias com agendamentos futuros e as configs delas ──
     # Janela ampla: até 60min no futuro (cobre qualquer antecedência configurável razoável)

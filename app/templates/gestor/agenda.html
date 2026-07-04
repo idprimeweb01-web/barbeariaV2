@@ -64,7 +64,9 @@
 .st-agendado             { background: rgba(243,156,18,.12); color: #fbbf24; }
 .st-concluido            { background: rgba(34,197,94,.12);  color: #4ade80; }
 .st-cancelado            { background: rgba(220,38,38,.12);  color: #f87171; }
-.st-aguardando_pagamento { background: rgba(59,130,246,.12); color: #93c5fd; }
+.st-aguardando_pagamento   { background: rgba(59,130,246,.12);  color: #93c5fd; }
+.st-aguardando_comprovante { background: rgba(245,158,11,.12);  color: #fbbf24; }
+.st-aguardando_aprovacao   { background: rgba(168,85,247,.12);  color: #c084fc; }
 .st-em_atendimento       { background: rgba(168,85,247,.12); color: #c084fc; }
 
 /* ── Modais ── */
@@ -93,7 +95,9 @@
   <select class="ag-sel" id="selStatus" style="min-width:140px" onchange="carregar()">
     <option value="">Todos os status</option>
     <option value="agendado">Agendado</option>
-    <option value="aguardando_pagamento">Aguardando PIX</option>
+    <option value="aguardando_comprovante">Ag. comprovante</option>
+    <option value="aguardando_aprovacao">Ag. aprovação</option>
+    <option value="aguardando_pagamento">Ag. PIX (legado)</option>
     <option value="em_atendimento">Em atendimento</option>
     <option value="concluido">Concluído</option>
     <option value="cancelado">Cancelado</option>
@@ -145,7 +149,7 @@
 
 <!-- ── Modal Aprovar PIX ── -->
 <div class="modal-overlay" id="modalPix" onclick="if(event.target===this)fecharModal('modalPix')">
-  <div class="modal-box" style="max-width:400px">
+  <div class="modal-box" style="max-width:440px">
     <div class="modal-header">
       <h3>Aprovar Pagamento PIX</h3>
       <button class="modal-close" onclick="fecharModal('modalPix')">✕</button>
@@ -153,9 +157,22 @@
     <p style="font-size:14px;color:#aaa;margin-bottom:6px">
       Cliente: <strong id="pixNomeCliente" style="color:#ddd"></strong>
     </p>
-    <p style="font-size:14px;color:#aaa;margin-bottom:20px">
+    <p style="font-size:14px;color:#aaa;margin-bottom:14px">
       Valor: <strong id="pixValor" style="color:var(--cor-primaria)"></strong>
     </p>
+    <!-- Comprovante -->
+    <div id="pixComprovanteWrap" style="margin-bottom:16px">
+      <div id="pixSemComprovante" style="display:none;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:10px 14px;font-size:13px;color:#f59e0b">
+        ⚠️ Cliente ainda não enviou o comprovante.
+      </div>
+      <div id="pixComComprovanteWrap" style="display:none">
+        <div style="font-size:12px;font-weight:700;color:#666;text-transform:uppercase;margin-bottom:8px">Comprovante enviado pelo cliente</div>
+        <img id="pixComprovanteImg" src="" alt="Comprovante PIX"
+          style="width:100%;border-radius:8px;border:1px solid #2a2a2a;max-height:280px;object-fit:contain;cursor:pointer"
+          onclick="window.open(this.src,'_blank')">
+        <div style="font-size:11px;color:#555;margin-top:4px">Clique na imagem para abrir em tamanho original</div>
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modalPix')">Cancelar</button>
       <button class="btn btn-primary" style="width:auto;padding:9px 24px" id="btnConfPix" onclick="confirmarPix()">✓ Confirmar Aprovação</button>
@@ -266,7 +283,7 @@ function renderTabela(ags) {
     const cli = ag.cliente?.nome || '—';
     const barb = ag.barbeiro?.nome || '—';
     const val  = fmtR(ag.valor_total);
-    const podeAprovar  = ag.status === 'aguardando_pagamento';
+    const podeAprovar  = ['aguardando_aprovacao','aguardando_comprovante','aguardando_pagamento'].includes(ag.status);
     const podeCancelar = !['cancelado','concluido'].includes(ag.status);
 
     return `<tr>
@@ -291,16 +308,32 @@ function renderTabela(ags) {
 function stLabel(s) {
   return {
     agendado:'Agendado', concluido:'Concluído', cancelado:'Cancelado',
-    aguardando_pagamento:'Aguard. PIX', em_atendimento:'Em atend.',
+    aguardando_pagamento:'Aguard. PIX',
+    aguardando_comprovante:'Ag. comprovante',
+    aguardando_aprovacao:'Ag. aprovação',
+    em_atendimento:'Em atend.',
   }[s] || s;
 }
 
 // ── Aprovar PIX ───────────────────────────────────────────
-function abrirPix(id, nome, valor) {
+async function abrirPix(id, nome, valor) {
   _pixId = id;
   document.getElementById('pixNomeCliente').textContent = nome;
-  document.getElementById('pixValor').textContent = fmtR(valor);
+  document.getElementById('pixValor').textContent       = fmtR(valor);
+  // reset comprovante state
+  document.getElementById('pixSemComprovante').style.display    = 'none';
+  document.getElementById('pixComComprovanteWrap').style.display = 'none';
   abrirModal('modalPix');
+  try {
+    const det = await Bos.get('/gestor/agendamentos/' + id);
+    const url = det?.pix?.comprovante_url;
+    if (url) {
+      document.getElementById('pixComprovanteImg').src          = url;
+      document.getElementById('pixComComprovanteWrap').style.display = '';
+    } else {
+      document.getElementById('pixSemComprovante').style.display = '';
+    }
+  } catch {}
 }
 
 async function confirmarPix() {

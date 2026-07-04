@@ -1,10 +1,11 @@
-from datetime import date, datetime, timedelta
+from datetime import timedelta
 from flask import Blueprint, request, g, jsonify
 from sqlalchemy import func
 from app.extensions import db
 from app.models import Cliente, Usuario, Agendamento, AgendamentoServico, Servico, Barbeiro
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
+from app.utils.tz import hoje_brasilia, naive_brasilia
 
 gestor_clientes_bp = Blueprint('gestor_clientes', __name__, url_prefix='/api/v1/gestor')
 
@@ -39,13 +40,13 @@ def _status_cliente(c, visitas, gasto, ultima, hoje):
         return 'vip'
     if c.criado_em and (hoje - c.criado_em.date()).days <= 7:
         return 'novo'
-    if ultima and (datetime.utcnow() - ultima).days > 60:
+    if ultima and (naive_brasilia() - ultima).days > 60:
         return 'em_risco'
     return 'ativo'
 
 
 def _fmt_cliente(c, visitas=0, gasto=0.0, ultima=None, hoje=None):
-    hoje = hoje or date.today()
+    hoje = hoje or hoje_brasilia()
     ticket = round(gasto / visitas, 2) if visitas else 0.0
     return {
         'id':            c.id,
@@ -67,9 +68,9 @@ def _fmt_cliente(c, visitas=0, gasto=0.0, ultima=None, hoje=None):
 @gestor_required
 def listar_clientes():
     bid     = _bid()
-    hoje    = date.today()
+    hoje    = hoje_brasilia()
     mes_ini = hoje.replace(day=1)
-    agora   = datetime.utcnow()
+    agora   = naive_brasilia()
 
     q_texto  = request.args.get('q', '').strip()
     filtro   = request.args.get('status', '').strip()

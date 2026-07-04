@@ -1,9 +1,9 @@
-from datetime import date
 from flask import Blueprint, jsonify
 from sqlalchemy import func
 from app.extensions import db
 from app.models import Barbearia, Agendamento, Cliente, Usuario
 from app.decorators.auth import super_required
+from app.utils.tz import hoje_brasilia
 from app.labels import L
 
 super_dash_bp = Blueprint('super_dashboard', __name__, url_prefix='/api/v1/super')
@@ -16,7 +16,7 @@ def dashboard_super():
     Agrega métricas de TODAS as barbearias intencionalmente sem filtro de tenant.
     Query sem barbearia_id scope — propósito: visão consolidada da plataforma.
     """
-    hoje = date.today()
+    hoje = hoje_brasilia()
     mes, ano = hoje.month, hoje.year
 
     # ── Totais de barbearias ──────────────────────────────────────────────────

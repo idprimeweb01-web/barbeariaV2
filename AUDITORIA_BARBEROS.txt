@@ -1,0 +1,773 @@
+═══════════════════════════════════════════════════════════════════════════════
+AUDITORIA COMPLETA DO SISTEMA BARBEROS
+Gerado em: 2026-06-30
+Base: análise do código-fonte Flask + React em /barberos
+═══════════════════════════════════════════════════════════════════════════════
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SEÇÃO 1 — SUPER ADMIN (/super/*)                                           ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Rota: /super/  →  redireciona para /super/dashboard
+──────────────────────────────────────────────────────────────────────────────
+
+Rota: /super/dashboard
+├─ Template: super/dashboard.html
+├─ Guard: @session_required('super_admin')
+├─ API: GET /api/v1/super/dashboard
+├─ O que mostra: Resumo global da plataforma
+├─ Dado retornado: pendentes_pix (e possivelmente totais de barbearias/gestores)
+└─ Status: FUNCIONANDO (200 no smoke test)
+
+Rota: /super/barbearias
+├─ Template: super/barbearias.html
+├─ API: GET /api/v1/super/barbearias
+├─ O que mostra: Lista de todas as barbearias/tenants cadastrados
+├─ Ações disponíveis: criar, ativar, desativar barbearia
+├─ API feature toggle: PUT /api/v1/super/barbearias/<id>/features/<nome>
+└─ Status: FUNCIONANDO
+
+Rota: /super/gestores
+├─ Template: super/gestores.html
+├─ API: GET /api/v1/super/gestores
+├─ O que mostra: Lista de usuários gestores por barbearia
+└─ Status: FUNCIONANDO
+
+Rota: /super/features
+├─ Template: super/features.html
+├─ API: GET /api/v1/super/features-metadata
+├─ O que mostra: Catálogo de features com status global
+├─ Features conhecidas (chaves exatas do sistema):
+│   ├─ "planos"         — Planos de Assinatura (gestores criam, clientes compram)
+│   ├─ "cupons"         — Cupons de Desconto (visível na sidebar do gestor)
+│   ├─ "pix_integrado"  — PIX Integrado (botão "Aprovar PIX" aparece no gestor)
+│   └─ "vip"            — Programa VIP + Brindes (levels, presentes, descontos)
+├─ Como funciona tecnicamente:
+│   ├─ FeatureMetadata: catálogo global (nome, descricao, ativo_por_padrao)
+│   ├─ FeatureBarbearia: override por tenant (barbearia_id, feature_nome, ativo)
+│   ├─ feature_ativa(barbearia_id, nome): checa FeatureBarbearia → FeatureMetadata
+│   └─ @feature_required('nome'): decorator que retorna 403 se feature off
+├─ Sincronização com segmentos:
+│   ├─ "planos" ON  → Gestor vê /gestor/planos; Cliente vê planos em React
+│   ├─ "planos" OFF → dashboard.py não retorna planos_ativos (linha ~82)
+│   ├─ "cupons" ON  → Link "Cupons" aparece na sidebar do gestor
+│   ├─ "cupons" OFF → GET /api/v1/gestor/cupons retorna 403
+│   ├─ "pix_integrado" ON  → Link "Aprovar PIX" aparece na sidebar do gestor
+│   └─ "vip" — controle existe no código mas blueprint vip.py NÃO está registrado
+└─ ⚠️  BUG CRÍTICO: ver BUG #1 abaixo
+
+Rota: /super/auditoria
+├─ Template: super/auditoria.html
+├─ API: GET /api/v1/super/auditoria  (retorna 404 em alguns ambientes)
+├─ O que mostra: Log de ações auditadas (modelo AuditoriaLog)
+└─ Status: PARCIAL (endpoint retorna 404 se tabela vazia ou não populada)
+
+Rota: /super/segmentos
+├─ Template: super/segmentos.html
+├─ API: GET /api/v1/super/segmentos
+├─ O que é: Sistema multi-segmento (barbearia, salão, etc.)
+├─ Modelo: Segmento + SegmentoRotulo (labels dinâmicos por segmento)
+└─ Status: FUNCIONANDO (base preparada, ainda não usado em produção)
+
+Rota: /super/customizacao
+├─ Template: super/customizacao.html
+├─ O que é: Personalização visual por barbearia (logo, cores, capa)
+├─ Modelo: BarbeariaCustomizacao (logo_url, cor_primaria, imagem_capa_url, etc.)
+└─ Status: FUNCIONANDO
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SEÇÃO 2 — GESTOR (/gestor/*)                                               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Guard padrão: @session_required('gestor', 'super_admin')
+
+Rota: /gestor/dashboard
+├─ Template: gestor/dashboard.html
+├─ API: GET /api/v1/gestor/dashboard
+├─ O que mostra: agendamentos do dia, faturamento, clientes, pendentes PIX
+├─ Feature sync:
+│   ├─ "pix_integrado": pendentes_pix aparece se ativo
+│   └─ "planos": receita de planos mostrada se ativo
+└─ Status: FUNCIONANDO
+
+Rota: /gestor/agenda
+├─ Template: gestor/agenda.html
+├─ APIs: GET /api/v1/gestor/agendamentos  |  GET /api/v1/gestor/agenda
+└─ Status: FUNCIONANDO
+
+Rota: /gestor/barbeiros
+├─ Template: gestor/barbeiros.html
+├─ API: GET /api/v1/gestor/barbeiros
+├─ O que faz: listar, criar, editar, ativar/desativar barbeiros
+└─ Status: FUNCIONANDO
+
+Rota: /gestor/servicos
+├─ Template: gestor/servicos.html
+├─ API: GET /api/v1/gestor/servicos
+├─ O que faz: CRUD de serviços (nome, preço, duração em minutos)
+└─ Status: FUNCIONANDO
+
+Rota: /gestor/produtos
+├─ Template: gestor/produtos.html
+├─ API: GET /api/v1/gestor/produtos
+└─ Status: FUNCIONANDO
+
+Rota: /gestor/clientes
+├─ Template: gestor/clientes.html
+├─ API: GET /api/v1/gestor/clientes
+├─ O que mostra: todos os clientes da barbearia, histórico, VIP, notas
+└─ Status: FUNCIONANDO
+
+Rota: /gestor/planos
+├─ Template: gestor/planos.html
+├─ APIs:
+│   ├─ GET    /api/v1/gestor/planos
+│   ├─ POST   /api/v1/gestor/planos              {nome, preco_mensal, descricao, barbeiro_id?}
+│   ├─ PATCH  /api/v1/gestor/planos/<id>
+│   ├─ DELETE /api/v1/gestor/planos/<id>         (soft delete: ativo=False)
+│   ├─ POST   /api/v1/gestor/planos/<id>/servicos  {servico_id, limite_uso_mensal, dias_expiracao}
+│   ├─ DELETE /api/v1/gestor/planos/<id>/servicos/<sid>
+│   ├─ GET    /api/v1/gestor/planos/solicitacoes  ?status=pendente
+│   ├─ PUT    /api/v1/gestor/planos/solicitacoes/<id>/aprovar
+│   └─ PUT    /api/v1/gestor/planos/solicitacoes/<id>/rejeitar
+├─ Fluxo de aprovação:
+│   ├─ Cliente solicita via /pub/<slug>/planos/<id>/solicitar → status=pendente
+│   ├─ Gestor vê em "Aprovar Planos" e aprova → cria ClientePlano (ativo=True)
+│   └─ Ao aprovar: calcula data_fim = hoje + dias_expiracao do primeiro PlanoServico
+├─ Controle de uso mensal: ClientePlanoUso por servico_id + mês
+├─ Limite ILIMITADO: constante PLANO_LIMITE_ILIMITADO (valor especial != None)
+└─ Status: FUNCIONANDO (todos os commits protegidos com try/except)
+
+Rota: /gestor/cupons
+├─ Template: gestor/cupons.html
+├─ Guard extra: @feature_required('cupons') → 403 se feature OFF
+├─ APIs:
+│   ├─ GET    /api/v1/gestor/cupons
+│   ├─ POST   /api/v1/gestor/cupons   {nome, codigo, tipo_desconto, valor_desconto, data_expiracao}
+│   ├─ PATCH  /api/v1/gestor/cupons/<id>
+│   └─ DELETE /api/v1/gestor/cupons/<id>  (soft: ativo=False)
+├─ tipos: "percentual" ou "valor_fixo"
+├─ Verificação de expirado: compara data_expiracao com hoje_brasilia() (timezone correto)
+└─ Status: FUNCIONANDO
+
+Rota: /gestor/vip
+├─ Template: gestor/vip.html
+├─ APIs: GET /api/v1/gestor/vip  |  GET /api/v1/gestor/vip/niveis
+└─ Status: TEMPLATE existe, dados dependem de VipNivel configurados
+
+Rota: /gestor/pix-approval
+├─ Template: gestor/pix_approval.html
+├─ Guard extra (sidebar): visível só se feature "pix_integrado" ON
+├─ API: GET /api/v1/gestor/pix/pendentes
+├─ O que faz: gestor aprova comprovantes de PIX enviados pelo cliente
+└─ Status: FUNCIONANDO (feature-gated)
+
+Rota: /gestor/configuracoes/pix
+├─ Template: gestor/config_pix.html
+├─ O que faz: configurar chave PIX, nome titular, cidade (para gerar código copia-cola)
+└─ Status: FUNCIONANDO
+
+Rota: /gestor/relatorios
+├─ Template: gestor/relatorios.html
+├─ API: GET /api/v1/gestor/relatorios/agendamentos
+└─ Status: FUNCIONANDO
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SEÇÃO 3 — PROFISSIONAL / BARBEIRO (/barbeiro/*)                            ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Guard padrão: @session_required('barbeiro', 'super_admin')
+
+Rota: /barbeiro/dashboard
+├─ Template: barbeiro/dashboard.html
+├─ API: GET /api/v1/barbeiro/dashboard
+└─ Status: FUNCIONANDO
+
+Rota: /barbeiro/agendamentos
+├─ Template: barbeiro/agendamentos.html
+├─ API: GET /api/v1/barbeiro/agendamentos
+├─ O que mostra: lista de agendamentos do barbeiro logado
+└─ Status: FUNCIONANDO
+
+Rota: /barbeiro/agenda
+├─ Template: barbeiro/agenda.html
+└─ Status: FUNCIONANDO
+
+Rota: /barbeiro/horario
+├─ Template: barbeiro/horario.html
+├─ API: GET /api/v1/barbeiro/horario
+├─ O que é: configurar horários de atendimento (ConfiguracaoAgenda)
+├─ CRÍTICO: Se o barbeiro não configurar horário aqui, GET /slots retorna []
+│   → cliente não consegue agendar!
+└─ Status: FUNCIONANDO (mas dependência crítica — ver BUG #4)
+
+Rota: /barbeiro/clientes
+├─ Template: barbeiro/clientes.html
+├─ API: GET /api/v1/barbeiro/clientes
+└─ Status: FUNCIONANDO
+
+Rota: /barbeiro/perfil
+├─ Template: barbeiro/perfil.html
+├─ API: GET /api/v1/barbeiro/perfil  (retorna 404 em ambiente de teste)
+└─ Status: PARCIAL
+
+Rota: /barbeiro/produtos
+├─ Template: barbeiro/produtos.html
+├─ API: GET /api/v1/barbeiro/produtos  (retorna 404 em ambiente de teste)
+└─ Status: PARCIAL
+
+Rota: /barbeiro/caixa/<agendamento_id>
+├─ Template: barbeiro/caixa.html
+├─ O que é: checkout/finalização do atendimento
+├─ O que faz: marcar agendamento como concluído, registrar produtos usados, cobrar
+└─ Status: FUNCIONANDO
+
+Rota: /barbeiro/configuracoes
+├─ Template: barbeiro/configuracoes.html
+└─ Status: FUNCIONANDO
+
+Rota: /barbeiro/redefinicoes
+├─ Template: barbeiro/redefinicoes.html
+├─ O que é: solicitações de liberação de horários / folgas
+└─ Status: FUNCIONANDO
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SEÇÃO 4 — ÁREA PÚBLICA (/b/<slug>/*)                                       ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Rota: GET /b/<slug>  ou  /b/<slug>/
+├─ Template: pub/booking.html
+├─ O que é: LANDING PAGE PÚBLICA da barbearia (sem login)
+├─ O que mostra: página de agendamento rápido para visitantes
+├─ Dados injetados pelo Flask: slug, bk_nome, cor_primaria, antecedencia_maxima_dias, logo_url
+├─ APIs usadas pelo frontend da landing page:
+│   ├─ GET /api/v1/pub/<slug>/servicos
+│   ├─ GET /api/v1/pub/<slug>/barbeiros
+│   ├─ GET /api/v1/pub/<slug>/barbeiros/<id>/slots?data=YYYY-MM-DD&duracao=<min>
+│   └─ POST /api/v1/pub/<slug>/agendar  {telefone, nome?, barbeiro_id, data_hora, servicos[], metodo_pagamento}
+├─ Nota: cria cliente automaticamente se telefone não existir
+└─ Status: FUNCIONANDO
+
+Rota: GET /b/<slug>/entrar
+├─ Template: cliente/entrar.html
+├─ POST /b/<slug>/entrar  → seta JWT cookies + session → redireciona /cliente/dashboard
+└─ Status: FUNCIONANDO
+
+Rota: GET /b/<slug>/cadastro
+├─ Template: cliente/cadastro.html
+├─ POST /b/<slug>/cadastro  {nome, email, telefone, senha}
+├─ Fluxo: cria Usuario (perfil=cliente) + Cliente → login automático → /cliente/dashboard
+└─ Status: FUNCIONANDO
+
+APIs Públicas (sem autenticação):
+├─ GET  /api/v1/pub/<slug>/servicos          → lista serviços ativos
+├─ GET  /api/v1/pub/<slug>/barbeiros         → lista barbeiros ativos
+├─ GET  /api/v1/pub/<slug>/barbeiros/<id>/servicos → serviços do barbeiro
+├─ GET  /api/v1/pub/<slug>/barbeiros/<id>/slots    → horários disponíveis
+├─ POST /api/v1/pub/<slug>/agendar           → cria agendamento (quick booking)
+├─ POST /api/v1/pub/<slug>/agendamentos/<id>/comprovante → upload foto PIX
+├─ GET  /pub/<slug>/planos                   → lista planos disponíveis
+└─ POST /pub/<slug>/planos/<id>/solicitar    → solicita assinatura (gera PIX se configurado)
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SEÇÃO 5 — CLIENTE AUTENTICADO (/cliente/*)  — REACT SPA                   ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Todas as rotas /cliente/* requerem @cliente_session_required.
+O Flask serve a template app.html que carrega o React SPA.
+O React Router (BrowserRouter) roteia internamente.
+
+Rota: /cliente/dashboard
+├─ Componente React: Dashboard.jsx
+├─ APIs chamadas:
+│   ├─ GET /api/v1/cliente/dashboard
+│   │   Retorna: proximos_agendamentos[], historico_resumo{}, planos_ativos[]*, rotulos{}
+│   │   *ATENÇÃO: a chave é dinâmica — f'{L("plano").lower()}s_ativos'
+│   │   Para barbearia padrão = "planos_ativos", mas pode variar por segmento
+│   └─ GET /api/v1/cliente/vip
+│       Retorna: nivel_vip_atual, nivel_info{nivel, brinde_descricao, tipo_brinde, valor_desconto}
+├─ O que mostra: métricas (próximos agendamentos, concluídos, cancelados, nível VIP),
+│   cards de próximos agendamentos, cards de planos ativos, resumo VIP
+├─ Feature sync:
+│   ├─ "planos" OFF → planos_ativos sempre [] (backend não busca)
+│   └─ "vip" — endpoint /vip retorna nivel=0 se sem ClienteVip cadastrado
+└─ ⚠️  PROBLEMA: chave dinâmica "planos_ativos" vs nome real do campo (ver BUG #5)
+
+Rota: /cliente/planos
+├─ Componente React: Planos.jsx
+├─ APIs chamadas:
+│   ├─ GET /api/v1/cliente/planos?ativo=true
+│   │   Retorna: [{id, plano_id, plano_nome, data_inicio, data_fim, ativo, servicos[{servico_id, nome, limite_uso_mensal, ilimitado, uso_mes_atual, restante}]}]
+│   ├─ GET /pub/<slug>/planos
+│   │   Retorna: [{id, nome, descricao, preco_mensal, barbeiro_id, is_plano_aberto, servicos[]}]
+│   ├─ GET /api/v1/cliente/planos/solicitacoes
+│   │   Retorna: [{id, plano_id, plano_nome, valor, metodo_pagamento, status, criado_em, aprovado_em, motivo_rejeicao}]
+│   └─ POST /pub/<slug>/planos/<id>/solicitar  {metodo_pagamento}
+│       Retorna: {mensagem, solicitacao_id, plano, valor, metodo_pagamento, status, pix_copia_cola?}
+├─ O que mostra: assinaturas ativas com barras de uso, planos disponíveis para contratar,
+│   histórico de solicitações com status
+├─ Ações: assinar plano (gera solicitação pendente), cancelar assinatura ativa
+└─ Status: FUNCIONANDO
+
+Rota: /cliente/agendar
+├─ Componente React: Agendar.jsx
+├─ Wizard de 4 etapas:
+│   Step 1 — Serviço:
+│     → GET /api/v1/cliente/planos?ativo=true (pega servicos[] do plano)
+│     → GET /api/v1/pub/<slug>/servicos (todos os serviços)
+│     → Filtra: se tem plano, mostra só serviços com servico_id no plano
+│     → Se sem plano, mostra todos (agendamento avulso)
+│   Step 2 — Barbeiro:
+│     → GET /api/v1/pub/<slug>/barbeiros?servico_ids=<id>
+│   Step 3 — Data e Hora:
+│     → GET /api/v1/pub/<slug>/barbeiros/<id>/slots?data=<YYYY-MM-DD>&duracao=<min>
+│     → Retorna array de strings de horário ["09:00","09:30","10:00",...]
+│   Step 4 — Confirmação:
+│     → POST /api/v1/cliente/agendamentos {barbeiro_id, data_hora, servicos:[{servico_id}], metodo_pagamento, observacao, cupom_codigo}
+│     → Retorna: agendamento + pix_info
+├─ ⚠️  PROBLEMA 1: Só permite 1 serviço (UI usa seleção única no step 1)
+├─ ⚠️  PROBLEMA 2: Slots VAZIOS se barbeiro não configurou horário (ver BUG #4)
+└─ ⚠️  PROBLEMA 3: Campos de serviço enviados como [{servico_id}] — sem preço_override
+
+Rota: /cliente/beneficios
+├─ Componente React: Beneficios.jsx
+├─ APIs:
+│   ├─ GET /api/v1/cliente/planos?ativo=true
+│   └─ GET /api/v1/cliente/vip
+├─ O que mostra: status VIP com brinde, lista de serviços do plano com barras de progresso,
+│   call-to-action para upgrade
+└─ Status: FUNCIONANDO
+
+Rota: /cliente/historico
+├─ Componente React: Historico.jsx
+├─ API: GET /api/v1/cliente/agendamentos  (?status=filtro)
+├─ Dados retornados por _fmt_agendamento(): id, inicio, fim, status, duracao_total,
+│   valor_total, metodo_pagamento, cupom_id, barbeiro_id, barbeiro_nome, servicos[]
+├─ Ações: cancelar agendamento com status 'agendado'
+├─ Regra de cancelamento: valida cancelamento_horas_minimas (ConfiguracaoAgendamento)
+├─ ⚠️  PROBLEMA: React usa ag.barbeiro_nome mas precisa verificar se _fmt_agendamento
+│   realmente retorna esse campo (ver BUG #6)
+└─ Status: PARCIALMENTE FUNCIONANDO
+
+Rota: /cliente/perfil
+├─ Componente React: Perfil.jsx
+├─ APIs:
+│   ├─ GET  /api/v1/cliente/perfil  → {nome, telefone, email, foto}
+│   └─ PATCH /api/v1/cliente/perfil  {nome?, telefone?, email?}
+├─ O que mostra: avatar com inicial, dados pessoais, form de edição, botão sair
+├─ Logout: POST /sair → redireciona para /b/<slug>/entrar
+└─ Status: FUNCIONANDO
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SEÇÃO 6 — FEATURES: MAPEAMENTO COMPLETO                                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Feature: "planos"
+──────────────────────────────────────────────────────────────────────────────
+O que habilita:
+  - Gestor: rota /gestor/planos (criar/editar/remover planos + gerir serviços)
+  - Gestor: endpoints de aprovar/rejeitar solicitações
+  - Público: GET /pub/<slug>/planos (listar planos disponíveis)
+  - Público: POST /pub/<slug>/planos/<id>/solicitar
+  - Cliente: GET /api/v1/cliente/planos (ver assinaturas)
+  - Dashboard cliente: bloco de planos_ativos (só aparece se feature ativa)
+Sincronização: SIM — dashboard.py linha ~82 checa feature_ativa() antes de buscar
+Está funcionando: SIM
+Bug relacionado: Gestor pode criar plano mesmo com feature OFF (não tem guard na
+  rota /gestor/planos — o decorator @feature_required não está nos endpoints do gestor)
+
+Feature: "cupons"
+──────────────────────────────────────────────────────────────────────────────
+O que habilita:
+  - Link "Cupons" na sidebar do gestor (JS checa window._features.cupons)
+  - GET/POST/PATCH/DELETE /api/v1/gestor/cupons (todos têm @feature_required)
+  - Validação de cupom em /api/v1/cliente/cupons/validar
+  - Uso de cupom no agendamento (pub/agendamento.py e cliente/agendamento.py)
+Está funcionando: SIM (bug de import `date` foi corrigido nesta sessão)
+Guard no backend: SIM (@feature_required nos endpoints do gestor)
+Guard no frontend React: NÃO — página /cliente/planos não checa se feature está ativa
+  antes de mostrar campo "Cupom" no wizard de agendamento
+
+Feature: "pix_integrado"
+──────────────────────────────────────────────────────────────────────────────
+O que habilita:
+  - Link "Aprovar PIX" na sidebar do gestor (JS checa window._features.pix_integrado)
+  - GET /api/v1/gestor/pix/pendentes
+  - Upload de comprovante em POST /api/v1/pub/<slug>/agendamentos/<id>/comprovante
+  - Geração de código PIX copia-cola ao solicitar plano (pub/planos.py linha ~164)
+Condição para PIX funcionar: Barbearia precisa ter chave_pix configurada
+  (b.chave_pix no modelo Barbearia)
+Está funcionando: SIM (condicionado à chave PIX estar configurada)
+Bug: Feature pode estar ON mas PIX não funcionar se chave não configurada —
+  sem aviso claro ao usuário
+
+Feature: "vip"
+──────────────────────────────────────────────────────────────────────────────
+O que deveria habilitar:
+  - Programa de pontos VIP por atendimento
+  - Níveis (Bronze, Prata, Ouro, etc.) com brindes ou descontos
+  - Exibição em /cliente/dashboard e /cliente/beneficios
+  - Gestão em /gestor/vip
+PROBLEMA CRÍTICO: O blueprint app/routes/vip.py NÃO está registrado no
+  app/__init__.py → os endpoints de gestão VIP são INACESSÍVEIS
+  (GET/POST/PUT/DELETE /api/vip/niveis retornam 404)
+Modelos existem: VipNivel, ClienteVip (definidos em models/__init__.py)
+Endpoint /api/v1/cliente/vip existe e funciona (retorna nivel=0 se sem ClienteVip)
+Endpoint /api/v1/gestor/vip existe (em gestor/)
+Conclusão: VIP é parcialmente funcional — dados existem mas gestão de níveis
+  está bloqueada (blueprint não registrado)
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SEÇÃO 7 — BUGS ENCONTRADOS                                                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+BUG #1 — CRÍTICO: Blueprint VIP não registrado
+──────────────────────────────────────────────────────────────────────────────
+Localização: app/routes/vip.py + app/__init__.py
+Severidade: CRÍTICA
+Descrição: O arquivo app/routes/vip.py contém os endpoints de gestão de níveis VIP
+  (GET/POST/PUT/DELETE /api/vip/niveis) mas o blueprint não está registrado
+  no app/__init__.py. Portanto:
+  - Gestor não consegue criar/editar/remover níveis VIP
+  - Programa VIP não pode ser configurado
+  - Feature "vip" existe mas gerenciamento está quebrado
+Causa: Blueprint declarado mas não importado/registrado
+Solução:
+  Em app/__init__.py, adicionar:
+    from app.routes.vip import vip_bp
+    app.register_blueprint(vip_bp)
+Impacto se não corrigido: Feature "vip" completamente inutilizável do lado do gestor
+
+BUG #2 — ALTA: Horários vazios se barbeiro não configurou agenda
+──────────────────────────────────────────────────────────────────────────────
+Localização: /cliente/agendar (Step 3) + GET /api/v1/pub/<slug>/barbeiros/<id>/slots
+Severidade: ALTA (bloqueia agendamento)
+Descrição: O endpoint de slots depende de ConfiguracaoAgenda para o barbeiro.
+  Se o barbeiro não configurou seus horários em /barbeiro/horario, o endpoint
+  retorna array vazio [] e o cliente não vê nenhum horário disponível.
+  Não há mensagem de erro — simplesmente fica em branco.
+Causa: Dependência silenciosa de ConfiguracaoAgenda
+Diagnóstico:
+  - Acessar /barbeiro/horario com login do barbeiro
+  - Confirmar que há horários configurados para os dias da semana
+  - Verificar se existe ConfiguracaoAgenda no banco para aquele barbeiro_id
+Solução imediata: Configurar horário do barbeiro em /barbeiro/horario
+Solução no código: Frontend deve mostrar mensagem clara "Profissional sem
+  horários configurados" em vez de lista vazia silenciosa
+
+BUG #3 — ALTA: React cliente/dashboard — chave dinâmica de planos
+──────────────────────────────────────────────────────────────────────────────
+Localização: frontend/src/pages/Dashboard.jsx + app/routes/cliente/dashboard.py
+Severidade: ALTA
+Descrição: O backend retorna a lista de planos com chave DINÂMICA:
+  f'{L("plano").lower()}s_ativos'
+  Para barbearia padrão = "planos_ativos"
+  Para outro segmento = pode ser "services_ativos", "tratamentos_ativos", etc.
+  O React Dashboard.jsx tenta encontrar o array dinamicamente mas a lógica atual
+  pode falhar se o nome do campo não for exatamente "planos_ativos".
+Código problemático (Dashboard.jsx ~linha 58):
+  const planos = Object.values(dash || {}).find(v =>
+    Array.isArray(v) && v.length >= 0 && v !== proximos
+  ) || dash?.planos_ativos || []
+  Esta lógica pode pegar o array errado se houver múltiplos arrays no objeto.
+Solução: Backend deve incluir chave fixa adicional, ou React deve usar o campo
+  'rotulos.plano' (que dashboard retorna) para construir o nome da chave dinamicamente:
+  const planoKey = `${(dash?.rotulos?.plano || 'plano').toLowerCase()}s_ativos`
+  const planos = dash?.[planoKey] || []
+
+BUG #4 — ALTA: React cliente/historico — campo barbeiro_nome
+──────────────────────────────────────────────────────────────────────────────
+Localização: frontend/src/pages/Historico.jsx + app/routes/pub/agendamento.py
+Severidade: ALTA
+Descrição: O React Historico.jsx usa ag.barbeiro_nome mas precisa verificar se
+  a função _fmt_agendamento() do backend realmente retorna esse campo.
+  A função _fmt_agendamento() em pub/agendamento.py usa L("profissional") como
+  chave dinâmica de labels, portanto o campo pode ser "barbeiro_nome",
+  "profissional_nome" ou outra variação dependendo do segmento.
+Impacto: Nome do barbeiro pode aparecer como "undefined" ou "—" no histórico
+Solução: Verificar o retorno real de _fmt_agendamento() e ajustar o React para
+  usar o campo correto, ou normalizar o campo no backend para sempre retornar
+  "barbeiro_nome" como alias fixo.
+
+BUG #5 — MÉDIA: Cliente React agendar — apenas 1 serviço por vez
+──────────────────────────────────────────────────────────────────────────────
+Localização: frontend/src/pages/Agendar.jsx Step 1
+Severidade: MÉDIA
+Descrição: O wizard de agendamento permite selecionar apenas 1 serviço.
+  A API aceita múltiplos: servicos: [{servico_id: 1}, {servico_id: 2}]
+  Mas o frontend usa seleção única (onSelectServico sobrescreve a seleção)
+  e o campo enviado é sempre [{ servico_id: servicoSel.id }]
+Impacto: Cliente não pode agendar "Corte + Barba" de uma vez
+  (precisa fazer 2 agendamentos separados)
+Solução:
+  - Mudar seleção de serviço para checkboxes
+  - Acumular servicos selecionados em array
+  - Calcular duração total (soma duracoes) para busca de slots
+  - Enviar todos os servico_ids no POST
+
+BUG #6 — MÉDIA: Feature "planos" OFF não bloqueia gestor de criar planos
+──────────────────────────────────────────────────────────────────────────────
+Localização: app/routes/gestor/planos.py
+Severidade: MÉDIA
+Descrição: Os endpoints do gestor para criar/editar planos NÃO têm
+  @feature_required('planos'). Apenas o dashboard do cliente checa a feature
+  antes de retornar dados de planos. Portanto, o gestor consegue criar planos
+  mesmo com a feature "planos" desativada.
+Impacto: Inconsistência — gestor cria planos que o cliente nunca vai ver
+Solução: Adicionar @feature_required('planos') nos endpoints do gestor:
+  - POST /api/v1/gestor/planos
+  - PATCH /api/v1/gestor/planos/<id>
+  - DELETE /api/v1/gestor/planos/<id>
+
+BUG #7 — MÉDIA: Campo cupom no React visível mesmo com feature "cupons" OFF
+──────────────────────────────────────────────────────────────────────────────
+Localização: frontend/src/pages/Agendar.jsx Step 4
+Severidade: MÉDIA
+Descrição: O campo "Cupom (opcional)" sempre aparece no Step 4 do agendamento,
+  mesmo que a feature "cupons" esteja desativada para a barbearia.
+Impacto: UX confusa — cliente insere cupom que vai ser ignorado ou gerar erro
+Solução: Buscar status das features no carregamento da página e ocultar campo
+  se feature "cupons" estiver OFF. Endpoint: GET /api/v1/gestor/features ou
+  adicionar features ao dashboard do cliente.
+
+BUG #8 — MÉDIA: PIX configurado mas sem feedback claro se chave ausente
+──────────────────────────────────────────────────────────────────────────────
+Localização: app/routes/pub/planos.py linha ~164
+Severidade: MÉDIA
+Descrição: Ao solicitar plano com metodo_pagamento='pix', o sistema só gera o
+  código copia-cola PIX se b.chave_pix estiver configurada. Se não estiver,
+  a solicitação é criada sem o código PIX e sem aviso ao cliente.
+Impacto: Cliente seleciona PIX, não recebe código, não sabe como pagar
+Solução: Verificar chave_pix antes e retornar erro 422 com mensagem clara, ou
+  remover a opção PIX do selector se barbearia não tem chave configurada.
+
+BUG #9 — BAIXA: Logout do React não redireciona para barbearia correta
+──────────────────────────────────────────────────────────────────────────────
+Localização: frontend/src/api.js + frontend/src/pages/Perfil.jsx
+Severidade: BAIXA
+Descrição: A função api.logout() redireciona para /b/${SLUG}/entrar onde SLUG
+  vem de window.BOS_SLUG injetado pelo Flask. Se BOS_SLUG estiver vazio ou
+  incorreto (ex: cliente usando dispositivo sem sessão válida), o redirect
+  pode ir para /b//entrar (URL inválida).
+Solução: Adicionar fallback em api.js:
+  const dest = SLUG ? `/b/${SLUG}/entrar` : '/entrar'
+  window.location.href = dest
+
+BUG #10 — BAIXA: /barbeiro/perfil e /barbeiro/produtos retornam 404
+──────────────────────────────────────────────────────────────────────────────
+Localização: app/routes/barbeiro/
+Severidade: BAIXA (não crítico, mas feature incompleta)
+Descrição: No smoke test completo, GET /api/v1/barbeiro/perfil e
+  GET /api/v1/barbeiro/produtos retornaram 404. Os templates existem mas
+  os endpoints de API não foram implementados.
+Impacto: Páginas de perfil e produtos do barbeiro funcionam com dados estáticos
+  ou ficam em branco.
+
+BUG #11 — INFORMAÇÃO: Sem rota /cliente/* catch-all para React Router deep links
+──────────────────────────────────────────────────────────────────────────────
+Localização: app/routes/views/auth.py
+Severidade: INFORMAÇÃO
+Descrição: O React usa BrowserRouter (rotas reais de URL). Se o usuário acessar
+  diretamente /cliente/dashboard via digitação na barra de endereço, o Flask
+  serve o template correto. Porém sub-rotas não previstas (ex: /cliente/notificacoes)
+  retornam 404 pois não existe rota Flask para elas — o React não consegue
+  renderizá-las via link direto.
+Rotas existentes no Flask: dashboard, planos, agendar, beneficios, historico, perfil
+  (notificacoes não tem rota de view Flask)
+Solução: Adicionar catch-all em views.py:
+  @views_bp.get('/cliente/<path:rest>')
+  @cliente_session_required
+  def cliente_spa_catchall(rest):
+      return _cliente_spa()
+
+BUG #12 — CORRIGIDO: NameError em gestor/cupons.py (import `date` ausente)
+──────────────────────────────────────────────────────────────────────────────
+Localização: app/routes/gestor/cupons.py
+Status: CORRIGIDO nesta sessão
+Descrição: O fix DT-001 (timezone) havia removido `from datetime import date`
+  mas `date.fromisoformat()` ainda era usado em criar_cupom() e editar_cupom().
+  Corrigido re-adicionando o import.
+
+BUG #13 — CORRIGIDO: DT-001 — Cálculo de timezone errado
+──────────────────────────────────────────────────────────────────────────────
+Localização: múltiplos arquivos de rota
+Status: CORRIGIDO nesta sessão
+Descrição: datetime.utcnow() e datetime.now() eram usados para comparações de
+  data/hora de agendamento. Corrigido para usar hoje_brasilia() e naive_brasilia()
+  do módulo app/utils/tz.py (fuso horário America/Sao_Paulo).
+  Afetava: cálculo de cancelamento_horas_minimas, aprovação de planos, relatórios.
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SEÇÃO 8 — SINCRONIZAÇÃO ENTRE SEGMENTOS                                    ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Fluxo: AGENDAMENTO PÚBLICO (sem login)
+──────────────────────────────────────
+  Visitante → /b/<slug>/ (landing page)
+    → seleciona serviço, barbeiro, data/hora
+    → POST /api/v1/pub/<slug>/agendar (com telefone, cria Cliente se não existir)
+    → Agendamento criado com status='agendado' ou 'aguardando_comprovante' (se PIX)
+    ↓
+  Barbeiro vê novo agendamento em /barbeiro/agendamentos e /barbeiro/agenda
+    → Finaliza atendimento em /barbeiro/caixa/<id>
+    → Agendamento muda para status='concluido'
+  ↓
+  Cliente vê em /cliente/historico com status='concluido' ✓
+  SINCRONIZAÇÃO: SIM (compartilham o mesmo registro no banco)
+
+Fluxo: AGENDAMENTO AUTENTICADO (cliente logado)
+────────────────────────────────────────────────
+  Cliente logado → /cliente/agendar (React)
+    → seleciona serviço (filtrado pelo plano) → barbeiro → data → hora
+    → POST /api/v1/cliente/agendamentos
+    → Valida: conflito de horário, limite do plano, cancelamento_horas_minimas
+    ↓
+  Barbeiro vê imediatamente na agenda ✓
+  Cliente vê em /cliente/historico ✓
+  SINCRONIZAÇÃO: SIM
+
+Fluxo: PLANOS DE ASSINATURA
+─────────────────────────────
+  Cliente → /cliente/planos (React)
+    → vê planos disponíveis de GET /pub/<slug>/planos
+    → solicita: POST /pub/<slug>/planos/<id>/solicitar → status='pendente'
+    ↓
+  Gestor vê em /gestor/planos → aba "Solicitações Pendentes"
+    → aprova: PUT /api/v1/gestor/planos/solicitacoes/<id>/aprovar
+    → Cria ClientePlano (ativo=True, data_inicio=hoje, data_fim=hoje+dias_expiracao)
+    ↓
+  Cliente vê plano ativo em /cliente/dashboard e /cliente/beneficios ✓
+  Filtro de serviços em /cliente/agendar passa a mostrar só serviços do plano ✓
+  Uso mensal rastreado em ClientePlanoUso ✓
+  SINCRONIZAÇÃO: SIM (com aprovação manual do gestor)
+
+Fluxo: CUPONS
+─────────────
+  Gestor cria cupom em /gestor/cupons (POST /api/v1/gestor/cupons)
+    ↓
+  Cliente usa código no /cliente/agendar (Step 4, campo "Cupom")
+    → Sistema valida: POST /api/v1/cliente/cupons/validar
+    → Agendamento criado com cupom_id, valor_desconto aplicado
+    ↓
+  Ao cancelar agendamento com cupom: uso é decrementado automaticamente
+  SINCRONIZAÇÃO: SIM
+
+Fluxo: CANCELAMENTO (cliente)
+──────────────────────────────
+  Cliente em /cliente/historico → clica Cancelar
+    → POST /api/v1/cliente/agendamentos/<id>/cancelar
+    → Valida: cancelamento_horas_minimas (ConfiguracaoAgendamento)
+    → Se agendamento tinha cupom e status='agendado': devolve uso do cupom
+    → Status muda para 'cancelado'
+    ↓
+  Barbeiro vê horário liberado na agenda ✓
+  SINCRONIZAÇÃO: SIM
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SEÇÃO 9 — RECOMENDAÇÕES E PRIORIDADES                                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+🔴 PRIORIDADE CRÍTICA
+──────────────────────
+  1. Registrar blueprint VIP no app/__init__.py (BUG #1)
+     → Sem isso, o programa VIP não pode ser configurado pelo gestor
+     → Risco: feature prometida ao cliente final que não funciona
+
+  2. Configurar horário do barbeiro em /barbeiro/horario (BUG #2)
+     → Sem ConfiguracaoAgenda, o cliente não consegue agendar
+     → Afeta diretamente o core business do sistema
+
+  3. Corrigir campo barbeiro no histórico React (BUG #4)
+     → Verificar retorno real de _fmt_agendamento() e ajustar Historico.jsx
+
+🟠 PRIORIDADE ALTA
+────────────────────
+  4. Adicionar catch-all Flask para React Router deep links (BUG #11)
+     Em auth.py após as rotas de cliente:
+       @views_bp.get('/cliente/<path:rest>')
+       @cliente_session_required
+       def cliente_spa_catchall(rest): return _cliente_spa()
+
+  5. Corrigir chave dinâmica "planos_ativos" no React Dashboard (BUG #3)
+     Usar rotulos.plano para construir o nome do campo dinamicamente
+
+  6. Implementar GET /api/v1/barbeiro/perfil e /barbeiro/produtos (BUG #10)
+
+🟡 PRIORIDADE MÉDIA
+─────────────────────
+  7. Adicionar @feature_required('planos') nos endpoints do gestor (BUG #6)
+     para bloquear criação quando feature está OFF
+
+  8. Ocultar campo cupom no React quando feature 'cupons' está OFF (BUG #7)
+
+  9. Mensagem clara quando PIX selecionado mas chave não configurada (BUG #8)
+
+  10. Multi-serviço no agendamento React (BUG #5)
+      - Checkboxes em vez de seleção única no Step 1
+      - Duração total = soma das durações
+      - Enviar array completo de servicos[]
+
+  11. Corrigir redirect de logout quando BOS_SLUG vazio (BUG #9)
+
+🟢 PRIORIDADE BAIXA / MELHORIAS
+──────────────────────────────────
+  12. Adicionar testes automatizados para o fluxo completo:
+      cadastro → login → agendar → confirmar → histórico
+
+  13. Implementar endpoint de alterar senha no cliente React
+      (PATCH /api/v1/cliente/perfil não aceita 'senha' atualmente)
+
+  14. Notificações: os endpoints existem (GET /api/v1/cliente/notificacoes)
+      mas não há página React para elas. Adicionar contador de não-lidas
+      no header do React SPA.
+
+  15. Validação de horário mínimo de antecedência no FRONTEND do agendamento
+      (hoje só o backend valida cancelamento — agendamento pode ser criado
+      para horário passado se a validação backend falhar silenciosamente)
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  SEÇÃO 10 — RESUMO EXECUTIVO                                                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+TOTAL DE ROTAS MAPEADAS:
+  ├─ Super Admin:    9 rotas HTML + ~10 endpoints API
+  ├─ Gestor:        14 rotas HTML + ~25 endpoints API
+  ├─ Barbeiro:      11 rotas HTML + ~6 endpoints API (2 com 404)
+  ├─ Público:        3 rotas HTML + 7 endpoints API
+  └─ Cliente React:  6 rotas SPA  + 13 endpoints API
+
+FEATURES:
+  ├─ "planos"        — FUNCIONANDO (guard parcial — gestor sem guard)
+  ├─ "cupons"        — FUNCIONANDO (bug de import foi corrigido)
+  ├─ "pix_integrado" — FUNCIONANDO (depende de chave PIX configurada)
+  └─ "vip"           — QUEBRADO (blueprint não registrado)
+
+BUGS ATIVOS: 11 (sendo 1 crítico, 3 altos, 4 médios, 3 baixos)
+BUGS CORRIGIDOS NESTA SESSÃO: 2 (DT-001 timezone + NameError cupons)
+
+CORE FLOWS:
+  ├─ Cadastro de cliente:             ✅ FUNCIONANDO
+  ├─ Login de cliente:                ✅ FUNCIONANDO
+  ├─ Agendamento público (sem login): ✅ FUNCIONANDO (requer horário configurado)
+  ├─ Agendamento autenticado:         ✅ FUNCIONANDO (requer horário + plano)
+  ├─ Gestão de planos (gestor):       ✅ FUNCIONANDO
+  ├─ Cupons de desconto:              ✅ FUNCIONANDO (feature ON)
+  ├─ PIX integrado:                   ✅ FUNCIONANDO (com chave configurada)
+  ├─ Programa VIP:                    ❌ QUEBRADO (blueprint não registrado)
+  ├─ Histórico do cliente React:      ⚠️  PARCIAL (campo barbeiro a verificar)
+  └─ Dashboard do cliente React:      ⚠️  PARCIAL (chave dinâmica de planos)
+
+═══════════════════════════════════════════════════════════════════════════════
+FIM DA AUDITORIA — BarberOS v1.0  |  2026-06-30
+Próxima revisão recomendada: após correção do BUG #1 (VIP blueprint)
+═══════════════════════════════════════════════════════════════════════════════

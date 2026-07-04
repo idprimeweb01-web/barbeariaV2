@@ -1,0 +1,581 @@
+================================================================================
+AUDITORIA_SEGURANCA.txt — BARBEROS SAAS
+Gerado em: 2026-07-02
+Objetivo: Vulnerabilidades além dos básicos (CSRF, JWT, Hash, XSS, Upload,
+          CORS, Desserialização, Segredos)
+Arquivos analisados: .env, app/__init__.py, app/context.py, app/decorators/auth.py,
+  app/routes/views/auth.py, app/routes/pub/agendamento.py,
+  app/templates/** (todos os .html), scripts de dev (create_db.py, check_tables.py...)
+================================================================================
+
+RESUMO EXECUTIVO
+----------------
+Problemas encontrados: 16
+  Críticos  (P0): 3  — SECRET_KEY placeholder em produção, JWT_SECRET_KEY previsível
+                       e credenciais Cloudinary reais no .env exposto
+  Altos     (P1): 4  — MIME type de upload confiado ao client, CSRF do cookie de
+                       sessão Flask sem SameSite, SPA usa {{ }} em vez de tojson,
+                       context.py silencia exceções JWT com except Exception
+  Médios    (P2): 5  — JWT_CSRF desabilitado (mitigado mas não ideal), refresh
+                       token de 30 dias, scripts de dev com senha hardcoded,
+                       JWT_COOKIE_SECURE desativado fora de produção,
+                       Cloudinary reconfigurado em cada requisição (leak de env)
+  Seguros   (✓):  4  — Password hashing (werkzeug PBKDF2), CORS (não configurado
+                       = sem wildcard), pickle/eval (não usados), | safe (não usado)
+
+================================================================================
+TAREFA 5.1 — CSRF Token Validação
+================================================================================
+
+ESTADO: PARCIALMENTE MITIGADO — mas com lacuna nas sessões Flask
+
+PROTEÇÃO EXISTENTE (JWT em cookie com SameSite=Lax)
+-----------------------------------------------------
+# app/__init__.py linha 45-46
+JWT_COOKIE_SAMESITE='Lax',
+JWT_COOKIE_CSRF_PROTECT=False,  # SameSite=Lax cobre CSRF; CSRF token seria ruído
+
+A decisão é tecnicamente defensável para os endpoints /api/v1/*:
+- SameSite=Lax bloqueia envio dos cookies `bos_at` / `bos_rt` em requisições
+  cross-site com método POST/PUT/DELETE ✓
+- Ataques CSRF clássicos (form POST de outro domínio) não recebem o cookie ✓
+- JSON body com `Content-Type: application/json` não pode ser enviado via form
+  HTML cross-site sem preflight CORS ✓
+
+PROBLEMA P1 — Sessão Flask sem SameSite
+-----------------------------------------
+O cookie de sessão Flask (`session`) NÃO tem SameSite configurado:
+
+# app/__init__.py — NÃO existe esta configuração:
+# SESSION_COOKIE_SAMESITE = 'Lax'   ← AUSENTE
+
+Flask default para SESSION_COOKIE_SAMESITE é None (nenhum atributo SameSite).
+Isso significa que o cookie de sessão É enviado em requisições cross-site.
+
+# app/routes/views/auth.py linha 26-ss — session_required(*perfis) guarda as
+# views de página (/gestor/, /barbeiro/, etc.)
+# As views de página fazem redirecionamentos, mas não modificam estado via
+# form submit — toda modificação vai pelas APIs JWT.
+# Risco prático: baixo, mas teórico existe.
+
+PROBLEMA ADICIONAL: SameSite=Lax não protege navegadores antigos
+-----------------------------------------------------------------
+IE11, Edge < 18, Android WebView < 80: não entendem SameSite.
+Nesses browsers, SameSite=Lax é ignorado → cookies JWT enviados em cross-site.
+Com `JWT_COOKIE_CSRF_PROTECT=False`, esses browsers ficam vulneráveis.
+
+CORREÇÃO SUGERIDA
+-----------------
+A) Setar samesite na sessão Flask (baixo custo, alto benefício):
+   # app/__init__.py, dentro de app.config.update:
+   SESSION_COOKIE_SAMESITE='Lax',
+   SESSION_COOKIE_HTTPONLY=True,
+
+B) Reabilitar o CSRF token do Flask-JWT-Extended como defesa em profundidade:
+   JWT_COOKIE_CSRF_PROTECT=True,
+   # O cliente envia o X-CSRF-TOKEN header; Flask-JWT-Extended valida.
+   # Browsers modernos com SameSite já são protegidos; isso cobre os antigos.
+
+================================================================================
+TAREFA 5.2 — JWT Validation
+================================================================================
+
+ESTADO: SEGURO em geral, com dois pontos de atenção
+
+ANÁLISE DAS CONFIGURAÇÕES
+--------------------------
+# app/__init__.py linha 36-41
+JWT_ACCESS_TOKEN_EXPIRES=timedelta(minutes=15),   ✓ curto, OK
+JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=30),      ← ver abaixo
+JWT_TOKEN_LOCATION=['headers', 'cookies'],         ← ver abaixo
+JWT_HEADER_NAME='Authorization',
+JWT_HEADER_TYPE='Bearer',
+
+NÃO FOI ENCONTRADO:
+  ✓ jwt.decode(options={"verify_signature": False}) — ausente
+  ✓ get_jwt() sem @jwt_required — ausente
+  ✓ algoritmo None/HS256 explícito sem verificação — ausente
+
+PROBLEMA P2 — Refresh token de 30 dias
+----------------------------------------
+Se um refresh token for roubado (ex: XSS, device theft, MITM em HTTP):
+- O atacante tem 30 dias para gerar novos access tokens a qualquer momento
+- Não há mecanismo de revogação de refresh tokens implementado
+- Não há tabela de tokens revogados (blacklist)
+- Deslogar via `POST /api/v1/auth/logout` deleta o cookie no browser, mas se o
+  atacante copiou o cookie, ele ainda é válido por 30 dias no servidor
+
+PROBLEMA P1 — context.py silencia TODAS as exceções JWT
+---------------------------------------------------------
+# app/context.py linha 9-21
+try:
+    verify_jwt_in_request(optional=True)
+    uid = get_jwt_identity()
+    if uid is not None:
+        usuario = db.session.get(Usuario, int(uid))
+        if usuario and usuario.ativo:
+            g.user_id = usuario.id
+            g.perfil = usuario.perfil
+            g.barbearia_id = usuario.barbearia_id
+except Exception:
+    pass    # ← captura TUDO silenciosamente
+
+`except Exception: pass` cobre:
+- `ExpiredSignatureError` → OK, token expirado, trata como não autenticado ✓
+- `InvalidSignatureError` → OK, token forjado, trata como não autenticado ✓
+- `db.OperationalError` (banco fora do ar) → PROBLEMA: silencia falha de DB!
+  A requisição continua como "não autenticado" em vez de retornar 503.
+  Um endpoint com @gestor_required retornaria 401, mas um endpoint sem decorator
+  (ex: /health, pub/*) continuaria funcionando com g.user_id=None.
+
+PROBLEMA MÉDIO — JWT aceito via header E cookie simultaneamente
+----------------------------------------------------------------
+`JWT_TOKEN_LOCATION=['headers', 'cookies']` — qualquer um dos dois funciona.
+Se um atacante consegue fazer a vítima incluir um JWT via header (ex: via XSS
+que adiciona `Authorization: Bearer <token_do_atacante>`), o header token tem
+precedência sobre o cookie. Isso abre a Confused Deputy Attack em cenários
+específicos de XSS.
+
+CORREÇÃO SUGERIDA
+-----------------
+A) Implementar refresh token blacklist (tabela revoked_tokens ou Redis SET):
+   class TokenRevogado(db.Model):
+       jti = db.Column(db.String(64), unique=True, nullable=False, index=True)
+       revogado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+B) Separar o except por tipo de exceção:
+   from flask_jwt_extended.exceptions import JWTExtendedException
+   try:
+       verify_jwt_in_request(optional=True)
+       ...
+   except JWTExtendedException:
+       pass   # JWT inválido/expirado → não autenticado, OK
+   except Exception as e:
+       app.logger.error(f'Erro inesperado no contexto JWT: {e}')
+       # Não silenciar falhas de banco; considerar abort(503)
+
+C) Refresh token de 7 dias (mais comum para SaaS mobile-first):
+   JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=7),
+
+================================================================================
+TAREFA 5.3 — Password Hashing
+================================================================================
+
+ESTADO: SEGURO ✓
+
+VERIFICAÇÃO COMPLETA
+--------------------
+Todos os pontos de criação e verificação de senha usam werkzeug.security:
+
+  generate_password_hash(senha)   — PBKDF2-SHA256, 260.000 iterações (werkzeug 3)
+  check_password_hash(hash, senha) — timing-safe comparison
+
+Arquivos verificados:
+  ✓ app/routes/views/auth.py (login, registro, redefinição)
+  ✓ app/routes/auth.py (API login, troca de senha)
+  ✓ app/routes/gestor/profissionais.py (criação de barbeiro)
+  ✓ app/routes/super/barbearias.py (criação de gestor)
+  ✓ app/seeds.py, seeds_prod.py, limpar_banco.py, criar_super_admin.py
+
+NÃO ENCONTRADO:
+  ✓ hashlib.md5 — ausente
+  ✓ hashlib.sha1 — ausente
+  ✓ senha em plaintext — ausente
+
+OBSERVAÇÃO MENOR
+----------------
+`debug_adm.py` linha 14: `check_password_hash(user.senha, "senha123")` — senha
+de teste hardcoded em script de debug. Não é risco em produção (é um script
+de diagnóstico local), mas deve estar no .gitignore.
+
+================================================================================
+TAREFA 5.4 — XSS via Templating
+================================================================================
+
+ESTADO: PROTEÇÃO INCOMPLETA — cliente/app.html sem | tojson
+
+| safe NÃO FOI ENCONTRADO em nenhum template ✓
+Jinja2 com autoescape=True ativo para .html ✓
+
+PROBLEMA P1 — cliente/app.html usa {{ }} em vez de | tojson em contexto JS
+---------------------------------------------------------------------------
+# app/templates/cliente/app.html linhas 8-11
+<script>
+    window.BOS_SLUG     = "{{ bk_slug }}";
+    window.BOS_NOME     = "{{ bk_nome }}";
+    window.BOS_USUARIO  = "{{ c_nome }}";
+    window.BOS_LOGIN_URL = "/b/{{ bk_slug }}/entrar";
+</script>
+
+O autoescape HTML converte `"` → `&quot;` e `<` → `&lt;`, o que previne
+quebra de string JS via aspas ou tags. Mas NÃO escapa:
+
+  Backslash: bk_nome = "Barbearia\teste"
+    → window.BOS_NOME = "Barbearia\teste"    ← \t = tab em JS, quebra string
+
+  Newline: bk_nome = "linha1\nlinha2"
+    → window.BOS_NOME = "linha1
+       linha2"                                ← SyntaxError JS
+
+  Unicode surrogates e outros caracteres que quebram JS strings
+
+COMPARAÇÃO COM O PADRÃO CORRETO (já usado em outros templates):
+  # booking.html linha 302-303 ← CORRETO
+  const SLUG    = {{ slug|tojson }};
+  const BK_NOME = {{ bk_nome|tojson }};
+
+  # dashboard.html linha 72 ← CORRETO
+  const nome = {{ (c_nome or 'Cliente') | tojson }}.split(' ')[0];
+
+IMPACTO
+-------
+- bk_slug: definido por super_admin → risco de insider apenas
+- bk_nome: definido por super_admin → risco de insider apenas
+- c_nome: definido pelo PRÓPRIO cliente no registro → self-XSS limitado
+  (o cliente só prejudica a si mesmo, dado que cada sessão é isolada)
+
+No entanto, o padrão inconsistente é um risco de manutenção:
+um dev pode adicionar nova variável seguindo o padrão de app.html
+e introduzir XSS real inadvertidamente.
+
+CORREÇÃO SUGERIDA
+-----------------
+# app/templates/cliente/app.html — trocar para tojson em todos:
+<script>
+    window.BOS_SLUG     = {{ bk_slug | tojson }};
+    window.BOS_NOME     = {{ bk_nome | tojson }};
+    window.BOS_USUARIO  = {{ c_nome | tojson }};
+    window.BOS_LOGIN_URL = "/b/" + {{ bk_slug | tojson }} + "/entrar";
+</script>
+
+================================================================================
+TAREFA 5.5 — File Upload Validation
+================================================================================
+
+ESTADO: BOM — com uma lacuna de MIME type no lado do servidor
+
+PROTEÇÕES PRESENTES
+-------------------
+# pub/agendamento.py linhas 542-613
+_TIPOS_COMPROVANTE = {'image/jpeg', 'image/jpg', 'image/png'}
+_MAX_BYTES_COMP    = 5 * 1024 * 1024   # 5 MB ✓
+
+  ✓ Limite de tamanho 5MB verificado via seek+tell antes de enviar ao Cloudinary
+  ✓ Extensões implicitamente controladas pela whitelist de mimetype
+  ✓ Sem salvamento em filesystem local (usa Cloudinary) → sem path traversal
+  ✓ public_id fixo em formato `ag_{agendamento_id}` → sem directory traversal
+  ✓ overwrite=True intencional: segundo envio substitui o primeiro
+
+PROBLEMA P1 — MIME type verificado a partir do header do cliente
+----------------------------------------------------------------
+# linha 573
+if arq.mimetype not in _TIPOS_COMPROVANTE:
+    raise APIError('Tipo não permitido. Use JPEG ou PNG.', 400)
+
+`arq.mimetype` vem do `Content-Type` enviado pelo browser/cliente na request.
+Um atacante pode enviar `Content-Type: image/jpeg` mas com conteúdo SVG/HTML/PDF:
+
+  curl -X POST ... \
+    -H "Content-Type: image/jpeg" \         ← mente sobre o tipo
+    --form 'arquivo=@malware.svg;type=image/jpeg'
+
+O arquivo real é SVG (pode conter JavaScript via <script> em SVG):
+  Cloudinary faz moderação de conteúdo? → depende do plano.
+  Se o SVG for retornado como Content-Type: image/svg+xml pelo Cloudinary
+  e um usuário abrir a URL diretamente, XSS no domínio do Cloudinary.
+
+A validação deveria inspecionar os magic bytes do arquivo real:
+  JPEG: primeiros bytes FF D8 FF
+  PNG:  primeiros bytes 89 50 4E 47
+
+CORREÇÃO SUGERIDA
+-----------------
+import imghdr  # stdlib Python
+
+arq.seek(0)
+tipo_real = imghdr.what(arq.stream)
+arq.seek(0)
+if tipo_real not in ('jpeg', 'png'):
+    raise APIError('Arquivo não é JPEG ou PNG válido.', 400)
+
+Ou usar a biblioteca `python-magic` para uma verificação mais robusta:
+import magic
+tipo_real = magic.from_buffer(arq.read(2048), mime=True)
+arq.seek(0)
+if tipo_real not in _TIPOS_COMPROVANTE:
+    raise APIError('Tipo não permitido. Use JPEG ou PNG.', 400)
+
+================================================================================
+TAREFA 5.6 — CORS Misconfiguration
+================================================================================
+
+ESTADO: SEGURO ✓ — sem CORS configurado, sem wildcard
+
+VERIFICAÇÃO
+-----------
+NÃO FOI ENCONTRADO:
+  ✓ flask_cors import
+  ✓ Access-Control-Allow-Origin header manual
+  ✓ after_request com CORS headers
+
+Flask não adiciona headers CORS por padrão.
+
+ARQUITETURA EXPLICA POR QUÊ NÃO PRECISA
+-----------------------------------------
+- Frontend (templates Jinja, SPA React) é servido pelo MESMO processo Flask
+- APIs `/api/v1/*` e o frontend estão no mesmo origin (mesmo domínio + porta)
+- Same-origin requests não precisam de CORS
+
+OBSERVAÇÃO FUTURA
+-----------------
+Se no futuro o frontend for separado (Vercel, CDN) e a API ficar em Railway:
+  origens diferentes → CORS será necessário.
+  Nesse momento, usar flask_cors com whitelist explícita:
+  CORS(app, origins=['https://barbearia.com', 'https://www.barbearia.com'])
+  NÃO usar origins=['*'].
+
+================================================================================
+TAREFA 5.7 — Insecure Deserialization
+================================================================================
+
+ESTADO: SEGURO ✓ — pickle e eval ausentes
+
+VERIFICAÇÃO COMPLETA
+--------------------
+Buscado em todos os .py do projeto:
+  ✓ import pickle         — NÃO ENCONTRADO
+  ✓ pickle.loads(         — NÃO ENCONTRADO
+  ✓ eval(                 — NÃO ENCONTRADO
+  ✓ exec(                 — NÃO ENCONTRADO
+  ✓ __import__(           — NÃO ENCONTRADO
+  ✓ compile(              — NÃO ENCONTRADO
+
+Desserialização de dados externos usa apenas:
+  ✓ request.get_json(silent=True)    — json.loads internamente (seguro)
+  ✓ json.loads(row['brindes'])       — dados do banco próprio (não externo)
+
+================================================================================
+TAREFA 5.8 — Hardcoded Secrets
+================================================================================
+
+ESTADO: P0 CRÍTICO — segredos reais e placeholders inseguros no .env
+
+.env VERIFICADO (arquivo completo — 8 linhas)
+----------------------------------------------
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/barberos
+SECRET_KEY=your-secret-key-here
+# Gere com: python -c "import secrets; print(secrets.token_hex(32))"
+JWT_SECRET_KEY=SUBSTITUA-POR-UMA-CHAVE-SEGURA-DE-PELO-MENOS-32-BYTES-AGORA
+FLASK_ENV=production
+CLOUDINARY_CLOUD_NAME=dftntop4j
+CLOUDINARY_API_KEY=366411938841532
+CLOUDINARY_API_SECRET=M_sGVbp_9XWUHz5BffO7Dd-qFWY
+
+PROBLEMA P0.A — SECRET_KEY é um placeholder conhecido
+------------------------------------------------------
+SECRET_KEY=your-secret-key-here
+
+Flask usa SECRET_KEY para:
+  - Assinar cookies de sessão Flask (session_required nas views)
+  - Assinar tokens CSRF do WTForms (se usado)
+
+Com "your-secret-key-here" qualquer atacante pode:
+  1. Forjar um cookie de sessão Flask com qualquer user_id/perfil
+  2. Contornar as proteções de session_required(*perfis) nas views HTML
+  3. Acessar /gestor/, /barbeiro/ sem credenciais válidas
+
+Severidade: CRÍTICA. Esta é a chave que protege as sessões de página.
+
+PROBLEMA P0.B — JWT_SECRET_KEY é um placeholder que PASSA a validação
+----------------------------------------------------------------------
+JWT_SECRET_KEY=SUBSTITUA-POR-UMA-CHAVE-SEGURA-DE-PELO-MENOS-32-BYTES-AGORA
+
+# app/__init__.py linha 25-29
+jwt_key = os.environ.get('JWT_SECRET_KEY', '')
+if len(jwt_key) < 32:
+    raise RuntimeError('JWT_SECRET_KEY deve ter no mínimo 32 bytes...')
+
+O placeholder tem 60 caracteres → PASSA a validação de 32 bytes.
+A validação verifica comprimento, não imprevisibilidade.
+
+Com esta chave previsível, um atacante pode:
+  1. Criar JWTs HS256 assinados com esta chave
+  2. Se passar como gestor, super_admin, ou qualquer perfil
+  3. Acessar todos os endpoints da API sem credenciais reais
+
+Isso anula completamente a segurança do sistema de autenticação.
+
+PROBLEMA P0.C — Credenciais Cloudinary REAIS no .env
+------------------------------------------------------
+CLOUDINARY_CLOUD_NAME=dftntop4j
+CLOUDINARY_API_KEY=366411938841532
+CLOUDINARY_API_SECRET=M_sGVbp_9XWUHz5BffO7Dd-qFWY
+
+Estas são credenciais REAIS de uma conta Cloudinary ativa.
+O .env está no .gitignore (não será commitado ao git) ✓.
+
+MAS: Se o .env vazar por qualquer outro meio (backup, log, erro de config no
+Railway que expõe variáveis, acesso indevido ao servidor), um atacante com a
+CLOUDINARY_API_SECRET pode:
+  - Deletar todas as imagens do account
+  - Fazer upload de conteúdo malicioso
+  - Gerar URLs assinadas por tempo ilimitado
+  - Acessar todos os outros recursos da conta Cloudinary
+
+RECOMENDAÇÃO: Rotacionar a API Secret do Cloudinary imediatamente se há
+suspeita de que este arquivo possa ter sido exposto.
+
+PROBLEMA P2 — Senhas hardcoded em scripts de desenvolvimento
+-------------------------------------------------------------
+  create_db.py linha 4:    password='barberos123'
+  check_tables.py linha 3: password='barberos123'
+  debug_adm.py linha 14:   check_password_hash(user.senha, "senha123")
+  reset_adm.py linha 9:    generate_password_hash("senha123")
+
+Esses scripts são de desenvolvimento local. O risco aumenta se:
+  a) A mesma senha `barberos123` for usada no banco de produção
+  b) Esses scripts forem commitados com as senhas (check_tables.py e
+     create_db.py NÃO estão no .gitignore verificado)
+
+OBSERVAÇÃO: check_tables.py e create_db.py aparentemente não estão no
+.gitignore, então podem estar no repositório git.
+
+PROBLEMA P2 — Cloudinary reconfigurado em CADA requisição
+----------------------------------------------------------
+# pub/agendamento.py linhas 546-551
+def _cfg_cloudinary_pub():
+    cloudinary.config(
+        cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
+        api_key=os.environ.get('CLOUDINARY_API_KEY'),
+        api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
+    )
+
+# super/barbearias.py linhas 25-29 — mesma configuração duplicada
+
+cloudinary.config() é chamado em cada requisição de upload. Isso não é uma
+vulnerabilidade mas é uma falha de configuração: o SDK deveria ser configurado
+uma única vez no startup da aplicação. Em alta concorrência, pode haver race
+condition se o SDK for global e reconfigurado concorrentemente.
+
+CORREÇÃO SUGERIDA
+-----------------
+A) Gerar chaves reais e substituir no .env IMEDIATAMENTE:
+   python -c "import secrets; print(secrets.token_hex(32))"
+   → copiar o output para SECRET_KEY= e JWT_SECRET_KEY= no .env
+
+B) Verificar entropia além do comprimento:
+   # app/__init__.py — adicionar verificação de entropia:
+   import secrets
+   # Reject known-bad keys:
+   _KNOWN_BAD = {'your-secret-key-here', 'dev-secret', 'SUBSTITUA'}
+   if any(bad in jwt_key for bad in _KNOWN_BAD):
+       raise RuntimeError('JWT_SECRET_KEY contém placeholder padrão. Gere uma chave real.')
+
+C) Configurar Cloudinary no startup, não por requisição:
+   # app/__init__.py, dentro de create_app():
+   import cloudinary
+   cloudinary.config(
+       cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
+       api_key=os.environ.get('CLOUDINARY_API_KEY'),
+       api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
+   )
+
+D) Adicionar scripts de dev ao .gitignore:
+   check_tables.py
+   create_db.py
+   debug_adm.py
+   reset_adm.py
+
+E) Usar .env.example com placeholders (sem valores reais) para documentação,
+   e .env (gitignored) com valores reais. Rotacionar o Cloudinary API Secret.
+
+================================================================================
+RESUMO CONSOLIDADO — PRIORIDADE DE CORREÇÃO
+================================================================================
+
+P0 — CRÍTICO (segurança do sistema comprometida — CORRIGIR HOJE):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ID   │ Arquivo          │ Problema                     │ Impacto            │
+├──────┼──────────────────┼──────────────────────────────┼────────────────────┤
+│ SG01 │ .env linha 2     │ SECRET_KEY=your-secret-key   │ Forja sessão Flask │
+│      │                  │ Placeholder conhecido         │ → bypass view auth │
+├──────┼──────────────────┼──────────────────────────────┼────────────────────┤
+│ SG02 │ .env linha 4     │ JWT_SECRET_KEY=SUBSTITUA...  │ Forja JWT de qualq.│
+│      │                  │ Placeholder que passa check   │ perfil → API 100%  │
+│      │ app/__init__.py  │ de 32 chars                  │ comprometida       │
+│      │ linha 25-29      │                              │                    │
+├──────┼──────────────────┼──────────────────────────────┼────────────────────┤
+│ SG03 │ .env linhas 7-8  │ CLOUDINARY_API_KEY e SECRET  │ Controle total     │
+│      │                  │ reais no arquivo              │ da conta Cloudinary│
+└─────────────────────────────────────────────────────────────────────────────┘
+
+P1 — ALTO (corrigir antes de go-live público):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ID   │ Arquivo          │ Problema                     │ Impacto            │
+├──────┼──────────────────┼──────────────────────────────┼────────────────────┤
+│ SG04 │ app/__init__.py  │ SESSION_COOKIE_SAMESITE não  │ CSRF via sessão    │
+│      │ (ausente)        │ configurado                  │ Flask em browsers  │
+│      │                  │                              │ sem SameSite       │
+├──────┼──────────────────┼──────────────────────────────┼────────────────────┤
+│ SG05 │ pub/agendamento  │ MIME type verificado via      │ Upload de conteúdo │
+│      │ .py linha 573    │ header do cliente (não magic  │ malicioso como SVG │
+│      │                  │ bytes)                        │ com JS             │
+├──────┼──────────────────┼──────────────────────────────┼────────────────────┤
+│ SG06 │ templates/       │ app.html usa {{ bk_nome }}   │ XSS por backslash/ │
+│      │ cliente/app.html │ em vez de | tojson em script │ newline em nomes   │
+│      │ linhas 8-11      │                              │                    │
+├──────┼──────────────────┼──────────────────────────────┼────────────────────┤
+│ SG07 │ app/context.py   │ except Exception: pass        │ Falhas de banco    │
+│      │ linha 20-21      │ silencia erros de DB          │ logadas como "não  │
+│      │                  │                              │ autenticado"        │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+P2 — MÉDIO (backlog prioridade média):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ID   │ Arquivo          │ Problema                     │ Impacto            │
+├──────┼──────────────────┼──────────────────────────────┼────────────────────┤
+│ SG08 │ app/__init__.py  │ JWT_COOKIE_CSRF_PROTECT=False │ Sem double-submit  │
+│      │ linha 46         │ (mitigado por SameSite=Lax)  │ p/ browsers antigos│
+├──────┼──────────────────┼──────────────────────────────┼────────────────────┤
+│ SG09 │ app/__init__.py  │ JWT_REFRESH_TOKEN_EXPIRES    │ Token roubado ativo │
+│      │ linha 37         │ = 30 dias, sem blacklist      │ por 30 dias         │
+├──────┼──────────────────┼──────────────────────────────┼────────────────────┤
+│ SG10 │ create_db.py:4   │ Senhas hardcoded nos scripts  │ Risco se senha     │
+│      │ check_tables.py:3│ de dev (barberos123, senha123)│ usada em produção  │
+├──────┼──────────────────┼──────────────────────────────┼────────────────────┤
+│ SG11 │ app/__init__.py  │ JWT_COOKIE_SECURE depende    │ Cookies enviados   │
+│      │ linha 44         │ de FLASK_ENV == 'production'  │ sem Secure em QA/  │
+│      │                  │ (string comparison frágil)    │ staging via HTTP   │
+├──────┼──────────────────┼──────────────────────────────┼────────────────────┤
+│ SG12 │ pub/agendamento  │ cloudinary.config() chamado  │ Race condition em  │
+│      │ super/barbearias │ em cada request de upload     │ alta concorrência  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+ITENS SEGUROS (sem problema encontrado):
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ✓ 5.3 Password Hashing  │ werkzeug PBKDF2-SHA256 em todas as operações      │
+│ ✓ 5.6 CORS              │ Sem configuração CORS = sem wildcard = seguro      │
+│ ✓ 5.7 Deserialização    │ Sem pickle, eval, exec em nenhum arquivo .py       │
+│ ✓ 5.4 | safe em HTML    │ Filtro | safe não usado em nenhum template         │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+AÇÃO IMEDIATA NECESSÁRIA (ANTES DE QUALQUER ACESSO EXTERNO)
+================================================================================
+
+1. GERAR E SUBSTITUIR SECRET_KEY no .env:
+   python -c "import secrets; print(secrets.token_hex(32))"
+
+2. GERAR E SUBSTITUIR JWT_SECRET_KEY no .env:
+   python -c "import secrets; print(secrets.token_hex(32))"
+
+3. VERIFICAR se o .env já foi commitado alguma vez ao git:
+   git log --all --full-history -- .env
+   Se sim, fazer git history rewrite OU rotacionar todas as credenciais.
+
+4. ROTACIONAR o Cloudinary API Secret se houver suspeita de exposição:
+   dashboard.cloudinary.com → Settings → Access Keys → Regenerate
+
+================================================================================
+FIM DE AUDITORIA_SEGURANCA.txt
+================================================================================

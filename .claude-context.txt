@@ -1,0 +1,882 @@
+PROJETO: BarberOS v1.0 → v1.1 Refatoração
+STACK: Flask + PostgreSQL + SQLAlchemy + Alembic
+
+REGRAS GLOBAIS PARA TODOS OS SCRIPTS:
+1. Migrations: criar, MOSTRAR conteúdo, AGUARDAR autorização antes de flask db upgrade
+2. Cada script termina com: servidor rodando + smoke test + git commit
+3. Relatório: RELATORIO_BLOCO_XX.txt com mudanças + validação + problemas
+4. Nenhuma mudança visual não documentada
+5. Portas /api/v1/pub/* sempre abertas (integração futura WhatsApp/n8n)
+
+ESTRUTURA DE PASTA:
+  app/
+  ├─ __init__.py
+  ├─ models/__init__.py
+  ├─ routes/
+  ├─ utils/
+  ├─ templates/
+  └─ static/
+  migrations/
+  backup_pre_refatoracao.sql  ← BKP PRÉ-SCRIPTS
+
+BANCO LOCAL:
+  User: postgres
+  DB: barberos
+  Host: localhost:5432
+
+═══════════════════════════════════════════════════════════════════════════════
+BRIEFING COMPLETO DA REFATORAÇÃO v1.0 → v1.1
+═══════════════════════════════════════════════════════════════════════════════
+
+Este documento defini EXATAMENTE o que será feito, por que será feito, e onde
+pode dar erro. Ele é O MAPA para evitar problemas.
+
+═══════════════════════════════════════════════════════════════════════════════
+CONTEXTO DO PROJETO
+═══════════════════════════════════════════════════════════════════════════════
+
+NOME: BarberOS
+VERSÃO ATUAL: v1.0.0 (pronta, mas com dívidas técnicas críticas)
+VERSÃO ALVO: v1.1.0 (production-ready)
+TEMPO ESTIMADO: 8 dias | 20 scripts sequenciais
+
+STACK ATUAL:
+├─ Backend: Flask 2.x + Python 3.9+
+├─ Banco: PostgreSQL 14+ com SQLAlchemy ORM + Alembic migrations
+├─ Autenticação: flask-jwt-extended (JWT em HttpOnly cookies)
+├─ Isolamento: Multi-tenant por barbearia_id (raiz do padrão)
+├─ Frontend: Jinja2 templates + vanilla JS (bos.js) — sem React
+├─ Storage: Cloudinary (cloud: dftntop4j)
+├─ Timezone: app/utils/tz.py (naive_brasilia, hoje_brasilia)
+├─ Deploy: Railway (PostgreSQL + Python)
+└─ Versionamento: Git + GitHub (idprimeweb01-web/barbeariaV2)
+
+ESTADO ATUAL DO CÓDIGO:
+├─ Features: ✅ 100% funcionais (3 levas: Gestor, Barbeiro, Cliente)
+├─ Segurança: ❌ 272 problemas identificados em auditoria
+├─ Concorrência: ❌ TOCTOU em 5 fluxos críticos (double-booking possível)
+├─ Integridade: ❌ Validação apenas em Python (banco aceita dados ruins)
+├─ Performance: ❌ N+1 queries, sem paginação, sem índices críticos
+└─ Deploy: ⚠️ Secrets são placeholders ('your-secret-key-here')
+
+OBJETIVO DESTA REFATORAÇÃO:
+├─ Eliminar race conditions → locks + constraints
+├─ Elevar validação pro banco → impossível dados corrompidos
+├─ Revogação de tokens → logout real + tenant inativo = sem acesso
+├─ Segurança: hardening completo (XSS, IDOR, rate limiting, magic bytes)
+├─ Performance: eager loading, índices, paginação
+├─ Features: Transferência de agendamentos, Sistema de Produtos
+└─ Production-ready: secrets validados, monitoria, backup pronto
+
+═══════════════════════════════════════════════════════════════════════════════
+ETAPA 1 — ANÁLISE (JÁ FEITA)
+═══════════════════════════════════════════════════════════════════════════════
+
+ENTIDADES PRINCIPAIS:
+├─ Barbearia (raiz, multi-tenant)
+│  ├─ Segmento (tipo: barbearia, salão, clínica, manicure)
+│  ├─ SegmentoRotulo (labels dinâmicos: "Barbeiro" → "Profissional")
+│  ├─ Feature (planos, cupons, pix, vip, produtos_venda)
+│  ├─ FeatureBarbearia (toggles por tenant)
+│  ├─ BarbeariaCustomizacao (logo, capa, cor, bio, contatos, horários)
+│  └─ ConfiguraçãoAgendamento (PIX key, limite, etc)
+├─ Usuario (multi-perfil: super_admin, gestor, barbeiro, cliente)
+│  ├─ Barbeiro (extends Usuario, comissão, serviços, horário)
+│  └─ Cliente (extends Usuario, planos, agendamentos, saldo)
+├─ Agendamento (núcleo do sistema)
+│  ├─ AgendamentoServico (multi-serviço)
+│  ├─ AgendamentoSolicitacaoPix (comprovante + estado)
+│  ├─ TransferenciaAgendamento (novo — bloco 3.4)
+│  └─ Atendimento (execução)
+├─ Plano (assinatura)
+│  ├─ PlanoServico (quais serviços inclusos)
+│  ├─ ClientePlano (assinatura do cliente)
+│  ├─ ClientePlanoSolicitacao (aguardando aprovação)
+│  ├─ ClientePlanoUso (contador mensal)
+│  └─ ClienteVip (progresso VIP)
+├─ Serviço (o que o barbeiro oferece)
+│  ├─ BarbeiroServico (qual barbeiro faz qual serviço)
+│  └─ PlanoServico (qual plano inclui qual serviço)
+├─ Produto (novo módulo — bloco 6.4)
+│  ├─ CategoriaProduto
+│  ├─ Venda (venda avulsa sem agendamento)
+│  ├─ VendaItem
+│  └─ MovimentacaoEstoque
+├─ Cupom (desconto)
+├─ TokenRevogado (novo — bloco 1.2, logout real)
+└─ AuditoriaLog (rastreabilidade)
+
+RELACIONAMENTOS CRÍTICOS (cardinalidades):
+├─ Barbearia (1) ──→ (N) Usuario [isolamento: barbearia_id]
+├─ Usuario (1) ──→ (0..1) Barbeiro [herança]
+├─ Usuario (1) ──→ (0..1) Cliente [herança]
+├─ Barbeiro (1) ──→ (N) Agendamento [barbeiro_id, índice]
+├─ Agendamento (1) ──→ (N) AgendamentoServico [multi-serviço]
+├─ Agendamento (1) ──→ (0..1) AgendamentoSolicitacaoPix [comprovante]
+├─ Agendamento (1) ──→ (0..1) TransferenciaAgendamento [novo]
+├─ ClientePlano (1) ──→ (N) ClientePlanoUso [contador mensal]
+├─ Cliente (1) ──→ (N) ClientePlano [assinaturas]
+├─ Plano (1) ──→ (N) PlanoServico [quais serviços]
+├─ Plano (1) ──→ (N) ClientePlano [quem contratou]
+├─ Serviço (1) ──→ (N) BarbeiroServico [qual barbeiro atende]
+├─ Serviço (1) ──→ (N) PlanoServico [qual plano inclui]
+├─ Produto (1) ──→ (N) Venda [itens vendidos]
+└─ Venda (1) ──→ (N) VendaItem [produtos na venda]
+
+REGRAS DE NEGÓCIO CRÍTICAS:
+├─ 1. SLOT ÚNICO: 1 barbeiro NÃO pode ter 2 agendamentos ativos no mesmo slot
+│     Status: ❌ QUEBRADA (double-booking possível em race condition)
+│     Solução: índice único parcial + SELECT FOR UPDATE (Script 07)
+├─ 2. LIMITE DE PLANO: cliente não pode usar mais serviços que o limite mensal
+│     Status: ❌ QUEBRADA (multi-serviço passa por cima)
+│     Solução: UPDATE atômico com constraint (Script 07)
+├─ 3. CUPOM ÚNICO: cupom com quantidade_maxima_usos=1 pode ser usado APENAS 1x
+│     Status: ❌ QUEBRADA (race condition em venda simultânea)
+│     Solução: UPDATE atômico (Script 07)
+├─ 4. APROVAÇÃO ÚNICA: 1 solicitação de plano = APENAS 1 ClientePlano criado
+│     Status: ❌ QUEBRADA (2 gestores podem aprovar ao mesmo tempo)
+│     Solução: SELECT FOR UPDATE + UNIQUE em solicitacao_id (Script 07)
+├─ 5. PLANO EXPIRA: não pode usar após data_fim
+│     Status: ❌ QUEBRADA (data_fim ignorada, nunca expira)
+│     Solução: validação no _resolver_plano + job diário (Script 10)
+├─ 6. ISOLAMENTO TENANT: gestor A não vê dados de barbearia B
+│     Status: ⚠️ PARCIAL (2 IDORs via ?barbeiro_id=)
+│     Solução: whitelist de filtros, validação de ownership (Script 05)
+├─ 7. REVOGAÇÃO: logout = token inválido imediatamente (não 30 dias depois)
+│     Status: ❌ QUEBRADA (sem blacklist, token continua válido)
+│     Solução: TokenRevogado + context check (Script 01)
+├─ 8. INTEGRIDADE: status, valores e percentuais não podem ser corrompidos
+│     Status: ❌ QUEBRADA (validação só em Python)
+│     Solução: CHECK constraints + UNIQUE no banco (Script 03)
+├─ 9. TRANSFERÊNCIA: barbeiro desativado → agendamentos transferem, não cancelam
+│     Status: ❌ NÃO EXISTE (novo recurso — Script 17)
+│     Solução: modal de transferência, mural de agendamentos disponíveis
+└─ 10. PRODUTOS: venda avulsa com estoque, movimentação auditável, comissão
+Status: ❌ NÃO EXISTE (novo módulo — Script 18)
+Solução: Venda, VendaItem, MovimentacaoEstoque, CategoriaProduto
+
+CASOS EXTREMOS MAPEADOS:
+├─ 2 clientes simultâneos tentam agendar no MESMO slot (race condition)
+│  Antes: 2 agendamentos criados (erro)
+│  Depois: 1 sucesso, 1 recebe 409 Conflict (correto)
+├─ Gestor tenta desativar barbeiro com 10 agendamentos futuros
+│  Antes: desativa sem aviso, clientes ficam órfãos
+│  Depois: 409 "Existem N agendamentos futuros" + opção de transferência
+├─ Cliente envia comprovante PIX 2x (duplo-clique)
+│  Antes: sobrescreve silenciosamente
+│  Depois: 422 "Comprovante já enviado" ou atualização controlada
+├─ 2 gestores aprovam MESMA solicitação de plano simultaneamente
+│  Antes: 2 ClientePlano criados (cliente pagou, recebeu 2 planos)
+│  Depois: 1 sucesso, 1 recebe 409 "Já aprovada"
+├─ Barbeiro muda horário enquanto cliente agenda o slot antigo
+│  Antes: agendamento cria fora do horário comercial
+│  Depois: 422 "Horário não está mais disponível"
+├─ Plano expira no meio do mês (data_fim = ontem)
+│  Antes: cliente continua agendando com o plano expirado
+│  Depois: plano ignorado, cliente paga como avulso OU vê mensagem clara
+├─ Super admin desativa barbearia
+│  Antes: gestores continuam logados 30 dias (refresh token válido)
+│  Depois: gestor recebe 403 imediatamente em qualquer API
+└─ Barbearia sem ConfiguracaoAgenda (horário = NULL)
+Antes: slots vazios sem explicação, cliente pensa que app está quebrado
+Depois: 503 com mensagem "Profissional ainda não configurou horários"
+
+DEPENDÊNCIAS ENTRE SCRIPTS:
+├─ Script 03 (Constraints) é PRÉ-REQUISITO do Script 07 (Locks)
+├─ Script 07 (Locks) é PRÉ-REQUISITO do Script 08 (Revalidação)
+├─ Script 01 (TokenRevogado) pode ser feito independente, mas usado em Scripts 10 e 17
+├─ Script 14 (Constantes) recomendado ANTES de Scripts 17 e 18
+├─ Script 19 (Secrets) SEMPRE por último antes do 20 (Release)
+└─ Scripts 05, 06, 09, 10 podem ser feitos em paralelo (sem bloqueadores)
+
+═══════════════════════════════════════════════════════════════════════════════
+ETAPA 2 — MODELAGEM (JÁ FEITA)
+═══════════════════════════════════════════════════════════════════════════════
+
+DIAGRAMA LÓGICO COMPLETO:
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            BARBEROSA v1.1 SCHEMA                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ RAIZ MULTI-TENANT ─────────────────────────────────────────────────────────┐
+│ Barbearia                                                                    │
+│ ├─ id (UUID PK)                                                             │
+│ ├─ nome                                                                     │
+│ ├─ slug (unique, para URL /b/<slug>/)                                       │
+│ ├─ segmento_id (FK Segmento) ← tipo de negócio                              │
+│ ├─ ativo (soft delete)                                                      │
+│ ├─ token_valido_apos (DateTime) ← revogação em massa                        │
+│ └─ Tudo que segue herda barbearia_id (isolamento)                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ AUTENTICAÇÃO & AUTORIZAÇÃO ────────────────────────────────────────────────┐
+│ Usuario (herança: super_admin, gestor, barbeiro, cliente)                   │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, nullable para super)                                   │
+│ ├─ email (unique parcial — só staff)                                        │
+│ ├─ perfil (enum: super_admin, gestor, barbeiro, cliente)                    │
+│ ├─ ativo (soft delete)                                                      │
+│ └─ token_valido_apos (DateTime) ← revogação por usuário                     │
+│                                                                              │
+│ TokenRevogado (NOVO — Script 01)                                            │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ jti (String 64, unique) ← JWT ID claim                                   │
+│ ├─ usuario_id (FK Usuario, nullable)                                        │
+│ ├─ revogado_em (DateTime)                                                   │
+│ └─ motivo (String) ← 'logout', 'usuario_desativado', 'tenant_desativado'    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ NEGÓCIO DO BARBEIRO ───────────────────────────────────────────────────────┐
+│ Barbeiro (extends Usuario)                                                   │
+│ ├─ usuario_id (PK + FK)                                                     │
+│ ├─ comissao_percentual (Numeric 5,2) CHECK 0-100                            │
+│ └─ ativo (redundante, herda Usuario.ativo)                                   │
+│                                                                              │
+│ BarbeiroServico (N:N: Barbeiro ↔ Servico)                                   │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbeiro_id (FK, index)                                                  │
+│ ├─ servico_id (FK, index)                                                   │
+│ └─ ativo                                                                     │
+│                                                                              │
+│ ConfiguracaoAgenda (por Barbeiro)                                           │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbeiro_id (FK, unique)                                                 │
+│ ├─ permite_horario_barbeiro (Boolean) ← feature: pode editar horário?        │
+│ ├─ duracao_minima (minutos entre agendamentos)                              │
+│ └─ cancelamento_horas_minimas (quanto tempo antes pode cancelar)             │
+│                                                                              │
+│ HorarioBarbeiro (grade padrão)                                              │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbeiro_id (FK)                                                         │
+│ ├─ dia_semana (0-6)                                                         │
+│ ├─ hora_inicio, hora_fim (Time)                                             │
+│ └─ ativo                                                                     │
+│                                                                              │
+│ PausaBarbeiro (exceções: almoço, folgas especiais)                          │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbeiro_id (FK)                                                         │
+│ ├─ data_inicio, data_fim (DateTime)                                         │
+│ └─ motivo                                                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ AGENDAMENTO (NÚCLEO) ──────────────────────────────────────────────────────┐
+│ Agendamento                                                                  │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, index)                                                 │
+│ ├─ barbeiro_id (FK, index) + data_hora → UNIQUE INDEX parcial               │
+│ ├─ cliente_id (FK Cliente, nullable para agendamento manual do gestor)       │
+│ ├─ cliente_telefone (String, desnormalizado para rastreabilidade)            │
+│ ├─ data_hora (DateTime, naive Brasília)                                      │
+│ ├─ metodo_pagamento (enum: pix | local) NOT NULL DEFAULT 'local'             │
+│ ├─ status (VARCHAR 30) CHECK IN (...)  ← CHECK constraint                    │
+│ │   Valores: 'agendado', 'concluido', 'cancelado', 'em_atendimento',         │
+│ │   'aguardando_comprovante', 'aguardando_aprovacao', 'nao_realizado',       │
+│ │   'aguardando_transferencia' (novo — Script 17)                            │
+│ ├─ valor_total (Numeric 10,2) CHECK >= 0                                    │
+│ ├─ valor_desconto (Numeric 10,2) CHECK >= 0                                 │
+│ ├─ cupom_id (FK Cupom, nullable)                                            │
+│ ├─ observacao (Text)                                                        │
+│ ├─ criado_em, atualizado_em (DateTime)                                      │
+│ └─ deletado_em (DateTime, soft delete)                                      │
+│                                                                              │
+│ AgendamentoServico (multi-serviço por agendamento)                          │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ agendamento_id (FK, index)                                               │
+│ ├─ servico_id (FK, index)                                                   │
+│ ├─ cliente_plano_id (FK ClientePlano, nullable)                             │
+│ ├─ valor_unitario (Numeric 10,2)                                            │
+│ ├─ preco_aplicado (Numeric 10,2, snapshot para histórico)                   │
+│ └─ UNIQUE(agendamento_id, servico_id) ← não duplica serviço no mesmo agend. │
+│                                                                              │
+│ AgendamentoSolicitacaoPix (comprovante para PIX)                            │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ agendamento_id (FK, unique)                                              │
+│ ├─ comprovante_url (String, Cloudinary)                                     │
+│ ├─ respondido_em (DateTime, naive Brasília)                                  │
+│ └─ respondido_por_id (FK Usuario, barbeiro ou gestor que aprovou)            │
+│                                                                              │
+│ TransferenciaAgendamento (NOVO — Script 17)                                 │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ agendamento_id (FK, unique)                                              │
+│ ├─ barbeiro_origem_id (FK Barbeiro)                                         │
+│ ├─ barbeiro_destino_id (FK Barbeiro, nullable até ser assumido)             │
+│ ├─ motivo (String) ← 'barbeiro_desativado', 'solicitado_gestor'             │
+│ ├─ status (enum) ← 'pendente', 'concluida', 'reagendada', 'cancelada'       │
+│ ├─ criado_em, concluido_em (DateTime)                                       │
+│ └─ barbearia_id (FK, isolamento)                                            │
+│                                                                              │
+│ Atendimento (execução, caixa)                                               │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ agendamento_id (FK, unique)                                              │
+│ ├─ barbeiro_id (FK, derivável via agendamento — mantido por desnormalização)│
+│ ├─ cliente_id (FK, derivável — mantido)                                     │
+│ ├─ duracao_real (minutos)                                                   │
+│ ├─ status (enum) ← 'em_progresso', 'concluido', 'nao_realizado'             │
+│ ├─ valor_final (Numeric, pode diferir do agendado se ajuste)                │
+│ ├─ iniciado_em, concluido_em (DateTime)                                     │
+│ └─ atendimento_itens (1:N) ← produtos consumidos (caixa)                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ PLANOS & ASSINATURAS ──────────────────────────────────────────────────────┐
+│ Plano                                                                        │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, index)                                                 │
+│ ├─ nome, descricao                                                          │
+│ ├─ barbeiro_id (FK Barbeiro, nullable) ← vinculado a 1 barbeiro ou NULL=aberto │
+│ ├─ preco_mensal (Numeric 10,2) CHECK >= 0                                   │
+│ ├─ dias_expiracao (Integer) ← 30, 90, etc.                                   │
+│ ├─ ativo (Boolean)                                                          │
+│ └─ criado_em, atualizado_em                                                 │
+│                                                                              │
+│ PlanoServico (N:N: Plano ↔ Servico)                                         │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ plano_id (FK, index)                                                     │
+│ ├─ servico_id (FK, index)                                                   │
+│ ├─ limite_uso_mensal (Integer, null = ilimitado)                            │
+│ ├─ dias_expiracao (Integer, default Plano.dias_expiracao)                   │
+│ └─ ativo                                                                     │
+│                                                                              │
+│ ClientePlano (assinatura do cliente)                                        │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, index)                                                 │
+│ ├─ cliente_id (FK, index)                                                   │
+│ ├─ plano_id (FK)                                                            │
+│ ├─ solicitacao_id (FK ClientePlanoSolicitacao, unique) ← NOVO Script 03     │
+│ ├─ data_inicio (DateTime)                                                   │
+│ ├─ data_fim (DateTime, nullable = indefinido)                               │
+│ ├─ ativo (Boolean, soft delete lógico)                                      │
+│ ├─ criado_em                                                                │
+│ └─ UNIQUE(cliente_id, plano_id, barbearia_id) ← cliente não duplica plano   │
+│                                                                              │
+│ ClientePlanoUso (contador mensal por serviço)                               │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ cliente_plano_id (FK, index)                                             │
+│ ├─ servico_id (FK, index)                                                   │
+│ ├─ data_uso (DateTime, naive Brasília)                                       │
+│ ├─ uso_mes_atual (Integer, contador)                                        │
+│ ├─ UNIQUE(cliente_plano_id, servico_id, data_uso) ← NOVO Script 03          │
+│ └─ criado_em                                                                │
+│                                                                              │
+│ ClientePlanoSolicitacao (aguardando aprovação)                              │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, index)                                                 │
+│ ├─ cliente_id (FK, index)                                                   │
+│ ├─ plano_id (FK)                                                            │
+│ ├─ status (enum) ← 'pendente', 'aprovado', 'rejeitado'                      │
+│ ├─ metodo_pagamento (enum) ← 'pix', 'local'                                 │
+│ ├─ pix_copia_cola (String, se PIX)                                          │
+│ ├─ comprovante_url (String Cloudinary, se PIX)                              │
+│ ├─ criado_em, respondido_em                                                 │
+│ └─ respondido_por_id (FK Usuario, quem aprovou)                             │
+│                                                                              │
+│ ClienteVip (progression system)                                             │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ cliente_id (FK, unique)                                                  │
+│ ├─ vip_nivel_id (FK VipNivel)                                               │
+│ ├─ brindes_resgatados (JSONB array de ids)                                  │
+│ └─ criado_em                                                                │
+│                                                                              │
+│ VipNivel                                                                     │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, index)                                                 │
+│ ├─ nome (ex: 'Bronze', 'Silver', 'Gold')                                    │
+│ ├─ pontos_minimos (Integer)                                                 │
+│ ├─ beneficios_desbloqueados (Text)                                          │
+│ └─ criado_em                                                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ SERVIÇOS & PRODUTOS ───────────────────────────────────────────────────────┐
+│ Servico                                                                      │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, index)                                                 │
+│ ├─ nome (ex: 'Corte', 'Barba', 'Sobrancelha')                               │
+│ ├─ preco (Numeric 10,2) CHECK >= 0                                          │
+│ ├─ duracao_minutos (Integer)                                                │
+│ ├─ comissao_tipo (enum) ← 'percentual' | 'valor_fixo'                       │
+│ ├─ comissao_valor (Numeric 10,2) CHECK >= 0                                 │
+│ ├─ ativo (Boolean)                                                          │
+│ └─ criado_em, atualizado_em                                                 │
+│                                                                              │
+│ Produto (NOVO COMPLETO — Script 18)                                         │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, index)                                                 │
+│ ├─ nome                                                                     │
+│ ├─ categoria_id (FK CategoriaProduto, novo)                                 │
+│ ├─ marca (String 80, novo)                                                  │
+│ ├─ preco (Numeric 10,2) CHECK >= 0                                          │
+│ ├─ custo_unitario (Numeric 10,2) CHECK >= 0 (novo)                          │
+│ ├─ codigo_barras (String 50, novo)                                          │
+│ ├─ foto_url (String Cloudinary, novo)                                       │
+│ ├─ quantidade_estoque (Integer) CHECK >= 0                                  │
+│ ├─ quantidade_reservada (Integer) CHECK >= 0                                │
+│ ├─ estoque_minimo (Integer CHECK >= 0, novo)                                │
+│ ├─ ativo (Boolean)                                                          │
+│ └─ criado_em, atualizado_em                                                 │
+│                                                                              │
+│ CategoriaProduto (NOVO — Script 18)                                         │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, index)                                                 │
+│ ├─ nome (unique por tenant)                                                 │
+│ └─ ativo                                                                     │
+│                                                                              │
+│ Venda (NOVO — Script 18, venda avulsa)                                      │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, index)                                                 │
+│ ├─ cliente_id (FK Cliente, nullable)                                        │
+│ ├─ cliente_nome_livre (String 100, nullable, se não-cliente)                │
+│ ├─ barbeiro_id (FK Barbeiro, nullable, quem vendeu)                         │
+│ ├─ usuario_registro_id (FK Usuario, quem registrou)                         │
+│ ├─ metodo_pagamento (enum: 'pix', 'dinheiro', 'cartao')                     │
+│ ├─ status (enum: 'concluida', 'cancelada')                                  │
+│ ├─ valor_total (Numeric 10,2) CHECK >= 0                                    │
+│ ├─ criado_em                                                                │
+│ └─ cancelado_em (DateTime, se cancelada)                                    │
+│                                                                              │
+│ VendaItem (NOVO — Script 18)                                                │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ venda_id (FK, index)                                                     │
+│ ├─ produto_id (FK, index)                                                   │
+│ ├─ quantidade (Integer) CHECK > 0                                           │
+│ ├─ preco_unitario (Numeric 10,2)                                            │
+│ ├─ custo_unitario_snapshot (Numeric 10,2)  ← para margem histórica          │
+│ └─ comissao_valor (Numeric 10,2) ← comissão para barbeiro                   │
+│                                                                              │
+│ MovimentacaoEstoque (NOVO — Script 18)                                      │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, index)                                                 │
+│ ├─ produto_id (FK, index)                                                   │
+│ ├─ tipo (enum: 'entrada', 'saida_venda', 'saida_uso', 'ajuste')             │
+│ ├─ quantidade (Integer) CHECK != 0                                          │
+│ ├─ quantidade_apos (Integer, snapshot)                                      │
+│ ├─ motivo (String 200)                                                      │
+│ ├─ usuario_id (FK Usuario, quem fez)                                        │
+│ ├─ referencia_venda_id (FK Venda, nullable)                                 │
+│ ├─ referencia_atendimento_id (FK Atendimento, nullable)                     │
+│ └─ criado_em                                                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ CUPONS & DESCONTOS ────────────────────────────────────────────────────────┐
+│ Cupom                                                                        │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, index)                                                 │
+│ ├─ codigo (String 50, unique por tenant)                                    │
+│ ├─ tipo_desconto (enum) ← 'percentual' | 'valor_fixo'                       │
+│ ├─ valor_desconto (Numeric 10,2) CHECK >= 0                                 │
+│ │   ← com CHECK: IF tipo='percentual' THEN valor <= 100                     │
+│ ├─ quantidade_maxima_usos (Integer, nullable = ilimitado)                   │
+│ ├─ quantidade_usos (Integer) CHECK >= 0                                     │
+│ ├─ data_inicio, data_fim (DateTime, nullable = indefinido)                  │
+│ ├─ ativo (Boolean)                                                          │
+│ └─ criado_em, atualizado_em                                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─ AUDITORIA ─────────────────────────────────────────────────────────────────┐
+│ AuditoriaLog                                                                 │
+│ ├─ id (Integer PK)                                                          │
+│ ├─ barbearia_id (FK, index)                                                 │
+│ ├─ usuario_id (FK Usuario, nullable para ações do sistema)                  │
+│ ├─ tipo (String 50 enum) ← 'criacao', 'alteracao', 'delecao', etc           │
+│ ├─ entidade (String 50) ← tabela afetada                                    │
+│ ├─ entidade_id (Integer) ← qual registro                                    │
+│ ├─ descricao (Text)                                                         │
+│ ├─ dados_antes (JSONB, antes da mudança)                                    │
+│ ├─ dados_depois (JSONB, depois da mudança)                                  │
+│ └─ criado_em (DateTime)                                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+ETAPA 3 — REVISÃO (JÁ FEITA)
+═══════════════════════════════════════════════════════════════════════════════
+
+PROBLEMAS ENCONTRADOS NO MODELO ATUAL (v1.0.0):
+
+❌ REDUNDÂNCIA 1: Usuario.email vs Cliente.email vs Barbeiro.nome vs Usuario.nome
+Problema: mesmos dados em 2 tabelas, risco de desincronização
+Solução: herança correta; Cliente/Barbeiro herdam de Usuario, não duplicam
+
+❌ REDUNDÂNCIA 2: Atendimento.barbeiro_id + Atendimento.cliente_id
+Problema: já existem em Agendamento; se agendamento.barbeiro_id mudar,
+Atendimento fica desincronizado
+Solução: derivar via agendamento_id quando necessário; manter apenas como
+snapshot se auditoria exigir (comentar no código)
+
+❌ REDUNDÂNCIA 3: Plano.barbeiro_id + PlanoBarbeiro table
+Problema: Plano pode ter barbeiro_id (vinculado a 1) E PlanoBarbeiro pode
+ter múltiplos — qual usar?
+Solução: Plano.barbeiro_id = NULL significa "aberto"; se != NULL, ignora
+PlanoBarbeiro. Documentar claramente.
+
+❌ FALTA DE CONSTRAINT: AgendamentoServico.is_plano (boolean derivado)
+Problema: is_plano = (cliente_plano_id IS NOT NULL), mas coluna redundante
+Solução: remover coluna, derivar quando ler
+
+⚠️ ÍNDICES CRÍTICOS FALTANDO (que o Script 12 vai adicionar):
+
+
+auditoria_log.barbearia_id, usuario_id (frequente em filtros)
+clientes.usuario_id, barbeiros.usuario_id (FK quentes)
+cliente_plano_uso.servico_id (contador de limite)
+agendamento_servicos.cliente_plano_id (derivar uso)
+agendamentos.cupom_id (buscar cupom aplicado)
+8 mais de menor impacto
+
+
+⚠️ SOFT DELETE INCONSISTENTE: alguns usam deletado_em, outros ativo=False
+Solução: uniformizar (usar deletado_em em novo código; Script não muda
+estrutura existente por ser grande refactor)
+
+═══════════════════════════════════════════════════════════════════════════════
+ETAPA 4 — BANCO DE DADOS (REFERÊNCIA DOS SCRIPTS)
+═══════════════════════════════════════════════════════════════════════════════
+
+QUA MIGRATIONS VÃO SER CRIADAS (dos 20 scripts):
+
+Script 01 (Bloco 1.2): TokenRevogado table + coluna Usuario.token_valido_apos
+Script 03 (Bloco 2.1): ClientePlano.solicitacao_id + CHECK constraints + UNIQUE/INDEX
+Script 12 (Bloco 5.2): ÍNDICES de performance (13 no total)
+Script 17 (Bloco 3.4): TransferenciaAgendamento table
+Script 18 (Bloco 6.4): CategoriaProduto + Venda + VendaItem + MovimentacaoEstoque
+
+Scripts 02, 04-11, 13-16, 19-20: ZERO migrations (mudanças de Python/view)
+
+ORDEM RÍGIDA:
+
+
+Script 01 → cria TokenRevogado (precedência não existe)
+Script 03 → cria constraints (ANTES de Script 07 que usa os locks)
+...
+Script 12 → índices (can run last)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+ETAPA 5 — FLUXOS DE USUÁRIO (COMO DEVE FUNCIONAR APÓS REFATORAÇÃO)
+═══════════════════════════════════════════════════════════════════════════════
+
+FLUXO 1: AGENDAMENTO COM PIX (Cliente Público)
+
+┌─ PASSO 1: Cliente abre /b/winner-barbershop/ (SPA)
+├─ Sistema carrega:
+│  └─ Barbeiros ativos (SELECT com ativo=True)
+│  └─ Serviços disponíveis (SELECT com ativo=True)
+│  └─ Horários bloqueados (HorarioBloqueado)
+│  └─ Configuração (dias antecedência máx, horários, durações)
+│
+├─ PASSO 2: Cliente escolhe serviço(s) → sistema valida:
+│  └─ Serviço existe? ✓
+│  └─ Barbeiro atende? (BarbeiroServico) ✓
+│  └─ Horário do barbeiro configurado? (ConfiguracaoAgenda NOT NULL) → 503 se não
+│
+├─ PASSO 3: Sistema gera slots (gerar_slots com locks conceituais):
+│  ├─ Busca ConfiguracaoAgenda.hora_inicio/fim para o barbeiro
+│  ├─ Busca HorarioBloqueado (feriados, folgas)
+│  ├─ Busca PausaBarbeiro (almoço)
+│  ├─ Busca Agendamento ativos no dia (SELECT FOR UPDATE — Script 07)
+│  └─ Retorna apenas slots realmente livres
+│
+├─ PASSO 4: Cliente escolhe data/hora (validação local)
+│  └─ Sistema reavalia: slot ainda existe? (revalidação no POST — Script 08)
+│
+├─ PASSO 5: Cliente escolhe pagamento
+│  ├─ LOCAL: status será 'agendado' (imediato)
+│  └─ PIX: status será 'aguardando_comprovante'
+│
+├─ PASSO 6: Cliente confirma
+│  ├─ POST /pub/<slug>/agendar
+│  ├─ Dentro de transação com isolation SERIALIZABLE:
+│  │  ├─ SELECT agendamentos WHERE ... FOR UPDATE (lock exclusivo)
+│  │  ├─ Validar não há conflito
+│  │  ├─ Revalidar slots (gerar_slots novamente)
+│  │  ├─ Se PIX: validar cliente tem plano ou vai pagar como avulso
+│  │  ├─ CREATE agendamento com status apropriado
+│  │  ├─ CREATE agendamento_servicos[] para cada serviço
+│  │  ├─ Atualizar limite de plano se cobrado (UPDATE cliente_plano_uso)
+│  │  ├─ Registrar AuditoriaLog
+│  │  └─ COMMIT
+│  └─ Se erro IntegrityError (race): 409 "Horário já foi reservado"
+│
+├─ PASSO 7: Se PIX
+│  ├─ Gera código PIX (ex: via banco)
+│  ├─ Mostra QR code (via api.qrserver.com)
+│  ├─ Cliente vê: "Aguardando seu comprovante"
+│  │
+│  ├─ Cliente envia comprovante:
+│  │  ├─ POST /pub/<slug>/agendamentos/<id>/comprovante
+│  │  ├─ Validação:
+│  │  │  ├─ Agendamento pertence ao tenant (via slug)?
+│  │  │  ├─ Status é 'aguardando_comprovante'?
+│  │  │  ├─ Arquivo é JPG/PNG válido? (magic bytes — Script 05)
+│  │  ├─ Upload Cloudinary → barbearia/{id}/comprovantes/{ano}/{mes}
+│  │  ├─ UPDATE agendamento.status = 'aguardando_aprovacao'
+│  │  ├─ UPDATE pix.comprovante_url = url
+│  │  ├─ Notificar gestor + barbeiro
+│  │  └─ Cliente vê: "Comprovante enviado. Aguardando aprovação"
+│  │
+│  └─ Gestor/Barbeiro aprova:
+│     ├─ GET /gestor/agenda (tabela com filtros)
+│     ├─ Clica em "Aprovar PIX" do agendamento
+│     ├─ Modal mostra imagem do comprovante
+│     ├─ PATCH /agendamentos/<id>/aprovar-comprovante
+│     ├─ Dentro de transação com FOR UPDATE:
+│     │  ├─ Status deve ser 'aguardando_aprovacao' (validação)
+│     │  ├─ UPDATE status = 'agendado'
+│     │  ├─ UPDATE respondido_em = naive_brasilia()
+│     │  └─ COMMIT
+│     └─ Notificar cliente: "Agendamento confirmado!"
+│
+└─ FIM: Cliente vê agendamento confirmado no histórico
+
+ANTES (v1.0):
+
+
+Race: 2 clientes no mesmo slot → ambos agendados ❌
+PIX: cliente envia comprovante 2x → sobrescreve silenciosamente ❌
+Slot: barbeiro sem horário → grid vazia, cliente pensa app está quebrado ❌
+Transferência: não existe (barbeiro sai → clientes órfãos) ❌
+
+
+DEPOIS (v1.1):
+
+
+Race: 1 sucesso, 1 recebe 409 ✅
+PIX: 2º envio → 422 "Já enviado" (ou, com controle melhor) ✅
+Slot: explicação clara "Profissional sem horários configurados" + 503 ✅
+Transferência: gestor transfere ou mural permite outro barbeiro pegar ✅
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+FLUXO 2: LOGOUT REAL (com Revogação de Token)
+
+ANTES (v1.0):
+├─ Cliente clica "Sair"
+├─ Frontend deleta JWT cookies
+├─ SE atacante copiou o cookie:
+│  └─ Continua válido por 30 dias (refresh token)
+│
+└─ PROBLEMA: super admin desativa barbearia
+├─ Gestor continua logado
+└─ Consegue operar por 30 dias
+
+DEPOIS (v1.1):
+├─ Cliente clica "Sair" → POST /sair
+├─ Backend:
+│  ├─ jti = get_jwt()['jti']
+│  ├─ INSERT TokenRevogado(jti, usuario_id, motivo='logout')
+│  ├─ Também revoga refresh token se conseguir decodificar
+│  ├─ unset_jwt_cookies()
+│  └─ COMMIT
+│
+├─ Em cada request subsequente:
+│  ├─ verify_jwt_in_request(optional=True)
+│  ├─ Se JWT válido:
+│  │  ├─ jti = get_jwt()['jti']
+│  │  ├─ SELECT TokenRevogado WHERE jti = ?
+│  │  ├─ Se encontra → g.user_id = None (não autenticado)
+│  │  └─ Se não encontra → autorizar (JWT ainda válido)
+│  └─ Se JWT inválido → não autenticado (normal)
+│
+└─ RESULTADO:
+├─ Logout real (cookie roubado = inútil)
+├─ Super admin desativa barbearia:
+│  └─ Usuario.token_valido_apos = now() (revogação EM MASSA)
+│  └─ Qualquer token do gestor com iat ANTERIOR = inválido
+│  └─ Gestor recebe 401 imediatamente
+
+═══════════════════════════════════════════════════════════════════════════════
+
+FLUXO 3: TRANSFERÊNCIA DE AGENDAMENTO (NOVO — Script 17)
+
+SITUAÇÃO: Barbeiro João é desativado, tem 5 agendamentos futuros.
+
+ANTES (v1.0):
+├─ Gestor tenta desativar João
+├─ Sistema permite (sem guard)
+├─ Agendamentos ficam órfãos (barbeiro_id = João desativado)
+├─ Clientes não conseguem contato (barbeiro não aparece mais)
+└─ PROBLEMA: reputação ruim, churn
+
+DEPOIS (v1.1):
+├─ Gestor tenta desativar João → PATCH /barbeiros/1?ativo=false
+├─ Servidor valida:
+│  ├─ SELECT COUNT agendamentos WHERE barbeiro=1 AND status IN (...)
+│  ├─ Se count > 0:
+│  │  └─ Retorna 409 com lista dos agendamentos + opção:
+│  │     ├─ "Transferir para mural" (barbeiro aguardando_transferencia)
+│  │     ├─ "Reagendar clientes" (enviar link pro cliente remarcar)
+│  │     └─ "Cancelar todos" (último recurso, notificar clientes)
+│  └─ Se count = 0 → OK, desativa
+│
+├─ SE Gestor escolhe "Transferir para mural":
+│  ├─ Para cada agendamento:
+│  │  ├─ UPDATE agendamento.status = 'aguardando_transferencia'
+│  │  ├─ CREATE TransferenciaAgendamento(
+│  │  │    agendamento_id, barbeiro_origem=João,
+│  │  │    barbeiro_destino=NULL, status='pendente', motivo='...'
+│  │  ├─ Notificar cliente: "Seu barbeiro foi desativado. Opções: [transferir] [reagendar] [cancelar]"
+│  │  └─ Notificar outros barbeiros: "Agendamento disponível para pegar! Cliente X, 03/07 14:00, Corte + Barba"
+│  │
+│  └─ DEPOIS: outros barbeiros veem em /barbeiro/agendamentos-disponiveis
+│     ├─ Barbeiro Maria vê: "Agendamento de Cliente A, 03/07 14:00, Corte"
+│     ├─ Clica "Pegar este atendimento"
+│     ├─ Sistema valida:
+│     │  ├─ Maria tem o slot livre? (gerar_slots sem conflito)
+│     │  ├─ Maria atende esses serviços? (BarbeiroServico)
+│     │  └─ Cliente não rejeitou? (opcional)
+│     ├─ UPDATE agendamento.barbeiro_id = Maria
+│     ├─ UPDATE agendamento.status = 'agendado' (voltou ao normal)
+│     ├─ UPDATE TransferenciaAgendamento.status = 'concluida'
+│     └─ Notificar cliente: "Seu atendimento agora será com Maria!"
+│
+└─ RESULTADO:
+├─ Nenhum cliente fica órfão
+├─ Barbeiros podem "pegar" oportunidades
+├─ Cliente tem controle (aceita, rejeita ou cancela)
+└─ Reputação: "Eles se importam"
+
+═══════════════════════════════════════════════════════════════════════════════
+ETAPA 6 — APIs (REFERÊNCIA)
+═══════════════════════════════════════════════════════════════════════════════
+
+NOVOS ENDPOINTS QUE VÃO SER CRIADOS (dos 20 scripts):
+
+Script 01 (Bloco 1.2):
+├─ POST /sair (logout real)
+└─ POST /api/v1/auth/logout (alternativa autenticada)
+
+Script 05 (Bloco 4.1):
+└─ (Corrigindo endpoints existentes, não novos)
+
+Script 06 (Bloco 4.3):
+└─ (Paginação adicionada aos GET existentes)
+
+Script 13 (Bloco 4.2):
+└─ (Rate limiting configurado, não novo endpoint)
+
+Script 17 (Bloco 3.4):
+├─ POST /api/v1/gestor/agendamentos/<id>/transferir {barbeiro_id}
+├─ POST /api/v1/barbeiro/agendamentos/<id>/pegar
+├─ GET /api/v1/barbeiro/agendamentos-disponiveis
+├─ GET /api/v1/gestor/agendamentos-sem-barbeiro
+└─ POST /api/v1/pub/<slug>/agendamentos/<id>/reagendar-link (maybe)
+
+Script 18 (Bloco 6.4):
+├─ CRUD /api/v1/gestor/produtos/categorias
+├─ PATCH produto (novos campos categoria, marca, custo, foto, estoque_minimo)
+├─ POST /api/v1/gestor/estoque/movimentar
+├─ GET /api/v1/gestor/estoque/movimentacoes
+├─ POST /api/v1/gestor/vendas {itens[], barbeiro_id?, cliente_id?, metodo}
+├─ POST /api/v1/gestor/vendas/<id>/cancelar
+├─ POST /api/v1/barbeiro/vendas (venda rápida pelo barbeiro)
+└─ GET /api/v1/gestor/vendas (paginado)
+
+ENDPOINTS QUE VÃO SER MODIFICADOS:
+
+Script 01: POST /sair (adiciona TokenRevogado)
+Script 03: n/a (banco)
+Script 04: GET/POST em templates (XSS fix)
+Script 05: GET /api/v1/gestor/clientes, GET /api/v1/gestor/agendamentos (IDOR fix)
+Script 06: GET endpoints (paginação add)
+Script 07: POST /pub/<slug>/agendar, PUT/PATCH approval endpoints (locks)
+Script 08: POST /pub/<slug>/agendar (revalidação de slot)
+Script 09: Todos os POSTs/PUTCHs (commit protegido)
+Script 10: POST /pub/<slug>/agendar (validação de data_fim plano)
+...
+
+═══════════════════════════════════════════════════════════════════════════════
+ETAPA 7 — IMPLEMENTAÇÃO (OS 20 SCRIPTS)
+═══════════════════════════════════════════════════════════════════════════════
+
+ROADMAP DOS SCRIPTS (resumido):
+
+DIA 1 — FUNDAÇÃO
+├─ Script 01: TokenRevogado + logout real + guard tenant ativo
+├─ Script 02: Timezone Brasília consistente
+└─ Script 03: Constraints de integridade + coluna solicitacao_id
+
+DIA 2 — SEGURANÇA
+├─ Script 04: XSS (tojson) + cookies session hardening
+├─ Script 05: IDOR fix + whitelist filtros + magic bytes upload
+└─ Script 06: Paginação universal
+
+DIA 3 — CONCORRÊNCIA
+├─ Script 07: SELECT FOR UPDATE nos 5 fluxos críticos (double-booking, cupom, etc)
+└─ Script 08: Revalidação de slot no POST (barbeiro mudou horário?)
+
+DIA 4 — RESILIÊNCIA
+├─ Script 09: 71 commits protegidos com try/except + log
+└─ Script 10: Silent failures eliminados (plano expira, slots explicam, cascata de desativação)
+
+DIA 5 — PERFORMANCE
+├─ Script 11: N+1 fix (eager loading)
+├─ Script 12: Índices de banco
+└─ Script 13: Rate limiting
+
+DIA 6 — QUALIDADE
+├─ Script 14: Constantes (magic strings)
+├─ Script 15: Blueprint VIP registrado
+└─ Script 16: Prefixo /api/v1 padronizado
+
+DIA 7 — FEATURES NOVAS
+├─ Script 17: Transferência de agendamentos (barbeiro desativado → mural)
+└─ Script 18: Sistema de produtos (cadastro, venda, estoque)
+
+DIA 8 — DEPLOY
+├─ Script 19: Secrets validados, Cloudinary startup, higiene .env
+└─ Script 20: QA final (regressão, concorrência, guards) + release v1.1.0 + tag git
+
+═══════════════════════════════════════════════════════════════════════════════
+PONTOS CRÍTICOS — ONDE PODE DAR ERRO
+═══════════════════════════════════════════════════════════════════════════════
+
+⚠️ SCRIPT 03 (Constraints):
+├─ PRÉ-CHECK vai achar double-bookings ou e-mails duplicados?
+├─ Migration vai falhar ao CREATE INDEX UNIQUE se houver dados violando?
+└─ SOLUÇÃO: pré-check + UPDATE de correção antes de aplicar migration
+
+⚠️ SCRIPT 07 (Locks):
+├─ gerar_slots() retorna quê? Lista de 'HH:MM' ou objetos?
+├─ Comparação de data/hora vai funcionar em timezone Brasília?
+└─ SOLUÇÃO: validar primeiro com print/debug; Script 02 (timezone) ANTES
+
+⚠️ SCRIPT 10 (Expiração):
+├─ _resolver_plano tem qual assinatura exata?
+├─ Job diário está registrado em scheduler? Se não existe, criar
+└─ SOLUÇÃO: auditar scheduler.py antes; criar job se não existir
+
+⚠️ SCRIPT 18 (Produtos):
+├─ MovimentacaoEstoque.quantidade: sempre positiva ou pode ser negativa?
+├─ Venda.metodo_pagamento: quais valores são validos? 'pix', 'dinheiro', 'cartao'?
+└─ SOLUÇÃO: confirmar modelo de negócio antes de escrever; decidir semântica
+
+⚠️ SCRIPT 19 (Secrets):
+├─ Cloudinary JÁ foi configurado em app/init.py ou em cada request?
+├─ Se em cada request, remover duplas é critical
+└─ SOLUÇÃO: grep 'cloudinary.config' antes; centralizar no startup
+
+═══════════════════════════════════════════════════════════════════════════════
+DEFINITION OF DONE (para cada script)
+═══════════════════════════════════════════════════════════════════════════════
+
+Cada script é considerado COMPLETO quando:
+
+TÉCNICO:
+├─ [ ] Código commitado com mensagem clara
+├─ [ ] Se migration: migration.py gerada + mostrada + autorizada
+├─ [ ] Servidor local roda sem erro
+├─ [ ] Smoke test da funcionalidade passa
+├─ [ ] Não quebra fluxos anteriores
+└─ [ ] Git diff --stat mostra mudanças esperadas
+
+DOCUMENTAÇÃO:
+├─ [ ] RELATORIO_BLOCO_XX.txt gerado
+├─ [ ] Mudanças listadas com arquivo:linha
+├─ [ ] Problemas encontrados reportados
+└─ [ ] Proximos passos claros
+
+VALIDAÇÃO:
+├─ [ ] Testes específicos do bloco executados
+├─ [ ] Edge cases do bloco testados
+└─ [ ] Integração com blocos anteriores OK
+
+SÓ DEPOIS disso o Script seguinte é iniciado.

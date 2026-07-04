@@ -5,6 +5,8 @@ from app.models import Agendamento, AgendamentoServico, Cliente, Servico, Barbei
 from app.exceptions import APIError
 from app.decorators.auth import cliente_required
 from app.utils.agenda import fim_agendamento
+from app.utils.cupons import decrementar_uso_cupom
+from app.utils.tz import naive_brasilia
 from app.labels import L
 from app.routes.pub.agendamento import _get_config, _criar_agendamento_core, _fmt_agendamento
 
@@ -65,6 +67,7 @@ def criar_agendamento():
     itens         = dados.get('servicos') or []
     metodo        = (dados.get('metodo_pagamento') or 'local').strip().lower()
     observacao    = (dados.get('observacao') or '').strip() or None
+    cupom_codigo  = (dados.get('cupom_codigo') or '').strip() or None
 
     if not isinstance(barbeiro_id, int):
         raise APIError('"barbeiro_id" é obrigatório e deve ser um inteiro.')
@@ -90,6 +93,7 @@ def criar_agendamento():
         itens=itens,
         metodo=metodo,
         observacao=observacao,
+        cupom_codigo=cupom_codigo,
     )
 
     return jsonify({**_fmt_agendamento(ag, servicos_info), 'pix': pix_info}), 201
@@ -116,7 +120,7 @@ def cancelar_agendamento(ag_id):
     # Lê regra de cancelamento da configuração do tenant (A3)
     config = _get_config(g.barbearia_id)
     horas_min = config.cancelamento_horas_minimas
-    agora = datetime.utcnow()
+    agora = naive_brasilia()
     horas_ate = (ag.data_hora - agora).total_seconds() / 3600
 
     if horas_ate < horas_min:
@@ -126,6 +130,13 @@ def cancelar_agendamento(ag_id):
             422,
         )
 
+    if ag.cupom_id and ag.status == 'agendado':
+        decrementar_uso_cupom(ag.cupom_id)
+
     ag.status = 'cancelado'
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise APIError(f'Erro ao cancelar {L("agendamento").lower()}. Tente novamente.', 500)
     return jsonify({'mensagem': f'{L("agendamento")} cancelado com sucesso.', 'id': ag_id}), 200

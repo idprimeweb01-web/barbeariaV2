@@ -4,156 +4,167 @@
 {% block styles %}
 .welcome-title { font-size: 18px; font-weight: 700; color: #ddd; margin-bottom: 4px; }
 .welcome-sub   { font-size: 13px; color: #666; margin-bottom: 20px; }
-.quick-link {
+
+.quick-cta {
   display: flex; align-items: center; gap: 12px; text-decoration: none;
+  background: linear-gradient(135deg, rgba(186,117,23,.18), rgba(186,117,23,.06));
+  border: 1px solid rgba(186,117,23,.35);
 }
-.quick-link-icon {
-  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
-  background: rgba(186,117,23,.12); border: 1px solid rgba(186,117,23,.25);
-  display: flex; align-items: center; justify-content: center; color: var(--cor-primaria);
+.quick-cta-icon {
+  width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
+  background: var(--cor-primaria); display: flex; align-items: center; justify-content: center; color: #fff;
 }
-.quick-link-text { flex: 1; }
-.quick-link-name { font-size: 14px; font-weight: 700; color: #ddd; }
-.quick-link-desc { font-size: 12px; color: #666; }
+.quick-cta-text { flex: 1; }
+.quick-cta-name { font-size: 15px; font-weight: 800; color: #fff; }
+.quick-cta-desc { font-size: 12px; color: #ccc; }
 
-.plano-card-title { font-size: 12px; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 10px; }
-.plano-nome-dash { font-size: 17px; font-weight: 800; color: var(--cor-primaria); margin-bottom: 12px; }
-.servico-prog { margin-bottom: 12px; }
-.servico-prog-label { display: flex; justify-content: space-between; font-size: 12px; color: #ccc; margin-bottom: 5px; }
-.servico-prog-bar { height: 8px; background: #1e1e1e; border-radius: 999px; overflow: hidden; border: 1px solid #2d2d2d; }
-.servico-prog-fill { height: 100%; background: var(--cor-primaria); }
-.plano-validade { font-size: 12px; color: #666; margin: 10px 0 14px; }
-.plano-preco-dash { font-size: 14px; color: #888; margin-bottom: 14px; }
-.plano-acoes { display: flex; gap: 8px; }
+.sec-title { font-size: 12px; font-weight: 700; color: #777; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 10px; }
 
-.planos-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.plano-mini { background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 10px; padding: 14px; }
-.plano-mini-nome { font-size: 13px; font-weight: 700; color: #ddd; margin-bottom: 4px; }
-.plano-mini-preco { font-size: 15px; font-weight: 800; color: var(--cor-primaria); margin-bottom: 8px; }
-.plano-mini-servicos { font-size: 11px; color: #777; margin-bottom: 10px; line-height: 1.5; }
+.ag-item { padding: 2px 0; }
+.ag-data { font-size: 15px; font-weight: 800; color: var(--cor-primaria); }
+.ag-meta { font-size: 12px; color: #999; margin-top: 2px; }
 
-.ag-item { padding: 10px 0; border-bottom: 1px solid #2d2d2d; }
-.ag-item:last-child { border-bottom: none; }
-.ag-data { font-size: 13px; font-weight: 700; color: var(--cor-primaria); }
-.ag-meta { font-size: 12px; color: #999; }
+.plano-nome-dash { font-size: 16px; font-weight: 800; color: var(--cor-primaria); margin-bottom: 4px; }
+.plano-validade { font-size: 12px; color: #666; }
 
-.btn-block { display: block; text-align: center; padding: 9px; border-radius: 8px; font-size: 13px; font-weight: 700; }
-.btn-secundario { background: #2a2a2a; color: #ddd; border: 1px solid #3a3a3a; }
+.vip-row { display: flex; align-items: center; gap: 12px; }
+.vip-badge {
+  width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+  background: rgba(186,117,23,.15); border: 1px solid rgba(186,117,23,.35);
+  display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; color: var(--cor-primaria);
+}
+.vip-nivel-nome { font-size: 14px; font-weight: 700; color: #ddd; }
+.vip-brinde { font-size: 12px; color: #888; margin-top: 2px; }
+
+.aviso-item { padding: 9px 0; border-bottom: 1px solid #2d2d2d; }
+.aviso-item:last-child { border-bottom: none; }
+.aviso-titulo { font-size: 13px; font-weight: 700; color: #ddd; display: flex; align-items: center; gap: 6px; }
+.aviso-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cor-primaria); flex-shrink: 0; }
+.aviso-corpo { font-size: 12px; color: #999; margin-top: 3px; }
+.aviso-data { font-size: 11px; color: #555; margin-top: 3px; }
 {% endblock %}
 
 {% block content %}
 <div class="welcome-title" id="welcomeTitle">Olá!</div>
-<div class="welcome-sub" id="welcomeSub">Agendamentos do seu horário online</div>
+<div class="welcome-sub">{{ bk_nome }}</div>
 
-<div id="planoSecao"></div>
-<div class="b-card" id="agendamentosSecao" style="display:none">
-  <div class="plano-card-title">Seus próximos agendamentos</div>
-  <div id="agendamentosLista"></div>
-</div>
+<a class="b-card quick-cta" href="/cliente/agendar">
+  <div class="quick-cta-icon">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+  </div>
+  <div class="quick-cta-text">
+    <div class="quick-cta-name">Agendamento Rápido</div>
+    <div class="quick-cta-desc">Marque um novo horário agora</div>
+  </div>
+</a>
 
-<div id="quickLinks"></div>
+<div id="proximoSecao"></div>
+<div id="pacoteSecao"></div>
+<div id="vipSecao"></div>
+<div id="avisosSecao"></div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-function cardLink(href, name, desc, svg) {
-  return `
-    <a class="b-card quick-link" href="${href}">
-      <div class="quick-link-icon">${svg}</div>
-      <div class="quick-link-text">
-        <div class="quick-link-name">${name}</div>
-        <div class="quick-link-desc">${desc}</div>
-      </div>
-    </a>`;
-}
-
 (function() {
-  const u = api.getUser();
-  if (u?.nome) document.getElementById('welcomeTitle').textContent = `Olá, ${u.nome.split(' ')[0]}!`;
+  const h = new Date().getHours();
+  const saudacao = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
+  const nome = {{ (c_nome or 'Cliente') | tojson }}.split(' ')[0];
+  document.getElementById('welcomeTitle').textContent = `${saudacao}, ${nome}!`;
 })();
 
-async function carregarPlanoSecao(perfil) {
-  const box = document.getElementById('planoSecao');
-  if (!perfil.secoes_disponiveis?.planos) return;
+function fmtDataHora(iso) {
+  const d = new Date(iso);
+  return {
+    data: d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }),
+    hora: d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+  };
+}
 
-  if (perfil.plano_ativo) {
-    const p = perfil.plano_ativo;
-    box.innerHTML = `
+async function carregarDashboard() {
+  let dados;
+  try {
+    dados = await Bos.get('/cliente/dashboard');
+  } catch (e) {
+    return;
+  }
+
+  // Próximo agendamento
+  const prox = (dados.proximos_agendamentos || [])[0];
+  const proxBox = document.getElementById('proximoSecao');
+  if (prox) {
+    const { data, hora } = fmtDataHora(prox.data_hora);
+    const servicos = (prox.servicos || []).join(', ');
+    proxBox.innerHTML = `
       <div class="b-card">
-        <div class="plano-card-title">Plano atual</div>
-        <div class="plano-nome-dash">${p.nome_plano}</div>
-        ${(p.servicos || []).map(s => `
-          <div class="servico-prog">
-            <div class="servico-prog-label"><span>${s.nome}</span><span>${s.ja_usou}/${s.limite_mensal == null ? '∞' : s.limite_mensal}</span></div>
-            <div class="servico-prog-bar"><div class="servico-prog-fill" style="width:${s.limite_mensal == null ? 0 : Math.min(100, s.ja_usou / s.limite_mensal * 100)}%"></div></div>
-          </div>
-        `).join('')}
-        <div class="plano-validade">${p.data_fim ? 'Válido até ' + new Date(p.data_fim).toLocaleDateString('pt-BR') : ''}</div>
-        <div class="plano-preco-dash">R$ ${p.preco?.toFixed(2)}/mês</div>
-        <div class="plano-acoes">
-          <a class="btn-block btn-secundario" style="margin:0;flex:1;text-decoration:none" href="/cliente/meu-plano">Ver detalhes</a>
+        <div class="sec-title">Próximo agendamento</div>
+        <div class="ag-item">
+          <div class="ag-data">${data} às ${hora}</div>
+          <div class="ag-meta">${esc(prox.profissional || '')}${servicos ? ' · ' + esc(servicos) : ''}</div>
         </div>
       </div>`;
   } else {
-    try {
-      const planos = await api.cliente.planosDisponiveis();
-      if (!planos.length) { box.innerHTML = ''; return; }
-      box.innerHTML = `
-        <div class="b-card">
-          <div class="plano-card-title">Escolha seu plano</div>
-          <div class="planos-grid">
-            ${planos.slice(0, 4).map(pl => `
-              <div class="plano-mini">
-                <div class="plano-mini-nome">${pl.nome}</div>
-                <div class="plano-mini-preco">R$ ${pl.preco_mensal.toFixed(2)}/mês</div>
-                <div class="plano-mini-servicos">${pl.servicos.map(s => `${s.limite_mensal == null ? '∞' : s.limite_mensal}x ${s.nome}`).join(', ') || '—'}</div>
-                <a class="btn-block btn-secundario" style="margin:0;text-decoration:none;font-size:12px;padding:8px" href="/cliente/checkout-plano?plano_id=${pl.id}">Escolher</a>
-              </div>
-            `).join('')}
+    proxBox.innerHTML = '';
+  }
+
+  // Pacote ativo (chave dinâmica conforme rótulo configurado, ex: planos_ativos)
+  const chaveAtivos = Object.keys(dados).find(k => k.endsWith('s_ativos'));
+  const ativos = chaveAtivos ? dados[chaveAtivos] : [];
+  const pacoteBox = document.getElementById('pacoteSecao');
+  if (ativos && ativos.length) {
+    const p = ativos[0];
+    pacoteBox.innerHTML = `
+      <div class="b-card">
+        <div class="sec-title">Pacote ativo</div>
+        <div class="plano-nome-dash">${esc(p.plano_nome || '')}</div>
+        ${p.data_fim ? `<div class="plano-validade">Válido até ${new Date(p.data_fim).toLocaleDateString('pt-BR')}</div>` : ''}
+      </div>`;
+  } else {
+    pacoteBox.innerHTML = '';
+  }
+}
+
+async function carregarVip() {
+  const box = document.getElementById('vipSecao');
+  try {
+    const v = await Bos.get('/cliente/vip');
+    if (!v.nivel_vip_atual) { box.innerHTML = ''; return; }
+    box.innerHTML = `
+      <div class="b-card">
+        <div class="sec-title">Nível VIP</div>
+        <div class="vip-row">
+          <div class="vip-badge">${v.nivel_vip_atual}</div>
+          <div>
+            <div class="vip-nivel-nome">Nível ${v.nivel_vip_atual}</div>
+            ${v.nivel_info?.brinde_descricao ? `<div class="vip-brinde">${esc(v.nivel_info.brinde_descricao)}</div>` : ''}
           </div>
-          <a href="/cliente/comprar-plano" style="display:block;text-align:center;margin-top:12px;font-size:12px;color:#888;">+ ver mais planos</a>
-        </div>`;
-    } catch (e) { box.innerHTML = ''; }
-  }
+        </div>
+      </div>`;
+  } catch (e) { box.innerHTML = ''; }
 }
 
-async function carregarAgendamentos() {
+async function carregarAvisos() {
+  const box = document.getElementById('avisosSecao');
   try {
-    const lista = await api.cliente.proximosAgendamentos();
-    const box = document.getElementById('agendamentosSecao');
-    if (!lista.length) return;
-    document.getElementById('agendamentosLista').innerHTML = lista.map(a => `
-      <div class="ag-item">
-        <div class="ag-data">${new Date(a.data_hora).toLocaleDateString('pt-BR')} — ${new Date(a.data_hora).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})}</div>
-        <div class="ag-meta">${a.barbeiro_nome} · ${a.servico_nome} · ✓ Confirmado</div>
-      </div>
-    `).join('');
-    box.style.display = '';
-  } catch (e) { /* silencioso */ }
+    const r = await Bos.get('/cliente/notificacoes?per_page=5');
+    const lista = r.notificacoes || [];
+    if (!lista.length) { box.innerHTML = ''; return; }
+    box.innerHTML = `
+      <div class="b-card">
+        <div class="sec-title">Avisos</div>
+        ${lista.map(n => `
+          <div class="aviso-item">
+            <div class="aviso-titulo">${!n.lida ? '<span class="aviso-dot"></span>' : ''}${esc(n.titulo)}</div>
+            ${n.corpo ? `<div class="aviso-corpo">${esc(n.corpo)}</div>` : ''}
+            <div class="aviso-data">${esc(n.criado_em || '')}</div>
+          </div>
+        `).join('')}
+      </div>`;
+  } catch (e) { box.innerHTML = ''; }
 }
 
-(async function() {
-  try {
-    const perfil = await api.cliente.profile();
-    await carregarPlanoSecao(perfil);
-    await carregarAgendamentos();
-
-    let html = `${cardLink('/cliente/agendar', 'Agendar', 'Marque um novo horário',
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>')}`;
-    if (perfil.secoes_disponiveis?.planos) {
-      html += cardLink('/cliente/meu-plano', 'Meu Plano', 'Veja os detalhes da sua assinatura',
-        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m14.5 2.5-9 9"/><path d="m7.5 4.5 7 7"/><path d="m2 22 6-2 10-10-4-4L4 16l-2 6z"/></svg>');
-    }
-    if (perfil.secoes_disponiveis?.vip) {
-      html += cardLink('/cliente/vip', 'Status VIP', 'Acompanhe seu nível e brindes',
-        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 8.5 22 9.5 17 14.5 18.5 21.5 12 18 5.5 21.5 7 14.5 2 9.5 9 8.5 12 2"/></svg>');
-    }
-    html += cardLink('/cliente/perfil', 'Meu Perfil', 'Dados, senha e notificações',
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>');
-    document.getElementById('quickLinks').innerHTML = html;
-  } catch (e) {
-    document.getElementById('quickLinks').innerHTML = `<div class="b-empty">Erro ao carregar: ${e.message}</div>`;
-  }
-})();
+carregarDashboard();
+carregarVip();
+carregarAvisos();
 </script>
 {% endblock %}
