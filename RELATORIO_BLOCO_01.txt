@@ -1,0 +1,171 @@
+═══════════════════════════════════════════════════════════════════════════════
+RELATÓRIO — BLOCO 1.2: Revogação de tokens + guard de tenant ativo
+BarberOS v1.0 → v1.1 | Script 01 de 20
+═══════════════════════════════════════════════════════════════════════════════
+
+COMMITS
+───────────────────────────────────────────────────────────────────────────────
+1f69d6e  fase 1: remove codigo morto V1, adiciona cupons e segmentos/rotulos
+         (trabalho pré-existente no working tree, sem relação com o Bloco 1.2,
+         commitado separadamente para não misturar histórico — ver seção
+         "DECISÃO DE ESCOPO DO COMMIT" abaixo)
+b5578b9  bloco-1.2: revogacao de tokens + guard tenant ativo
+         (12 arquivos, 241 inserções / 21 deleções — só o Bloco 1.2)
+
+MUDANÇAS POR ARQUIVO
+───────────────────────────────────────────────────────────────────────────────
+app/models/__init__.py
+  - Usuario.token_valido_apos (DateTime, nullable) — linha ~113
+  - Nova classe TokenRevogado (tabela tokens_revogados: id, jti unique+index,
+    usuario_id FK, tipo, revogado_em, motivo) — linha ~118
+
+migrations/versions/2070465e5fe1_bloco_1_2_tokens_revogados_token_valido_.py
+  - CREATE TABLE tokens_revogados + índices (jti unique, usuario_id)
+  - ALTER TABLE usuarios ADD COLUMN token_valido_apos
+  - Aplicada ao banco local (flask db upgrade) após autorização.
+
+app/context.py (reescrito)
+  - Exceções de flask_jwt_extended/PyJWT → tratadas como "não autenticado"
+    (comportamento normal, sem token ou token expirado).
+  - Qualquer OUTRA exceção (ex: banco fora do ar) é logada via
+    current_app.logger.error(...) e RE-LEVANTADA — não vira mais 401 silencioso.
+  - Novo: se o jti do token está em TokenRevogado → tratado como não autenticado.
+  - Novo: se usuario.token_valido_apos existe e é posterior ao `iat` do token →
+    tratado como não autenticado (revogação em massa).
+
+app/routes/views/auth.py
+  - session_required(): após validar perfil, busca a Barbearia da sessão; se
+    inativa (e perfil != super_admin) → limpa sessão, flash, redirect /entrar.
+  - POST /sair: decodifica bos_at e bos_rt (se existirem), grava um
+    TokenRevogado por jti encontrado, motivo='logout'. Nunca levanta — qualquer
+    falha na decodificação/gravação é logada e o logout do browser prossegue.
+
+app/decorators/auth.py
+  - _require() ganhou check_tenant_ativo (opt-in). gestor_required e
+    barbeiro_required agora verificam Barbearia.ativo (403 se inativa);
+    super_admin nunca é bloqueado por isso. cliente_required e super_required
+    não mudaram.
+
+app/utils/auth.py (novo)
+  - revogar_todos_tokens(usuario, motivo): seta usuario.token_valido_apos =
+    now(UTC). Não dá commit (quem chama decide o momento).
+
+app/routes/gestor/profissionais.py
+  - editar_barbeiro(): ao desativar (ativo=False), chama
+    revogar_todos_tokens(u, 'usuario_desativado').
+
+app/routes/super/barbearias.py
+  - desativar_barbearia(): o bulk UPDATE em Usuario agora também seta
+    token_valido_apos=now(UTC) para todos os usuários do tenant (o bulk update
+    bypassa eventos do ORM, por isso precisa ir explícito no dict).
+
+app/routes/auth.py (API /api/v1/auth)
+  - trocar_senha(): chama revogar_todos_tokens(usuario, 'troca_senha') antes
+    do commit — troca de senha invalida sessões antigas.
+
+app/utils/scheduler.py
+  - Novo job _processar_limpeza_tokens_revogados, intervalo 24h: apaga linhas
+    de tokens_revogados com revogado_em > 31 dias (já expiraram naturalmente).
+
+app/templates/staff/login.html
+  - Única mudança visual: a flash message (se houver) é injetada na caixa de
+    erro já existente (#msg-erro) via {{ get_flashed_messages() }} + tojson.
+    Nenhum elemento visual novo foi criado.
+
+NÃO ENCONTRADO NO CÓDIGO (fora de escopo, não implementado)
+───────────────────────────────────────────────────────────────────────────────
+- POST /api/v1/auth/logout: não existe no código atual. O único endpoint de
+  logout é POST /sair (app/routes/views/auth.py). O login de API pura
+  (/api/v1/auth/login) devolve os tokens no corpo JSON, não em cookies —
+  não há contraparte de logout para esse fluxo hoje. Não criei um endpoint
+  novo por não ter sido pedido explicitamente (a tarefa 5 dizia "localize
+  todos" — localizei um só).
+- Não existe endpoint individual "super desativa gestor". A única forma de
+  desativar um gestor é via desativar_barbearia (bulk), já coberta.
+
+DECISÃO DE ESCOPO DO COMMIT (levantei como dúvida, você escolheu)
+───────────────────────────────────────────────────────────────────────────────
+O working tree já continha ~120 arquivos não commitados de trabalho anterior
+(limpeza Fase 1 V1 + cupons + segmentos/rótulos), e 5 desses arquivos
+coincidiam com arquivos que o Bloco 1.2 precisava editar (models/__init__.py,
+gestor/profissionais.py, super/barbearias.py, utils/scheduler.py,
+views/auth.py). Para não misturar tudo num commit só, reverti manualmente as
+edições do Bloco 1.2 nesses 5 arquivos, commitei o que já existia (Fase 1),
+reapliquei o Bloco 1.2 e commitei separado. `git diff --cached --stat` do
+commit b5578b9 mostra exatamente os 12 arquivos do Bloco 1.2, nada a mais.
+
+Durante esse processo, `git add -A` também pegou `frontend/node_modules/`
+inteiro (não estava no .gitignore) — 2180 arquivos indevidos. Removido do
+stage e adicionado `node_modules/` ao .gitignore antes do commit da Fase 1.
+
+PROBLEMAS ENCONTRADOS (fora de escopo deste bloco, registrados para depois)
+───────────────────────────────────────────────────────────────────────────────
+1. Drift de schema pré-existente detectado pelo autogenerate (removido da
+   migration deste bloco, não tocado):
+   a) agendamentos.status: DB é VARCHAR(30) (migration a3f8c2e1d047), model
+      declara String(20) — model desatualizado. Se uma migration futura
+      "corrigir" isso sem cuidado, vai truncar/rejeitar status como
+      'aguardando_comprovante' (22 chars). Candidato a resolver no Script 03.
+   b) segmentos.chave: autogenerate quis dropar a unique constraint
+      'segmentos_chave_key'; parece falso positivo (model mantém unique=True).
+2. auditoria_log.usuario_id não tem cascade (FK sem ON DELETE) — confirmado
+   na prática durante a limpeza dos dados de QA deste teste (precisei apagar
+   AuditoriaLog manualmente antes de apagar Usuario). Isso é uma instância
+   NOVA do mesmo padrão já registrado como DT-002 (cascade delete em
+   Agendamento → filhos) — o problema é mais amplo do que só Agendamento,
+   afeta qualquer tabela de auditoria/histórico que referencia usuarios.id.
+3. Observação sobre a validação "desativar barbearia → gestor recebe 403":
+   na prática o gestor recebe 401 ("Autenticação necessária"), não 403. Isso
+   acontece porque desativar_barbearia já fazia bulk UPDATE ativo=False em
+   TODOS os usuários do tenant (comportamento pré-existente, não alterado por
+   mim) — e o check `usuario.ativo` em context.py (também pré-existente) zera
+   g.user_id ANTES do novo guard de tenant (403) rodar. O resultado prático é
+   o mesmo (acesso bloqueado imediatamente), só o código HTTP difere do que
+   o próprio texto da tarefa citou na seção de VALIDAÇÃO (a seção FLUXO 2 do
+   mesmo documento já dizia "Gestor recebe 401 imediatamente" — os dois
+   trechos da tarefa se contradizem entre si nesse detalhe). O guard 403 que
+   implementei em decorators/auth.py continua útil como defesa em profundidade
+   para o caso em que só Barbearia.ativo mude sem cascatear para Usuario.ativo.
+
+VALIDAÇÃO — RESULTADO DOS 5 TESTES OBRIGATÓRIOS
+───────────────────────────────────────────────────────────────────────────────
+Ambiente: tenant/gestor/barbeiro descartáveis criados só para o teste
+(barbearia "QA Bloco01", id=4) e apagados ao final (incluindo AuditoriaLog e
+TokenRevogado associados). Nenhum dado real do banco foi alterado.
+
+1. Login gestor → /sair → reutilizar o MESMO cookie salvo (curl)
+   RESULTADO: 200 antes do /sair, 401 depois. PASSOU.
+
+2. Desativar barbeiro de teste → token antigo para de funcionar IMEDIATAMENTE
+   (não só após 15min)
+   RESULTADO: 200 antes, 401 na chamada seguinte (mesmo request de segundos
+   depois, não esperei os 15min). PASSOU.
+
+3. Desativar barbearia de teste → gestor recebe bloqueio em qualquer API
+   RESULTADO: 401 (ver observação #3 acima sobre o código exato). Acesso
+   bloqueado imediatamente. PASSOU no efeito prático; código HTTP é 401
+   em vez do 403 citado na validação — discrepância documentada acima.
+
+4. Derrubar o Postgres e fazer request → 500 logado, não "não autenticado"
+   silencioso
+   RESULTADO: não tive permissão de admin para parar o serviço Windows
+   postgresql-x64-18 (não tentei elevar privilégio). Simulei o mesmo cenário
+   de forma equivalente: mock da chamada `db.session.get` dentro de
+   context.py para levantar uma exceção genérica. Resultado: exceção
+   logada (traceback completo no log) e resposta 500 "Erro interno do
+   servidor." — não 401. PASSOU (via simulação equivalente, não outage real).
+
+5. Smoke geral: login normal + navegação gestor/barbeiro/cliente/super/pública
+   RESULTADO: /gestor/dashboard, /barbeiro/dashboard, /super/dashboard,
+   /b/<slug>/ e /entrar todos 200 após login. PASSOU.
+
+Nenhum erro inesperado no log do servidor durante toda a bateria de testes.
+
+PRÓXIMOS PASSOS
+───────────────────────────────────────────────────────────────────────────────
+- Script 02 (timezone Brasília consistente) é o próximo da fila — pré-requisito
+  do Script 07 (locks).
+- Decidir (não bloqueia nada agora): tratar o drift de agendamentos.status e
+  segmentos.chave no Script 03, quando mexer em constraints de qualquer forma.
+- Avaliar se DT-002 (cascade delete) deve ser ampliada para cobrir
+  auditoria_log, não só Agendamento → filhos.
