@@ -158,7 +158,7 @@
 
 {% block scripts %}
 <script>
-  const AGENDAMENTO_ID = {{ agendamento_id }};
+  const AGENDAMENTO_ID = {{ agendamento_id | tojson }};
   let _dadosCaixa  = null;
   let _atId        = null;
   let _formaPagto  = null;

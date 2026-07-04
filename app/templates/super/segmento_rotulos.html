@@ -118,7 +118,7 @@
 
 {% block scripts %}
 <script>
-const SEG_ID = {{ seg_id }};
+const SEG_ID = {{ seg_id | tojson }};
 const _COLS = [
   'rotulo_tenant','rotulo_tenant_plural',
   'rotulo_profissional','rotulo_profissional_plural',

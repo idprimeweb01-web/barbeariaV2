@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>{{ bk_nome }} — {% block title %}{% endblock %}</title>
   <script>
-    window.BOS_LOGIN_URL = '/b/{{ bk_slug }}/entrar';
+    window.BOS_LOGIN_URL = "/b/" + {{ bk_slug | tojson }} + "/entrar";
   </script>
   <link rel="stylesheet" href="/static/css/style.css">
   <style>

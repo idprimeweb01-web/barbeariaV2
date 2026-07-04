@@ -1,0 +1,111 @@
+═══════════════════════════════════════════════════════════════════════════════
+RELATÓRIO — BLOCO 1.3: tojson em contexto JS + hardening cookies sessão
+BarberOS v1.0 → v1.1 | Script 04 de 20
+═══════════════════════════════════════════════════════════════════════════════
+
+COMMIT
+───────────────────────────────────────────────────────────────────────────────
+(a ser criado ao final deste relatório) bloco-1.3: tojson em contexto JS + hardening cookies sessao
+9 arquivos: 1 model/config (app/__init__.py), 1 rota (pub/agendamento.py),
+7 templates.
+
+TEMPLATES CORRIGIDOS (item 1 + varredura do item 2)
+───────────────────────────────────────────────────────────────────────────────
+Arquivo                                  | Variável(is)                | Antes → Depois
+------------------------------------------|------------------------------|--------------------------------------------
+app/templates/cliente/app.html           | bk_slug, bk_nome, c_nome     | "{{ var }}" → {{ var | tojson }}; URL concatenada com + em vez de interpolar dentro da string
+app/templates/barbeiro/caixa.html        | agendamento_id               | {{ agendamento_id }} → {{ agendamento_id | tojson }}
+app/templates/cliente/base.html          | bk_slug                      | '/b/{{ bk_slug }}/entrar' → "/b/" + {{ bk_slug | tojson }} + "/entrar"
+app/templates/cliente/cadastro.html      | slug                         | '/b/{{ slug }}/cadastro' → '/b/' + {{ slug | tojson }} + '/cadastro'
+app/templates/cliente/entrar.html        | slug                         | '/b/{{ slug }}/entrar' → '/b/' + {{ slug | tojson }} + '/entrar'
+app/templates/pub/booking.html           | antecedencia_maxima_dias     | {{ antecedencia_maxima_dias }} → {{ antecedencia_maxima_dias | tojson }}
+app/templates/super/segmento_rotulos.html| seg_id                       | {{ seg_id }} → {{ seg_id | tojson }}
+
+MÉTODO DA VARREDURA (item 2)
+───────────────────────────────────────────────────────────────────────────────
+O grep sugerido na tarefa (`grep -rn "{{" app/templates --include="*.html" |
+grep -i "<script"`) só pega variáveis na MESMA linha da tag `<script>`, o que
+teria deixado passar `agendamento_id` (linha 161, dentro do bloco, não na
+linha da tag) e outros. Usei um script Python que extrai o conteúdo de cada
+bloco `<script>...</script>` (excluindo `<script src=...>`, que só carrega
+arquivo externo) e verifica cada `{{ ... }}` dentro dele por `tojson`. Rodei
+a varredura ANTES (achou os 6 pontos acima, além do já sabido do app.html) e
+DEPOIS das correções (retornou zero ocorrências).
+
+Templates com `{{` dentro de `<script>` que JÁ estavam corretos (não
+precisaram de mudança): `pub/booking.html` (SLUG, BK_NOME já usavam tojson —
+usado como referência, conforme a tarefa sugeriu), `staff/login.html`,
+`gestor/base.html`, `super/base.html`, `barbeiro/base.html` — variáveis
+nesses arquivos não estavam em contexto `<script>` ou já usavam tojson.
+
+Não mudei nada em atributos HTML (href, src, etc.) — autoescape do Jinja já
+cobre esse contexto, conforme a tarefa esclareceu.
+
+CONFIG DE COOKIE DE SESSÃO (item 3 — app/__init__.py)
+───────────────────────────────────────────────────────────────────────────────
+Adicionado ao app.config.update(...):
+  SESSION_COOKIE_SAMESITE='Lax'
+  SESSION_COOKIE_HTTPONLY=True
+  SESSION_COOKIE_SECURE=(os.environ.get('FLASK_ENV') == 'production')
+Mesma regra que já valia para os cookies JWT (JWT_COOKIE_SECURE usa a mesma
+condição) — comportamento consistente entre os dois mecanismos de cookie.
+
+EXPOSIÇÃO DE ERRO DO CLOUDINARY (item 4 — app/routes/pub/agendamento.py)
+───────────────────────────────────────────────────────────────────────────────
+Antes: `except Exception as exc: raise APIError(f'Cloudinary: {exc}', 502)`
+— vazava a mensagem de erro interna do SDK do Cloudinary (podendo incluir
+detalhes de configuração/infra) direto pro cliente da API pública.
+Depois: loga `exc` via `current_app.logger.error(..., exc_info=True)` com o
+id do agendamento, e retorna 502 genérico 'Erro ao enviar comprovante. Tente
+novamente.' — mesmo padrão de "nunca expor detalhe interno" já usado em
+outros pontos do código (Padrão 11 da auditoria).
+
+VALIDAÇÃO OBRIGATÓRIA
+───────────────────────────────────────────────────────────────────────────────
+Ambiente: tenant/cliente/gestor descartáveis (barbearia "QA Bloco04", id=7),
+apagados ao final (incluindo tokens_revogados — ver achado abaixo).
+
+1. Cliente com nome contendo backslash + newline + aspas:
+   - Criado via ORM direto (nome com caractere de quebra de linha real +
+     aspas embutida, para reproduzir o cenário mais agressivo do que o
+     exemplo da tarefa).
+   - Login como esse cliente + GET /cliente/dashboard: HTML retornado tem
+     `window.BOS_USUARIO = "Teste\n\"XSS";` em UMA ÚNICA LINHA — extraí o
+     literal com regex e decodifiquei com `json.loads()`: decodifica de volta
+     pro valor original corretamente, sem quebra de linha crua no HTML/JS
+     fonte. Antes da correção, um newline cru dentro de uma string JS de uma
+     linha só é SyntaxError garantido (string não-terminada) — a correção
+     elimina esse cenário porque `tojson`/`json.dumps` sempre escapa
+     newline como `\n` (2 caracteres) e nunca emite o byte 0x0A dentro do
+     literal. PASSOU.
+
+2. Login/logout de views HTML (sessão Flask):
+   - Login gestor → GET /gestor/dashboard: 200.
+   - POST /sair → GET /gestor/dashboard de novo (mesmo cookie jar,
+     atualizado após o /sair): 302 (redirect pro /entrar, sessão limpa
+     corretamente). PASSOU — os novos SESSION_COOKIE_* não quebraram o
+     fluxo de sessão.
+   - Cookie de sessão observado no Set-Cookie: `HttpOnly; Path=/; SameSite=Lax`
+     (+ `Secure`, porque `FLASK_ENV=production` está definido no `.env`
+     mesmo neste ambiente local — mesmo comportamento que os cookies JWT já
+     tinham, não é uma mudança nova de comportamento).
+
+3. Smoke geral: nenhum erro/traceback inesperado no log do servidor durante
+   toda a bateria de testes.
+
+4. python -c "from app import create_app; create_app()": sem erro, antes e
+   depois das mudanças.
+
+ACHADO ADICIONAL (fora de escopo, registrado)
+───────────────────────────────────────────────────────────────────────────────
+Confirmada mais uma instância do padrão DT-002 (FK sem cascade): ao limpar o
+tenant de QA deste bloco, apagar um `Usuario` que tinha feito logout (e
+portanto gerado uma linha em `tokens_revogados`) violou
+`tokens_revogados_usuario_id_fkey`. Mesmo padrão já visto em `auditoria_log`
+(Bloco 01). Ver memória de projeto — DT-002 já está sinalizada como um
+problema mais amplo do que só `Agendamento`.
+
+PRÓXIMOS PASSOS
+───────────────────────────────────────────────────────────────────────────────
+- Script 05 (IDOR fix + whitelist de filtros + magic bytes de upload) ou
+  Script 07 (locks, já com pré-requisito do Script 03 satisfeito).

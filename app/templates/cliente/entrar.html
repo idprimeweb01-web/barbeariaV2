@@ -216,7 +216,7 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
   setCarregando(true);
 
   try {
-    const resp = await fetch('/b/{{ slug }}/entrar', {
+    const resp = await fetch('/b/' + {{ slug | tojson }} + '/entrar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',

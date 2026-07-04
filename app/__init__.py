@@ -46,6 +46,9 @@ def create_app(config=None):
         JWT_COOKIE_CSRF_PROTECT=False,  # SameSite=Lax cobre CSRF; CSRF token seria ruído
         # Flask session (guard de página, não-API)
         PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+        SESSION_COOKIE_SAMESITE='Lax',
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SECURE=(os.environ.get('FLASK_ENV') == 'production'),
     )
 
     if config:

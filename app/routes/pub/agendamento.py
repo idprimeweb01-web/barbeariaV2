@@ -8,7 +8,7 @@ import os
 import cloudinary
 import cloudinary.uploader
 from datetime import datetime, date
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from app.utils.tz import hoje_brasilia
 from app.extensions import db
 from app.models import (
@@ -596,7 +596,8 @@ def upload_comprovante(slug, agendamento_id):
             resource_type='image',
         )
     except Exception as exc:
-        raise APIError(f'Cloudinary: {exc}', 502)
+        current_app.logger.error(f'Cloudinary: falha ao enviar comprovante (ag {agendamento_id}): {exc}', exc_info=True)
+        raise APIError('Erro ao enviar comprovante. Tente novamente.', 502)
 
     url = resultado.get('secure_url')
     if not url:

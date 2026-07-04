@@ -155,7 +155,7 @@
 
       setCarregando(true);
       try {
-        const resp = await fetch('/b/{{ slug }}/cadastro', {
+        const resp = await fetch('/b/' + {{ slug | tojson }} + '/cadastro', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',

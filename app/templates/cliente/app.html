@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Minha Conta — {{ bk_nome }}</title>
   <script>
-    window.BOS_SLUG     = "{{ bk_slug }}";
-    window.BOS_NOME     = "{{ bk_nome }}";
-    window.BOS_USUARIO  = "{{ c_nome }}";
-    window.BOS_LOGIN_URL = "/b/{{ bk_slug }}/entrar";
+    window.BOS_SLUG      = {{ bk_slug | tojson }};
+    window.BOS_NOME      = {{ bk_nome | tojson }};
+    window.BOS_USUARIO   = {{ c_nome | tojson }};
+    window.BOS_LOGIN_URL = "/b/" + {{ bk_slug | tojson }} + "/entrar";
   </script>
   <link rel="stylesheet" href="/static/cliente_portal/assets/index.css">
 </head>
