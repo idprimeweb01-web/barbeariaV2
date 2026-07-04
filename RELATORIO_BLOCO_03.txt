@@ -1,0 +1,133 @@
+═══════════════════════════════════════════════════════════════════════════════
+RELATÓRIO — BLOCO 2.1: Constraints de integridade no banco
+BarberOS v1.0 → v1.1 | Script 03 de 20
+═══════════════════════════════════════════════════════════════════════════════
+
+COMMIT
+───────────────────────────────────────────────────────────────────────────────
+(a ser criado ao final deste relatório) bloco-2.1: constraints de integridade no banco
+2 arquivos: app/models/__init__.py + migrations/versions/0fc98933f5eb_...py
+Nenhuma rota alterada, conforme regra do bloco.
+
+PRÉ-CHECK DE DADOS (item 1) — ANTES da migration
+───────────────────────────────────────────────────────────────────────────────
+a) Double-booking (barbeiro_id, data_hora duplicado em status ativo): 0 linhas.
+b) E-mail de staff duplicado (gestor/barbeiro/super_admin): 0 linhas.
+c) Uso de plano duplicado (cliente_plano_id, servico_id, data_uso): 0 linhas.
+d) metodo_pagamento NULL: 0.
+e) Violações de CHECK futuras (valor_total<0, valor_desconto<0, comissao fora
+   de 0-100, estoque/reservado<0, quantidade_usos<0, cupom percentual>100):
+   0 em todas as consultas.
+Status distintos hoje em uso: agendado, aguardando_comprovante, cancelado,
+aguardando_pagamento.
+
+RESULTADO: nenhuma correção de dados foi necessária — banco já estava limpo.
+Nenhum UPDATE de correção foi executado.
+
+ACHADOS DURANTE A PREPARAÇÃO (antes de escrever a migration)
+───────────────────────────────────────────────────────────────────────────────
+1. A tarefa assumia o nome da tabela de solicitação de plano como
+   `cliente_plano_solicitacoes` (plural). O nome real no banco/model é
+   `cliente_plano_solicitacao` (singular) — corrigido na FK da migration.
+2. Drift de schema sinalizado nos relatórios dos Blocos 1.2/3.3
+   (`agendamentos.status`: model dizia `String(20)`, banco é `VARCHAR(30)`)
+   foi resolvido aqui: subi o model para `String(30)`. Necessário porque o
+   novo CHECK de status inclui `'aguardando_transferencia'` (24 chars), que
+   não caberia em VARCHAR(20) — ou seja, deixar o drift como estava teria
+   tornado o próprio CHECK constraint impossível de satisfazer para esse
+   valor. Nenhuma ALTER de tipo foi necessária na migration (autogenerate não
+   apontou diff porque banco e model já convergiram para 30).
+3. Autogenerate do Alembic NÃO detecta CHECK constraints (limitação conhecida
+   da ferramenta) — as 10 constraints de CHECK foram todas escritas
+   manualmente, revisadas uma a uma, e testadas individualmente (ver seção de
+   validação).
+4. O autogenerate voltou a sinalizar o drift não relacionado de
+   `segmentos_chave_key` (mesmo falso positivo dos blocos anteriores) —
+   removido da migration de novo, não é deste bloco.
+
+MODELS ALTERADOS (app/models/__init__.py)
+───────────────────────────────────────────────────────────────────────────────
+- Agendamento: status String(20)→String(30); metodo_pagamento nullable=False
+  default='local'; __table_args__ com 3 CHECKs (status_valido, valor_total,
+  valor_desconto).
+- ClientePlano: nova coluna solicitacao_id (FK cliente_plano_solicitacao.id,
+  nullable, UNIQUE).
+- ClientePlanoUso: __table_args__ com UniqueConstraint uq_plano_uso_dia
+  (cliente_plano_id, servico_id, data_uso).
+- Cupom: __table_args__ ganhou 4 CHECKs (valor_desconto, quantidade_usos,
+  tipo_desconto_valido, percentual_max_100) — mantida a UniqueConstraint que
+  já existia.
+- Barbeiro: __table_args__ novo, CHECK comissao_percentual entre 0 e 100.
+- Produto: __table_args__ novo, 2 CHECKs (quantidade_estoque, quantidade_reservada).
+
+MIGRATION (0fc98933f5eb_integridade_producao_bloco21.py)
+───────────────────────────────────────────────────────────────────────────────
+1. Backfill metodo_pagamento NULL→'local' (no-op, 0 linhas afetadas) +
+   ALTER NOT NULL + server_default='local'.
+2. 3 CHECKs em agendamentos.
+3. cliente_plano.solicitacao_id + FK (fk_cliente_plano_solicitacao_id) +
+   UNIQUE (uq_cliente_plano_solicitacao_id) — nomeados explicitamente
+   (o autogenerate tinha gerado nomes None, o que quebraria o downgrade).
+4. UNIQUE uq_plano_uso_dia em cliente_plano_uso.
+5. 4 CHECKs em cupons, 1 em barbeiros, 2 em produtos.
+6. Índice único parcial uq_ag_barbeiro_slot em agendamentos(barbeiro_id,
+   data_hora) WHERE status <> 'cancelado' — via op.execute (SQL direto).
+7. Índice único parcial uq_usuario_email_staff em usuarios(email) WHERE
+   perfil IN ('gestor','barbeiro','super_admin') — via op.execute.
+8. downgrade() simétrico e completo, testado (ver validação).
+
+VALIDAÇÃO OBRIGATÓRIA
+───────────────────────────────────────────────────────────────────────────────
+1. flask db upgrade: sem erro.
+2. flask db downgrade → flask db current confirmou volta para 2070465e5fe1 →
+   flask db upgrade de novo → current confirmou 0fc98933f5eb (head).
+   Reversibilidade testada em banco local. PASSOU.
+3. Pré-checks (a-d) rodados de novo após a migration: todos 0 (idempotente,
+   já eram 0 antes). PASSOU.
+4. Teste de INSERT manual violando CADA constraint, via script Python
+   (barbearia de teste descartável, id=6, apagada ao final):
+   - 2 agendamentos ativos no mesmo (barbeiro_id, data_hora): 2º INSERT →
+     IntegrityError (UniqueViolation em uq_ag_barbeiro_slot). PASSOU.
+   - status inválido ('status_invalido_xyz'): IntegrityError
+     (ck_agendamentos_status_valido). PASSOU.
+   - valor_total negativo: IntegrityError
+     (ck_agendamentos_valor_total_positivo). PASSOU.
+   - cupom percentual > 100: IntegrityError (ck_cupons_percentual_max_100).
+     PASSOU.
+   - cupom tipo_desconto inválido: IntegrityError
+     (ck_cupons_tipo_desconto_valido). PASSOU.
+   - comissao_percentual > 100 (com FK válida para isolar o teste, evitando
+     confundir com FK violation): IntegrityError/CheckViolation confirmado em
+     ck_barbeiros_comissao_percentual_range. PASSOU.
+   - produto com quantidade_estoque negativa: IntegrityError
+     (ck_produtos_quantidade_estoque_positivo). PASSOU.
+5. Smoke completo via HTTP (barbearia de teste "QA Bloco03", id=6):
+   - GET serviços/barbeiros/slots: 200.
+   - POST agendar (público, metodo_pagamento=pix): 201, status
+     'aguardando_comprovante'.
+   - PUT gestor aprovar agendamento: 200, status → 'agendado'.
+   - POST criar plano (gestor): 201.
+   - POST criar cupom (gestor, após habilitar a feature 'cupons' para o
+     tenant de teste): 201.
+   Nenhum desses fluxos foi bloqueado pelas novas constraints — dados válidos
+   continuam passando normalmente. PASSOU.
+6. python -c "from app import create_app; create_app()": sem erro, antes e
+   depois de toda a bateria de testes.
+
+BUG PRÉ-EXISTENTE ENCONTRADO (fora de escopo, não corrigido)
+───────────────────────────────────────────────────────────────────────────────
+Ao montar o payload de teste do agendamento público, enviar `"servicos":[6]`
+(lista de inteiros) em vez do formato esperado `"servicos":[{"servico_id":6}]`
+gera um 500 não tratado (`TypeError: 'int' object is not subscriptable` em
+`app/routes/pub/agendamento.py:171`, dentro de `_criar_agendamento_core`) em
+vez de um 400 de validação. Não é meu bug (não toquei nessa rota neste
+bloco), mas fica registrado: falta validar o formato de cada item de
+`servicos` antes de indexar como dict. Candidato ao Script 05 (correção de
+IDOR/validação) ou Script 09 (silent failures / commits protegidos).
+
+PRÓXIMOS PASSOS
+───────────────────────────────────────────────────────────────────────────────
+- Script 04 (segurança: XSS/cookies) ou Script 07 (locks) são os próximos
+  candidatos — Script 07 já pode começar, já que este bloco era seu
+  pré-requisito (constraints no lugar).
+- Ao chegar no Script 05, considerar o bug de payload de `servicos` acima.

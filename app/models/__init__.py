@@ -135,6 +135,12 @@ class TokenRevogado(db.Model):
 
 class Barbeiro(db.Model):
     __tablename__ = 'barbeiros'
+    __table_args__ = (
+        db.CheckConstraint(
+            'comissao_percentual >= 0 AND comissao_percentual <= 100',
+            name='ck_barbeiros_comissao_percentual_range',
+        ),
+    )
 
     id                        = db.Column(db.Integer, primary_key=True)
     barbearia_id              = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, index=True)
@@ -211,6 +217,10 @@ class BarbeiroServico(db.Model):
 
 class Produto(TenantMixin, db.Model):
     __tablename__ = 'produtos'
+    __table_args__ = (
+        db.CheckConstraint('quantidade_estoque >= 0', name='ck_produtos_quantidade_estoque_positivo'),
+        db.CheckConstraint('quantidade_reservada >= 0', name='ck_produtos_quantidade_reservada_positivo'),
+    )
 
     id                   = db.Column(db.Integer, primary_key=True)
     nome                 = db.Column(db.String(100), nullable=False)
@@ -249,16 +259,30 @@ class ConfiguracaoAgenda(db.Model):
 class Agendamento(TenantMixin, db.Model):
     """v2: sem servico_id — todos os serviços estão em AgendamentoServico."""
     __tablename__ = 'agendamentos'
+    __table_args__ = (
+        # status: VARCHAR(30) no banco desde a migration a3f8c2e1d047 — o model
+        # ficou desatualizado em String(20) até o Bloco 2.1 corrigir (o maior
+        # valor válido, 'aguardando_transferencia', tem 24 chars).
+        db.CheckConstraint(
+            "status IN ('agendado','concluido','cancelado','em_atendimento',"
+            "'aguardando_comprovante','aguardando_aprovacao','aguardando_pagamento',"
+            "'nao_realizado','aguardando_transferencia')",
+            name='ck_agendamentos_status_valido',
+        ),
+        db.CheckConstraint('valor_total >= 0', name='ck_agendamentos_valor_total_positivo'),
+        db.CheckConstraint('valor_desconto >= 0', name='ck_agendamentos_valor_desconto_positivo'),
+    )
 
     id               = db.Column(db.Integer, primary_key=True)
     cliente_id       = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False, index=True)
     barbeiro_id      = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=False, index=True)
     data_hora        = db.Column(db.DateTime, nullable=False)
     duracao_minutos  = db.Column(db.Integer, nullable=False)
-    status           = db.Column(db.String(20), nullable=False)  # aguardando_pagamento, agendado, concluido, cancelado
+    # Valores válidos: ver ck_agendamentos_status_valido acima.
+    status           = db.Column(db.String(30), nullable=False)
     valor_total      = db.Column(db.Numeric(10, 2), nullable=False, default=0)
     observacao       = db.Column(db.String(300))
-    metodo_pagamento = db.Column(db.String(20))  # pix, local
+    metodo_pagamento = db.Column(db.String(20), nullable=False, default='local')  # pix, local
     criado_em        = db.Column(db.DateTime, default=_utcnow)
     # ── Cupons de desconto ────────────────────────────────────────────────────
     cupom_id         = db.Column(db.Integer, db.ForeignKey('cupons.id'), nullable=True)
@@ -440,10 +464,23 @@ class ClientePlano(db.Model):
     criado_em    = db.Column(db.DateTime, default=_utcnow)
     # ── P2: Renovação automática ──────────────────────────────────────────────
     auto_renovar = db.Column(db.Boolean, nullable=False, default=False)
+    # ── Bloco 2.1: rastreabilidade + trava anti-dupla-aprovação (Script 07) ───
+    solicitacao_id = db.Column(
+        db.Integer,
+        db.ForeignKey('cliente_plano_solicitacao.id'),
+        nullable=True,
+        unique=True,
+    )
 
 
 class ClientePlanoUso(db.Model):
     __tablename__ = 'cliente_plano_uso'
+    __table_args__ = (
+        db.UniqueConstraint(
+            'cliente_plano_id', 'servico_id', 'data_uso',
+            name='uq_plano_uso_dia',
+        ),
+    )
 
     id               = db.Column(db.Integer, primary_key=True)
     cliente_plano_id = db.Column(db.Integer, db.ForeignKey('cliente_plano.id'), nullable=False, index=True)
@@ -523,6 +560,16 @@ class Cupom(TenantMixin, db.Model):
     __tablename__ = 'cupons'
     __table_args__ = (
         db.UniqueConstraint('barbearia_id', 'codigo', name='uq_cupom_barbearia_codigo'),
+        db.CheckConstraint('valor_desconto >= 0', name='ck_cupons_valor_desconto_positivo'),
+        db.CheckConstraint('quantidade_usos >= 0', name='ck_cupons_quantidade_usos_positivo'),
+        db.CheckConstraint(
+            "tipo_desconto IN ('percentual','valor_fixo')",
+            name='ck_cupons_tipo_desconto_valido',
+        ),
+        db.CheckConstraint(
+            "tipo_desconto != 'percentual' OR valor_desconto <= 100",
+            name='ck_cupons_percentual_max_100',
+        ),
     )
 
     id                      = db.Column(db.Integer, primary_key=True)
