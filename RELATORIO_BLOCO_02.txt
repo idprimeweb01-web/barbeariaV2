@@ -1,0 +1,111 @@
+═══════════════════════════════════════════════════════════════════════════════
+RELATÓRIO — BLOCO 3.3: Timezone Brasília consistente (7 remanescentes de UTC)
+BarberOS v1.0 → v1.1 | Script 02 de 20
+═══════════════════════════════════════════════════════════════════════════════
+
+COMMIT
+───────────────────────────────────────────────────────────────────────────────
+(a ser criado ao final deste relatório) bloco-3.3: timezone brasilia consistente
+Sem migration — só troca da fonte da hora em código Python, schema inalterado.
+
+TABELA DE MUDANÇAS
+───────────────────────────────────────────────────────────────────────────────
+Arquivo                              | Linha | Antes                                          | Depois
+--------------------------------------|-------|-------------------------------------------------|------------------------------------------
+app/routes/barbeiro/agendamentos.py  | 174   | from datetime import datetime (inline)          | removido (import inline redundante)
+app/routes/barbeiro/agendamentos.py  | 175   | pix.respondido_em = datetime.utcnow()            | pix.respondido_em = naive_brasilia()
+app/routes/gestor/agendamento.py     | 126   | from datetime import datetime (inline)          | removido (import inline redundante, top já importava datetime)
+app/routes/gestor/agendamento.py     | 127   | pix.respondido_em = datetime.utcnow()            | pix.respondido_em = naive_brasilia()
+app/routes/gestor/agendamento.py     | 604   | s.data_resposta = datetime.utcnow()              | s.data_resposta = naive_brasilia()
+app/routes/gestor/planos.py          | 329   | sol.aprovado_em = datetime.utcnow()              | sol.aprovado_em = naive_brasilia()
+app/routes/gestor/planos.py          | 1     | from datetime import datetime (top-level)        | removido (só era usado na linha 329)
+app/routes/gestor/relatorios.py      | 71    | datetime.utcnow().strftime('%d/%m/%Y %H:%M UTC') | naive_brasilia().strftime('%d/%m/%Y %H:%M')
+app/routes/gestor/relatorios.py      | 1     | from datetime import date, datetime              | from datetime import date (datetime não usado mais)
+app/utils/relatorio.py (Excel)       | 149   | f'Gerado em: {datetime.utcnow()...} UTC'         | f'Gerado em: {naive_brasilia()...}' (sem "UTC")
+app/utils/relatorio.py (PDF)         | 257   | f'Gerado em: {datetime.utcnow()...} UTC'         | f'Gerado em: {naive_brasilia()...}' (sem "UTC")
+app/utils/relatorio.py               | 8     | from datetime import date, datetime              | from datetime import date (datetime não usado mais)
+
+Todos os 5 arquivos ganharam `from app.utils.tz import naive_brasilia` (adicionado
+ao import já existente de `hoje_brasilia` onde aplicável, ou novo import onde não
+havia nenhum uso de tz.py antes).
+
+NOTA sobre o label "UTC" removido dos relatórios: a tarefa pedia só trocar a fonte
+da hora, mas o texto original dizia explicitamente "... UTC" ao lado da hora — como
+a hora agora é Brasília, manter o texto "UTC" ficaria enganoso (o próprio bug que
+estava sendo corrigido). Removi o sufixo nos 3 pontos de exibição. Se preferir
+manter algum rótulo de fuso, me avise qual (ex: "(horário de Brasília)").
+
+VARREDURA FINAL (item 3 da tarefa)
+───────────────────────────────────────────────────────────────────────────────
+grep -rn "datetime.utcnow\|datetime.now()" app/ --include="*.py"
+  → 1 ocorrência restante: app/models/__init__.py:6, mas é um comentário de
+    docstring explicando o que `_utcnow()` substitui — não é código executável,
+    não precisa mudar.
+  → datetime.now() bare (sem tz): 0 ocorrências em todo o app/.
+
+Usos de datetime.now(timezone.utc) mantidos como estão (aceitável por regra
+explícita da tarefa — timestamps de auditoria/revogação, não lógica de negócio):
+  - app/models/__init__.py:7        (_utcnow(), usado em criado_em/atualizado_em)
+  - app/utils/tz.py:25              (agora_utc())
+  - app/routes/super/barbearias.py:276  (token_valido_apos na desativação de tenant — Bloco 1.2)
+  - app/utils/auth.py:20            (revogar_todos_tokens — Bloco 1.2)
+  - app/utils/scheduler.py:158      (limite de limpeza de tokens revogados — Bloco 1.2)
+
+CUIDADO COM IMPORTS (item 4 da tarefa)
+───────────────────────────────────────────────────────────────────────────────
+Antes de remover qualquer `datetime` de um import, conferi com grep se o nome
+ainda era usado em outro lugar do mesmo arquivo:
+  - app/routes/gestor/agendamento.py: `datetime` (classe) segue em uso em
+    `datetime.combine(...)` mais abaixo na mesma função — import do MÓDULO
+    mantido, só removi o import INLINE redundante que sombreava o de cima.
+  - app/routes/gestor/planos.py: `datetime` só era usado na linha do
+    aprovado_em — import removido. `timedelta` usado logo depois é um import
+    inline separado (`from datetime import timedelta`, linha 314), não afetado.
+  - app/routes/gestor/relatorios.py: `date` segue em uso (fromisoformat,
+    parâmetros de _parse_params) — mantido; só `datetime` foi removido.
+  - app/utils/relatorio.py: `date` é usado como type hint em gerar_dados() —
+    mantido; só `datetime` foi removido.
+
+VALIDAÇÃO OBRIGATÓRIA
+───────────────────────────────────────────────────────────────────────────────
+Ambiente: tenant/gestor/barbeiro/cliente/agendamento descartáveis (barbearia
+"QA Bloco02", id=5), apagados ao final.
+
+1. Aprovar um PIX de teste → respondido_em bate com hora local de Brasília
+   - Via rota do barbeiro (PATCH .../aprovar-comprovante): referência
+     naive_brasilia() = 18:30:14, valor gravado no banco = 18:30:07.
+     PASSOU (segundos de diferença, não 3h).
+   - Via rota do gestor (PUT .../aprovar): referência 18:30:33, valor
+     gravado = 18:30:33. PASSOU. Cobri as DUAS rotas que tocam
+     pix.respondido_em, já que são pontos de código diferentes.
+
+2. Gerar relatório Excel e PDF → cabeçalho 'Gerado em' com hora de Brasília
+   - JSON (/relatorios/agendamentos): gerado_em = "04/07/2026 18:30". PASSOU.
+   - Excel (/relatorios/agendamentos/excel): célula A3 = "Gerado em:
+     04/07/2026 18:31" (sem "UTC"). PASSOU — li o arquivo de verdade com
+     openpyxl, não só o código.
+   - PDF (/relatorios/agendamentos/pdf): retornou 200 e usa o mesmo padrão de
+     código do Excel (naive_brasilia().strftime(...), mesmo import). NÃO
+     consegui extrair o texto do PDF gerado para conferir visualmente — o
+     ambiente não tinha pypdf/PyPDF2/pdfminer instalados, e não instalei
+     nenhum pacote novo sem confirmar com você antes. Considero coberto por
+     equivalência de código com o Excel (mesma função, mesma linha de
+     raciocínio), mas fica registrado que não foi uma verificação visual direta.
+
+3. python -c "from app import create_app; create_app()" sem erro
+   PASSOU (190 rotas registradas, antes e depois das mudanças).
+
+4. Smoke geral
+   Nenhum erro/traceback no log do servidor durante toda a bateria de testes
+   (aprovações de PIX, geração dos 3 formatos de relatório).
+
+PRÓXIMOS PASSOS
+───────────────────────────────────────────────────────────────────────────────
+- Script 03 é o próximo (constraints de integridade) — pré-requisito do
+  Script 07 (locks). Lembrete: o drift de agendamentos.status (VARCHAR(30) no
+  banco vs String(20) no model) encontrado no Bloco 1.2 é candidato natural
+  para ser corrigido junto, já que o Script 03 mexe em constraints de qualquer
+  forma.
+- Se quiser confirmar visualmente o cabeçalho do PDF, posso instalar `pypdf`
+  no venv (pacote pequeno, só para leitura/teste) — só preciso de autorização,
+  já que é uma dependência nova no ambiente.

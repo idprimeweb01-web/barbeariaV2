@@ -1,4 +1,3 @@
-from datetime import datetime
 from flask import Blueprint, request, g, jsonify
 from app.extensions import db
 from app.models import (
@@ -8,7 +7,7 @@ from app.models import (
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
-from app.utils.tz import hoje_brasilia
+from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.labels import L
 
 planos_bp = Blueprint('gestor_planos', __name__, url_prefix='/api/v1/gestor')
@@ -326,7 +325,7 @@ def aprovar_solicitacao(sol_id):
     db.session.add(cp)
 
     sol.status = 'aprovado'
-    sol.aprovado_em = datetime.utcnow()
+    sol.aprovado_em = naive_brasilia()
     try:
         db.session.commit()
     except Exception:

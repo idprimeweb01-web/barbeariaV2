@@ -5,7 +5,7 @@ from app.models import Agendamento, AgendamentoServico, AgendamentoSolicitacaoPi
 from app.exceptions import APIError
 from app.decorators.auth import barbeiro_required
 from app.utils.cupons import incrementar_uso_cupom, decrementar_uso_cupom
-from app.utils.tz import hoje_brasilia
+from app.utils.tz import hoje_brasilia, naive_brasilia
 
 barbeiro_ag_bp = Blueprint('barbeiro_agendamentos', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -171,8 +171,7 @@ def aprovar_comprovante(ag_id):
     pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id).first()
     if pix:
         pix.status = 'aprovado'
-        from datetime import datetime
-        pix.respondido_em = datetime.utcnow()
+        pix.respondido_em = naive_brasilia()
     if ag.cupom_id:
         incrementar_uso_cupom(ag.cupom_id)
     ag.status = 'agendado'

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date
 from flask import Blueprint, g, jsonify, request, send_file
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
@@ -7,7 +7,7 @@ from app.utils.relatorio import (
     COLUNAS, COLUNAS_OBRIGATORIAS, validar_colunas,
     gerar_dados, gerar_excel, gerar_pdf,
 )
-from app.utils.tz import hoje_brasilia
+from app.utils.tz import hoje_brasilia, naive_brasilia
 
 gestor_relatorios_bp = Blueprint('gestor_relatorios', __name__, url_prefix='/api/v1/gestor')
 
@@ -68,7 +68,7 @@ def relatorio_agendamentos_json():
     return jsonify({
         'barbearia':    _barbearia_nome(),
         'periodo':      periodo,
-        'gerado_em':    datetime.utcnow().strftime('%d/%m/%Y %H:%M UTC'),
+        'gerado_em':    naive_brasilia().strftime('%d/%m/%Y %H:%M'),
         'colunas_ativas': colunas,
         'colunas_disponiveis': {
             k: {'label': v['label'], 'obrigatorio': v['obrigatorio']}

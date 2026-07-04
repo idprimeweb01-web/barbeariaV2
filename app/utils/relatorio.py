@@ -5,10 +5,11 @@ Utilitário de relatórios customizáveis.
 - gerar_excel() / gerar_pdf(): retornam BytesIO prontos para stream HTTP.
 """
 import io
-from datetime import date, datetime
+from datetime import date
 from collections import OrderedDict
 
 from app.labels import L
+from app.utils.tz import naive_brasilia
 
 
 # ── Catálogo de colunas ────────────────────────────────────────────────────────
@@ -145,7 +146,7 @@ def gerar_excel(
     ws['A2'].alignment = Alignment(horizontal='center')
 
     ws.merge_cells(f'A3:{chr(64 + len(colunas))}3')
-    ws['A3'] = f'Gerado em: {datetime.utcnow().strftime("%d/%m/%Y %H:%M")} UTC'
+    ws['A3'] = f'Gerado em: {naive_brasilia().strftime("%d/%m/%Y %H:%M")}'
     ws['A3'].font = Font(size=9, color='888888')
     ws['A3'].alignment = Alignment(horizontal='right')
 
@@ -253,7 +254,7 @@ def gerar_pdf(
     elementos.append(Paragraph(barbearia_nome, titulo_style))
     elementos.append(Paragraph(f'Relatório de {L("agendamento")}s — {periodo}', sub_style))
     elementos.append(Paragraph(
-        f'Gerado em: {datetime.utcnow().strftime("%d/%m/%Y %H:%M")} UTC',
+        f'Gerado em: {naive_brasilia().strftime("%d/%m/%Y %H:%M")}',
         data_style,
     ))
 

@@ -11,6 +11,7 @@ from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.utils.agenda import fim_agendamento, verificar_conflito
 from app.utils.cupons import incrementar_uso_cupom, decrementar_uso_cupom
+from app.utils.tz import naive_brasilia
 from app.labels import L
 from app.utils import normalizar_telefone
 
@@ -123,8 +124,7 @@ def aprovar_agendamento(ag_id):
     pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id).first()
     if pix:
         pix.status = 'aprovado'
-        from datetime import datetime
-        pix.respondido_em = datetime.utcnow()
+        pix.respondido_em = naive_brasilia()
 
     if ag.cupom_id:
         incrementar_uso_cupom(ag.cupom_id)
@@ -601,7 +601,7 @@ def responder_solicitacao(solic_id):
         raise APIError('"status" deve ser "aprovado" ou "rejeitado".')
 
     s.status      = novo_status
-    s.data_resposta = datetime.utcnow()
+    s.data_resposta = naive_brasilia()
     s.notificado    = False
 
     if novo_status == 'aprovado':
