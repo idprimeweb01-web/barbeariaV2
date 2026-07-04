@@ -293,6 +293,12 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
     setCarregando(false);
   }
 });
+
+{% with messages = get_flashed_messages() %}
+{% if messages %}
+mostrarErro({{ messages[0]|tojson }});
+{% endif %}
+{% endwith %}
 </script>
 
 </body>

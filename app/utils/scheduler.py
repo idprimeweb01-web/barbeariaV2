@@ -12,7 +12,7 @@ A antecedência é lida de ConfiguracaoAgendamento (A3: regras como config, nunc
 Deduplicação: uma notificação por (agendamento_id, tipo) — skip se já existe.
 """
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from app.utils.tz import naive_brasilia
 
 logger = logging.getLogger(__name__)
@@ -140,6 +140,28 @@ def _executar_lembretes() -> None:
                 logger.info('Lembrete barbeiro gerado: ag#%s usuario#%s', ag.id, barb.usuario_id)
 
 
+def _processar_limpeza_tokens_revogados(app) -> None:
+    with app.app_context():
+        try:
+            _limpar_tokens_revogados()
+        except Exception:
+            logger.exception('Scheduler: erro não tratado em _limpar_tokens_revogados')
+
+
+def _limpar_tokens_revogados() -> None:
+    """Remove da tabela tokens_revogados linhas com mais de 31 dias.
+    O access token (15min) e o refresh token (30 dias) já expiraram naturalmente
+    nesse ponto — a linha na blacklist virou lixo, mantê-la só custa espaço."""
+    from app.extensions import db
+    from app.models import TokenRevogado
+
+    limite = datetime.now(timezone.utc) - timedelta(days=31)
+    removidos = TokenRevogado.query.filter(TokenRevogado.revogado_em < limite).delete()
+    db.session.commit()
+    if removidos:
+        logger.info('Scheduler: %d token(s) revogado(s) expirado(s) removido(s)', removidos)
+
+
 def iniciar_scheduler(app) -> object:
     """
     Inicia o BackgroundScheduler e retorna a instância (para shutdown ordenado).
@@ -166,6 +188,16 @@ def iniciar_scheduler(app) -> object:
         replace_existing=True,
         max_instances=1,
         coalesce=True,        # se atrasou, roda uma vez só (não acumula)
+    )
+    scheduler.add_job(
+        _processar_limpeza_tokens_revogados,
+        trigger='interval',
+        hours=24,
+        args=[app],
+        id='limpeza_tokens_revogados',
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
     scheduler.start()
     logger.info('Scheduler de lembretes iniciado (intervalo: %dmin, janela: %dmin)', INTERVALO_JOB_MIN, JANELA_MIN)

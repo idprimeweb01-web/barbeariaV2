@@ -2,15 +2,15 @@ from datetime import timedelta
 from functools import wraps
 from flask import (
     Blueprint, request, session, redirect, url_for,
-    render_template, jsonify, make_response, abort,
+    render_template, jsonify, make_response, abort, current_app, flash,
 )
 from flask_jwt_extended import (
     create_access_token, create_refresh_token,
-    verify_jwt_in_request, get_jwt_identity,
+    verify_jwt_in_request, get_jwt_identity, get_jwt, decode_token,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from app.extensions import db
-from app.models import Usuario, Barbearia, Cliente
+from app.models import Usuario, Barbearia, Cliente, TokenRevogado
 
 views_bp = Blueprint('views', __name__)
 
@@ -32,6 +32,13 @@ def session_required(*perfis):
                 return redirect(url_for('views.entrar'))
             if perfis and session.get('perfil') not in perfis:
                 return redirect(url_for('views.entrar'))
+            if session.get('perfil') != 'super_admin':
+                bid = session.get('barbearia_id')
+                b = db.session.get(Barbearia, bid) if bid else None
+                if not b or not b.ativo:
+                    session.clear()
+                    flash('Este estabelecimento está desativado.')
+                    return redirect(url_for('views.entrar'))
             return f(*args, **kwargs)
         return wrapper
     return decorator
@@ -147,8 +154,37 @@ def renovar():
 
 # ── POST /sair ────────────────────────────────────────────────────────────────
 
+def _revogar_jti(token_str, tipo):
+    """Decodifica um JWT (access ou refresh) e registra seu jti como revogado.
+    Nunca levanta — logout não pode falhar por causa de um cookie problemático."""
+    if not token_str:
+        return
+    try:
+        claims = decode_token(token_str)
+        jti = claims.get('jti')
+        if not jti:
+            return
+        uid = claims.get('sub')
+        db.session.add(TokenRevogado(
+            jti=jti,
+            usuario_id=int(uid) if uid is not None else None,
+            tipo=tipo,
+            motivo='logout',
+        ))
+    except Exception as e:
+        current_app.logger.warning(f'Logout: não foi possível revogar token {tipo}: {e}')
+
+
 @views_bp.post('/sair')
 def sair():
+    _revogar_jti(request.cookies.get('bos_at'), 'access')
+    _revogar_jti(request.cookies.get('bos_rt'), 'refresh')
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Logout: falha ao gravar revogação de token: {e}', exc_info=True)
+
     session.clear()
     resp = make_response(jsonify({'ok': True}), 200)
     resp.delete_cookie('bos_at', path='/')

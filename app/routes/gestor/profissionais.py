@@ -8,6 +8,7 @@ from app.decorators.auth import gestor_required
 from app.labels import L
 from app.utils import normalizar_telefone
 from app.utils.auditoria import registrar_auditoria
+from app.utils.auth import revogar_todos_tokens
 
 profissionais_bp = Blueprint('gestor_profissionais', __name__, url_prefix='/api/v1/gestor')
 
@@ -195,6 +196,8 @@ def editar_barbeiro(barbeiro_id):
         ativo = bool(dados['ativo'])
         b.ativo = ativo
         u.ativo = ativo
+        if not ativo:
+            revogar_todos_tokens(u, 'usuario_desativado')
         auditoria_mudancas.append(f'ativo: {"ativado" if ativo else "desativado"}')
 
     db.session.commit()

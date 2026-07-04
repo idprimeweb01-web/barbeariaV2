@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 import cloudinary
 import cloudinary.uploader
 from flask import Blueprint, request, g, jsonify
@@ -267,7 +268,13 @@ def desativar_barbearia(barbearia_id):
         raise APIError('Barbearia já está inativa.')
 
     b.ativo = False
-    Usuario.query.filter_by(barbearia_id=barbearia_id).update({'ativo': False})
+    # Bulk update: bypassa eventos do ORM, então token_valido_apos precisa ir
+    # explicitamente aqui para revogar em massa TODOS os usuários do tenant
+    # (gestores, barbeiros e clientes) — não apenas marcá-los como inativos.
+    Usuario.query.filter_by(barbearia_id=barbearia_id).update({
+        'ativo': False,
+        'token_valido_apos': datetime.now(timezone.utc),
+    })
     db.session.commit()
 
     return jsonify({'mensagem': 'Barbearia desativada.', 'id': barbearia_id}), 200

@@ -112,9 +112,25 @@ class Usuario(db.Model):
     duplo_fator_segredo = db.Column(db.String(64))  # TOTP secret (armazenar criptografado em produção)
     # ── P2: WhatsApp ──────────────────────────────────────────────────────────
     whatsapp_verificado = db.Column(db.Boolean, nullable=False, default=False)
+    # ── Bloco 1.2: revogação em massa de tokens ────────────────────────────────
+    # Qualquer JWT com claim `iat` anterior a este timestamp é considerado inválido.
+    token_valido_apos = db.Column(db.DateTime, nullable=True)
 
     barbeiro = db.relationship('Barbeiro', backref='usuario', uselist=False)
     cliente  = db.relationship('Cliente',  backref='usuario', uselist=False)
+
+
+class TokenRevogado(db.Model):
+    """Blacklist de JWTs individuais revogados (logout). Ver também
+    Usuario.token_valido_apos para revogação em massa (desativação de conta/tenant)."""
+    __tablename__ = 'tokens_revogados'
+
+    id           = db.Column(db.Integer, primary_key=True)
+    jti          = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    usuario_id   = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=True, index=True)
+    tipo         = db.Column(db.String(10))  # 'access' | 'refresh'
+    revogado_em  = db.Column(db.DateTime, default=_utcnow)
+    motivo       = db.Column(db.String(100))  # 'logout', 'usuario_desativado', 'tenant_desativado'
 
 
 class Barbeiro(db.Model):

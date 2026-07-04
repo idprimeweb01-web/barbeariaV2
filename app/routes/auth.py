@@ -7,6 +7,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from app.extensions import db
 from app.models import Usuario
 from app.exceptions import APIError
+from app.utils.auth import revogar_todos_tokens
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/v1/auth')
 
@@ -107,6 +108,7 @@ def trocar_senha():
         raise APIError('Senha atual incorreta.', 403)
 
     usuario.senha = generate_password_hash(senha_nova)
+    revogar_todos_tokens(usuario, 'troca_senha')
     db.session.commit()
 
     return jsonify({'mensagem': 'Senha alterada com sucesso.'}), 200
