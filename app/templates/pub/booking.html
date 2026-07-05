@@ -557,6 +557,9 @@ async function carregarSlots() {
     loading.style.display = 'none';
 
     if (!slots.length) {
+      empty.innerHTML = r.indisponivel && r.motivo
+        ? esc(r.motivo)
+        : 'Sem horários disponíveis para essa data.<br><span style="color:var(--cor)">Tente outro dia.</span>';
       empty.style.display = '';
       return;
     }

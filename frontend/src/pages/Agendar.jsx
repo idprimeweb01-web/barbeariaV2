@@ -21,6 +21,7 @@ export default function Agendar() {
   const [servicos, setServicos]     = useState([])  // todos disponíveis
   const [barbeiros, setBarbeiros]   = useState([])
   const [slots, setSlots]           = useState([])
+  const [motivoIndisponivel, setMotivoIndisponivel] = useState(null)
 
   const [servicoSel, setServicoSel]   = useState(null)
   const [barbeiroSel, setBarbeiroSel] = useState(null)
@@ -76,9 +77,13 @@ export default function Agendar() {
     if (!barbeiroSel || !dataSel || !servicoSel) return
     setLoadingSlots(true)
     setSlots([])
+    setMotivoIndisponivel(null)
     setHoraSel(null)
     api.pub.get(`/barbeiros/${barbeiroSel.id}/slots?data=${dataSel}&duracao=${servicoSel.duracao_minutos || 30}`)
-      .then(r => setSlots(Array.isArray(r) ? r : []))
+      .then(r => {
+        setSlots(Array.isArray(r?.slots) ? r.slots : [])
+        setMotivoIndisponivel(r?.indisponivel ? r.motivo : null)
+      })
       .catch(() => setSlots([]))
       .finally(() => setLoadingSlots(false))
   }, [barbeiroSel, dataSel, servicoSel])
@@ -247,7 +252,7 @@ export default function Agendar() {
                 </div>
               ) : slots.length === 0 ? (
                 <div className="empty" style={{ padding: '20px 0' }}>
-                  <p>Nenhum horário disponível nesta data</p>
+                  <p>{motivoIndisponivel || 'Nenhum horário disponível nesta data'}</p>
                 </div>
               ) : (
                 <div className="slots-grid">

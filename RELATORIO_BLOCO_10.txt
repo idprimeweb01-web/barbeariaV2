@@ -1,0 +1,142 @@
+═══════════════════════════════════════════════════════════════════════════════
+RELATÓRIO — BLOCO 3.2: Silent failures eliminados
+BarberOS v1.0 → v1.1 | Script 10 de 20
+═══════════════════════════════════════════════════════════════════════════════
+
+COMMIT
+───────────────────────────────────────────────────────────────────────────────
+(a ser criado ao final deste relatório) bloco-3.2: silent failures eliminados
+8 arquivos: 4 rotas Python, 1 util (scheduler.py), 1 template Jinja, 1 página
+React + bundle recompilado.
+
+1. EXPIRAÇÃO DE PLANO (EC02 + EC13) — pub/agendamento.py `_resolver_plano`
+───────────────────────────────────────────────────────────────────────────────
+No loop de assinaturas: `if cp.data_fim is not None and cp.data_fim < ref:
+continue` logo no início (antes de qualquer outra checagem). Também EC13:
+se `plano.barbeiro_id` não for nulo, busca o `Barbeiro` e pula a assinatura
+se ele estiver inativo. Validado: booking de serviço coberto por um
+`ClientePlano` com `data_fim` de ontem → cobrado como avulso (`is_plano:
+false, preco: 35.0`).
+
+2. JOB DE EXPIRAÇÃO — app/utils/scheduler.py
+───────────────────────────────────────────────────────────────────────────────
+Novo job `_processar_expiracao_planos` / `_expirar_planos()`, cron diário às
+03:00 horário de Brasília (`timezone=BRASILIA` explícito no
+`scheduler.add_job`, já que o servidor pode rodar em UTC). Busca
+`ClientePlano` com `data_fim` vencida e `ativo=True`, desativa e cria
+`Notificacao` in_app ('Seu plano expirou') pra cada cliente afetado, com
+commit protegido (`commit_ou_falhar`) e log da contagem. Testado chamando a
+função diretamente: `ativo` foi de `True` para `False`, log
+"1 plano(s) expirado(s) desativado(s)" apareceu, e a notificação foi
+confirmada no banco.
+
+3. data_fim CORRETA (EC09) — gestor/planos.py `aprovar_solicitacao`
+───────────────────────────────────────────────────────────────────────────────
+Agora exige `PlanoServico` ativo (senão 422 "Este plano não tem serviços
+ativos..."), e usa `max(dias_expiracao)` entre todos os serviços ativos do
+plano (em vez do primeiro registro arbitrário). Tratamento defensivo de
+`dias_expiracao is None` incluído (ignora Nones; se todos None, mesma
+APIError) — na prática a coluna é `NOT NULL` no schema, mas o código não
+assume isso. Validado: solicitação de plano sem nenhum `PlanoServico` ativo
+→ 422 com a mensagem exata pedida.
+
+4. COMPROVANTE SÓ EM STATUS VÁLIDO (EC10) + EC15 — pub/agendamento.py
+   `upload_comprovante`
+───────────────────────────────────────────────────────────────────────────────
+Novo guard logo após validar `metodo_pagamento == 'pix'`:
+`STATUS_ACEITA = {'aguardando_comprovante', 'aguardando_aprovacao'}` — fora
+disso, 422 "Não é possível enviar comprovante para este agendamento.".
+EC15: se já havia uma `comprovante_url` (reenvio), registra em
+`AuditoriaLog` (entidade `agendamento_solicitacao_pix`, descrição
+"Comprovante reenviado pelo cliente.") — registrado APÓS o commit
+principal, seguindo o mesmo padrão já usado em `gestor/profissionais.py`
+("falha de log não reverte a operação"). `usuario_id=None` no log, porque
+este é um endpoint público sem login. Validado: aprovar um agendamento PIX
+e depois tentar reenviar comprovante → 422.
+
+5. MENSAGEM DE CANCELAMENTO (EC12 + EC17) — cliente/agendamento.py `cancelar_agendamento`
+───────────────────────────────────────────────────────────────────────────────
+- Bloqueio novo: `status == 'em_atendimento'` → 422 (EC17).
+- EC12: `if horas_ate <= 0` → mensagem nova "Este agendamento já passou e
+  não pode ser cancelado por aqui. Fale com o estabelecimento." (422),
+  ANTES da checagem de `horas_min` (que antes produzia "Faltam 0.0h" —
+  confuso).
+- Mensagem de prazo insuficiente reescrita: "Cancelamento permitido até
+  {horas_min}h antes do horário. Restam apenas {horas_ate:.1f}h." Validado
+  com um agendamento criado 2h no passado → mensagem nova exata.
+
+6. SLOTS QUE EXPLICAM (BUG#2) — GET /pub/<slug>/barbeiros/<id>/slots
+───────────────────────────────────────────────────────────────────────────────
+Adicionadas checagens ANTES de chamar `gerar_slots`: sem `ConfiguracaoAgenda`
+→ 200 com `indisponivel: true` + motivo "ainda não configurou seus
+horários"; `loja_aberta=False` → motivo "não está atendendo no momento";
+dia inteiro coberto por um `HorarioBloqueado` → motivo = o `motivo` do
+bloqueio (ou texto genérico). Sempre 200 (nunca 503), para não quebrar
+consumidores externos futuros.
+**Desvio do formato pedido pela tarefa**: o exemplo da tarefa usava a chave
+`"horarios"`, mas o endpoint já usa `"slots"` e o frontend (`booking.html`
+e o SPA React) já consome `r.slots` — troquei o nome teria quebrado
+consumidores existentes sem necessidade. Mantive `"slots"` e só ACRESCENTEI
+`indisponivel`/`motivo` como campos novos.
+
+FRONTEND (item 6):
+- `booking.html`: quando `slots` vem vazio, exibe `r.motivo` (se
+  `indisponivel`) no lugar do texto genérico "Tente outro dia". Validado
+  com Playwright — o DOM mostra o motivo real.
+- `frontend/src/pages/Agendar.jsx` (fluxo cliente autenticado): **achado
+  um bug pré-existente não relacionado a este bloco** — o código fazia
+  `setSlots(Array.isArray(r) ? r : [])`, mas a resposta do endpoint sempre
+  foi um OBJETO (`{slots, indisponivel, motivo, ...}`), nunca um array.
+  Ou seja, a grade de horários dessa tela NUNCA mostrava nada, para
+  nenhum barbeiro, em nenhuma circunstância — bug de longa data, não
+  causado por este script. Corrigido para `Array.isArray(r?.slots) ?
+  r.slots : []` + exibição do `motivo` — sem essa correção, a validação do
+  item 6 no fluxo do cliente autenticado seria impossível de verificar
+  (a grade sempre apareceria vazia, com ou sem minha mudança). Bundle
+  recompilado com `npm run build`.
+
+7. GUARD DE DESATIVAÇÃO DE BARBEIRO (EC07) — gestor/profissionais.py `editar_barbeiro`
+───────────────────────────────────────────────────────────────────────────────
+Antes de aplicar `ativo=false`, conta `Agendamento` futuros
+(`data_hora > agora`) com status em `('agendado', 'aguardando_comprovante',
+'aguardando_aprovacao')` para aquele barbeiro; se houver, 409 com a
+contagem exata na mensagem. A checagem acontece ANTES de qualquer mutação
+no objeto (nome/bio/comissão), então uma tentativa de desativação bloqueada
+não aplica parcialmente outras mudanças enviadas no mesmo request.
+`gestor/barbeiros.html` já tinha `catch(e) => toast(e.message, 'error')` no
+botão de desativar — nenhuma mudança de frontend foi necessária; validado
+com Playwright que o toast aparece com a mensagem exata.
+Desativar um barbeiro SEM agendamentos futuros continua funcionando
+normalmente (regressão testada).
+
+VALIDAÇÃO OBRIGATÓRIA
+───────────────────────────────────────────────────────────────────────────────
+Ambiente: tenant "QA Bloco10" (id=16), com plano expirado, solicitação sem
+serviços, agendamento PIX, agendamento já passado, agendamento futuro, e um
+segundo barbeiro sem ConfiguracaoAgenda — tudo apagado ao final.
+
+1. ClientePlano com data_fim ontem → agendar serviço do plano → cobrado como
+   avulso. PASSOU. Rodar o job → ativo virou False + notificação criada no
+   banco + log com a contagem. PASSOU.
+2. Aprovar solicitação de plano sem serviços ativos → 422. PASSOU.
+3. Reenviar comprovante após aprovação → 422. PASSOU.
+4. Cancelar agendamento no passado → mensagem nova EC12 exata. PASSOU.
+5. Barbeiro sem ConfiguracaoAgenda → 200 com indisponivel=true e motivo;
+   confirmado renderizado no DOM da tela pública (Playwright) e corrigido
+   (bug pré-existente) no fluxo do cliente autenticado.
+6. Desativar barbeiro com agendamentos futuros → 409 + toast visível na
+   tela do gestor (Playwright). Desativar sem futuros → continua 200.
+7. Smoke geral: nenhum traceback inesperado no log do servidor durante toda
+   a bateria de testes.
+8. `python -c "from app import create_app; create_app()"`: sem erro (190
+   rotas). Scheduler registra os 3 jobs (lembretes, limpeza de tokens,
+   expiração de planos) no boot.
+
+PRÓXIMOS PASSOS
+───────────────────────────────────────────────────────────────────────────────
+- Script 11 (N+1 / eager loading) ou Script 17 (transferência de
+  agendamentos — resolve de forma elegante o que o guard do item 7 hoje só
+  bloqueia).
+- O bug pré-existente do `Agendar.jsx` corrigido de passagem vale registrar:
+  a tela de agendamento do cliente autenticado nunca mostrou horários antes
+  desta correção.

@@ -130,6 +130,8 @@ def cancelar_agendamento(ag_id):
         raise APIError(f'{L("agendamento")} já está cancelado.')
     if ag.status == 'concluido':
         raise APIError(f'Não é possível cancelar um {L("agendamento").lower()} já concluído.')
+    if ag.status == 'em_atendimento':
+        raise APIError(f'Não é possível cancelar um {L("agendamento").lower()} em atendimento.', 422)
 
     # Lê regra de cancelamento da configuração do tenant (A3)
     config = _get_config(g.barbearia_id)
@@ -137,10 +139,17 @@ def cancelar_agendamento(ag_id):
     agora = naive_brasilia()
     horas_ate = (ag.data_hora - agora).total_seconds() / 3600
 
+    # EC12: mensagem antiga dizia "Faltam 0.0h" quando o horário já tinha passado.
+    if horas_ate <= 0:
+        raise APIError(
+            f'Este {L("agendamento").lower()} já passou e não pode ser cancelado por aqui. '
+            'Fale com o estabelecimento.',
+            422,
+        )
     if horas_ate < horas_min:
         raise APIError(
-            f'Cancelamento não permitido. O prazo mínimo é de {horas_min}h antes do horário agendado. '
-            f'Faltam {max(0, horas_ate):.1f}h.',
+            f'Cancelamento permitido até {horas_min}h antes do horário. '
+            f'Restam apenas {horas_ate:.1f}h.',
             422,
         )
 

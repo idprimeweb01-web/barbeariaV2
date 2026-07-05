@@ -13,7 +13,7 @@ Deduplicação: uma notificação por (agendamento_id, tipo) — skip se já exi
 """
 import logging
 from datetime import datetime, timedelta, timezone
-from app.utils.tz import naive_brasilia
+from app.utils.tz import naive_brasilia, hoje_brasilia, BRASILIA
 from app.utils.db import commit_ou_falhar
 
 logger = logging.getLogger(__name__)
@@ -163,6 +163,53 @@ def _limpar_tokens_revogados() -> None:
         logger.info('Scheduler: %d token(s) revogado(s) expirado(s) removido(s)', removidos)
 
 
+def _processar_expiracao_planos(app) -> None:
+    with app.app_context():
+        try:
+            _expirar_planos()
+        except Exception:
+            logger.exception('Scheduler: erro não tratado em _expirar_planos')
+
+
+def _expirar_planos() -> None:
+    """EC02: sem isso, um ClientePlano com data_fim vencida nunca era
+    desativado — _resolver_plano agora ignora planos vencidos na hora de
+    cobrar (Bloco 3.2), mas aqui é onde `ativo` de fato vira False e o
+    cliente é avisado."""
+    from app.extensions import db
+    from app.models import ClientePlano, Cliente
+    from app.utils.notificacoes import criar_notificacao
+
+    hoje = hoje_brasilia()
+    vencidos = (
+        ClientePlano.query
+        .filter(
+            ClientePlano.data_fim.isnot(None),
+            ClientePlano.data_fim < hoje,
+            ClientePlano.ativo == True,  # noqa: E712 — comparação SQLAlchemy, não Python
+        )
+        .all()
+    )
+    if not vencidos:
+        return
+
+    for cp in vencidos:
+        cp.ativo = False
+        cli = db.session.get(Cliente, cp.cliente_id)
+        if cli and cli.usuario_id:
+            criar_notificacao(
+                barbearia_id=cp.barbearia_id,
+                usuario_id=cli.usuario_id,
+                tipo='plano_expirado',
+                titulo='Seu plano expirou',
+                corpo='Seu plano expirou. Fale com o estabelecimento para renovar e continuar aproveitando os benefícios.',
+                canal='in_app',
+            )
+
+    commit_ou_falhar('utils.scheduler._expirar_planos')
+    logger.info('Scheduler: %d plano(s) expirado(s) desativado(s)', len(vencidos))
+
+
 def iniciar_scheduler(app) -> object:
     """
     Inicia o BackgroundScheduler e retorna a instância (para shutdown ordenado).
@@ -196,6 +243,17 @@ def iniciar_scheduler(app) -> object:
         hours=24,
         args=[app],
         id='limpeza_tokens_revogados',
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _processar_expiracao_planos,
+        trigger='cron',
+        hour=3, minute=0,
+        timezone=BRASILIA,
+        args=[app],
+        id='expiracao_planos',
         replace_existing=True,
         max_instances=1,
         coalesce=True,

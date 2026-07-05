@@ -320,12 +320,24 @@ def aprovar_solicitacao(sol_id):
         raise APIError(f'{L("plano")} não está mais ativo.', 422)
 
     hoje = hoje_brasilia()
-    data_fim = None
-    # Calcula data_fim como hoje + dias_expiracao do primeiro PlanoServico, ou 30 dias
-    ps = PlanoServico.query.filter_by(plano_id=sol.plano_id, ativo=True).first()
-    if ps:
-        from datetime import timedelta
-        data_fim = hoje + timedelta(days=ps.dias_expiracao)
+    # EC09: antes, data_fim vinha do PRIMEIRO PlanoServico (arbitrário) e
+    # ficava NULL se o plano não tivesse nenhum serviço ativo — um plano sem
+    # data_fim nunca expirava. Agora exige serviço(s) ativo(s) e usa o MAIOR
+    # dias_expiracao entre eles (o mais generoso cobre todos os serviços do plano).
+    servicos_plano = PlanoServico.query.filter_by(plano_id=sol.plano_id, ativo=True).all()
+    if not servicos_plano:
+        raise APIError(
+            'Este plano não tem serviços ativos. Adicione serviços antes de aprovar.',
+            422,
+        )
+    dias_validos = [ps.dias_expiracao for ps in servicos_plano if ps.dias_expiracao is not None]
+    if not dias_validos:
+        raise APIError(
+            'Este plano não tem serviços ativos. Adicione serviços antes de aprovar.',
+            422,
+        )
+    from datetime import timedelta
+    data_fim = hoje + timedelta(days=max(dias_validos))
 
     cp = ClientePlano(
         barbearia_id=g.barbearia_id,

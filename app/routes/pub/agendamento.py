@@ -7,7 +7,7 @@ Rotas públicas de agendamento (sem autenticação obrigatória).
 import os
 import cloudinary
 import cloudinary.uploader
-from datetime import datetime, date
+from datetime import datetime, date, time as time_t
 from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy.exc import IntegrityError
 from app.utils.tz import hoje_brasilia, naive_brasilia
@@ -15,7 +15,7 @@ from app.extensions import db
 from app.models import (
     Barbearia, Barbeiro, Usuario, Cliente, Servico, BarbeiroServico,
     Agendamento, AgendamentoServico, AgendamentoSolicitacaoPix,
-    ConfiguracaoAgendamento, ConfiguracaoAgenda,
+    ConfiguracaoAgendamento, ConfiguracaoAgenda, HorarioBloqueado,
     ClientePlano, PlanoServico, ClientePlanoUso, Plano,
 )
 from app.utils.planos import PLANO_LIMITE_ILIMITADO
@@ -25,6 +25,7 @@ from app.utils.agenda import fim_agendamento
 from app.utils.notificacoes import notificar_cliente
 from app.utils.features import feature_ativa
 from app.utils.cupons import validar_cupom, incrementar_uso_cupom
+from app.utils.auditoria import registrar_auditoria
 from app.labels import L
 from app.utils.db import commit_ou_falhar
 
@@ -104,6 +105,10 @@ def _resolver_plano(
         .all()
     )
     for cp in assinaturas:
+        # EC02: plano com data_fim vencida nunca deveria continuar valendo.
+        if cp.data_fim is not None and cp.data_fim < ref:
+            continue
+
         plano = db.session.get(Plano, cp.plano_id)
         if not plano or not plano.ativo:
             continue
@@ -111,6 +116,13 @@ def _resolver_plano(
         # Compatibilidade de barbeiro
         if plano.barbeiro_id is not None and plano.barbeiro_id != barbeiro_id:
             continue  # plano vinculado a outro barbeiro
+
+        # EC13: plano vinculado a um barbeiro que foi desativado não deveria
+        # continuar valendo, mesmo que o agendamento seja com esse mesmo id.
+        if plano.barbeiro_id is not None:
+            barb = db.session.get(Barbeiro, plano.barbeiro_id)
+            if not barb or not barb.ativo:
+                continue
 
         ps = PlanoServico.query.filter_by(
             plano_id=plano.id, servico_id=servico_id, ativo=True
@@ -498,9 +510,44 @@ def slots_disponiveis(slug, barbeiro_id):
     if dias_ahead > config.antecedencia_maxima_dias:
         raise APIError(f'Data além do limite de {config.antecedencia_maxima_dias} dias.')
 
+    # BUG#2: antes, um barbeiro sem ConfiguracaoAgenda (ou com o dia inteiro
+    # bloqueado) simplesmente retornava uma grade vazia, sem explicar por quê
+    # — o cliente achava que o app estava quebrado. 200 (não 503) para não
+    # quebrar consumidores externos futuros (integração WhatsApp/n8n).
+    cfg_agenda = ConfiguracaoAgenda.query.filter_by(barbeiro_id=barbeiro_id).first()
+    if not cfg_agenda:
+        return jsonify({
+            'data': data_str, 'barbeiro_id': barbeiro_id, 'duracao': duracao,
+            'slots': [], 'indisponivel': True,
+            'motivo': f'Este {L("profissional").lower()} ainda não configurou seus horários.',
+        }), 200
+    if not cfg_agenda.loja_aberta:
+        return jsonify({
+            'data': data_str, 'barbeiro_id': barbeiro_id, 'duracao': duracao,
+            'slots': [], 'indisponivel': True,
+            'motivo': f'Este {L("profissional").lower()} não está atendendo no momento.',
+        }), 200
+
+    dia_inicio = datetime.combine(data, time_t(0, 0))
+    dia_fim    = datetime.combine(data, time_t(23, 59, 59))
+    bloqueio_dia_inteiro = HorarioBloqueado.query.filter(
+        HorarioBloqueado.barbeiro_id == barbeiro_id,
+        HorarioBloqueado.data_hora_inicio <= dia_inicio,
+        HorarioBloqueado.data_hora_fim >= dia_fim,
+    ).first()
+    if bloqueio_dia_inteiro:
+        return jsonify({
+            'data': data_str, 'barbeiro_id': barbeiro_id, 'duracao': duracao,
+            'slots': [], 'indisponivel': True,
+            'motivo': bloqueio_dia_inteiro.motivo or 'Sem atendimento neste dia.',
+        }), 200
+
     # A1: gerar_slots recebe resource_id (barbeiro_id hoje, recurso genérico no futuro)
     slots = gerar_slots(barbeiro_id, data, duracao)
-    return jsonify({'data': data_str, 'barbeiro_id': barbeiro_id, 'duracao': duracao, 'slots': slots}), 200
+    return jsonify({
+        'data': data_str, 'barbeiro_id': barbeiro_id, 'duracao': duracao,
+        'slots': slots, 'indisponivel': False, 'motivo': None,
+    }), 200
 
 
 # ── POST /pub/<slug>/agendar ──────────────────────────────────────────────────
@@ -631,6 +678,12 @@ def upload_comprovante(slug, agendamento_id):
     if ag.metodo_pagamento != 'pix':
         raise APIError('Este agendamento não é via PIX.', 400)
 
+    # EC10: antes, comprovante era aceito em qualquer status (inclusive
+    # agendamento já aprovado, cancelado ou concluído).
+    _STATUS_ACEITA_COMPROVANTE = {'aguardando_comprovante', 'aguardando_aprovacao'}
+    if ag.status not in _STATUS_ACEITA_COMPROVANTE:
+        raise APIError('Não é possível enviar comprovante para este agendamento.', 422)
+
     if 'arquivo' not in request.files:
         raise APIError('Campo "arquivo" é obrigatório.', 400)
 
@@ -673,6 +726,8 @@ def upload_comprovante(slug, agendamento_id):
 
     # Deriva do `ag` já validado (tenant do slug) em vez do path param cru — defesa em profundidade.
     pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=barbearia.id).first()
+    # EC15: se já havia um comprovante (reenvio), registra em auditoria.
+    reenvio = bool(pix and pix.comprovante_url)
     if pix:
         pix.comprovante_url = url
 
@@ -680,5 +735,16 @@ def upload_comprovante(slug, agendamento_id):
         ag.status = 'aguardando_aprovacao'
 
     commit_ou_falhar('pub.agendamento.upload_comprovante')
+
+    if reenvio:
+        # Registrada após o commit principal — falha de log não reverte o upload.
+        registrar_auditoria(
+            usuario_id=None,
+            barbearia_id=barbearia.id,
+            tipo_acao='edicao',
+            entidade='agendamento_solicitacao_pix',
+            entidade_id=pix.id,
+            descricao='Comprovante reenviado pelo cliente.',
+        )
 
     return jsonify({'mensagem': 'Comprovante enviado com sucesso.', 'url': url, 'status': ag.status}), 200

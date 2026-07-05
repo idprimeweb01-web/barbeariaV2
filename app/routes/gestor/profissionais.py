@@ -2,7 +2,7 @@ from datetime import time
 from flask import Blueprint, request, g, jsonify
 from werkzeug.security import generate_password_hash
 from app.extensions import db
-from app.models import Barbeiro, Usuario, Servico, BarbeiroServico, ConfiguracaoAgenda, PausaBarbeiro
+from app.models import Barbeiro, Usuario, Servico, BarbeiroServico, ConfiguracaoAgenda, PausaBarbeiro, Agendamento
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.labels import L
@@ -10,6 +10,10 @@ from app.utils import normalizar_telefone
 from app.utils.auditoria import registrar_auditoria
 from app.utils.auth import revogar_todos_tokens
 from app.utils.db import commit_ou_falhar
+from app.utils.tz import naive_brasilia
+
+# Status considerados "compromisso futuro" — mesma lista usada no guard de desativação.
+_STATUS_AGENDAMENTO_FUTURO = ('agendado', 'aguardando_comprovante', 'aguardando_aprovacao')
 
 profissionais_bp = Blueprint('gestor_profissionais', __name__, url_prefix='/api/v1/gestor')
 
@@ -195,6 +199,23 @@ def editar_barbeiro(barbeiro_id):
             )
     if 'ativo' in dados:
         ativo = bool(dados['ativo'])
+        if not ativo:
+            # EC07: antes, o barbeiro era desativado mesmo com agendamentos
+            # futuros — clientes ficavam órfãos sem nenhum aviso. A
+            # ferramenta de transferência (Script 17) resolve isso de forma
+            # elegante; por ora, só bloqueia.
+            futuros = Agendamento.query.filter(
+                Agendamento.barbeiro_id == b.id,
+                Agendamento.barbearia_id == barbearia_id,
+                Agendamento.status.in_(_STATUS_AGENDAMENTO_FUTURO),
+                Agendamento.data_hora > naive_brasilia(),
+            ).count()
+            if futuros > 0:
+                raise APIError(
+                    f'Este {L("profissional").lower()} tem {futuros} agendamento(s) futuro(s). '
+                    'Transfira ou cancele antes de desativar.',
+                    409,
+                )
         b.ativo = ativo
         u.ativo = ativo
         if not ativo:
