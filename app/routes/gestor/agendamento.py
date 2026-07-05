@@ -315,6 +315,12 @@ def agendamento_manual():
     except ValueError:
         raise APIError('"data_hora" inválido. Use ISO 8601 (ex: 2024-01-15T09:00).')
 
+    # Agendamento manual do gestor pode encaixar fora da grade normal (fora do
+    # horário configurado, em pausa, etc. — decisão de produto), mas não pode
+    # ser no passado nem colidir com outro agendamento existente.
+    if data_hora <= naive_brasilia():
+        raise APIError('Este horário já passou. Escolha um horário futuro.', 422)
+
     conflito = verificar_conflito(barbeiro_id, data_hora, sv.duracao_minutos)
     if conflito:
         raise APIError(f'Conflito de horário com agendamento existente às {conflito.data_hora.strftime("%H:%M")}.')

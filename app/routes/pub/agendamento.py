@@ -10,7 +10,7 @@ import cloudinary.uploader
 from datetime import datetime, date
 from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy.exc import IntegrityError
-from app.utils.tz import hoje_brasilia
+from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.extensions import db
 from app.models import (
     Barbearia, Barbeiro, Usuario, Cliente, Servico, BarbeiroServico,
@@ -192,6 +192,25 @@ def _criar_agendamento_core(
             f'Horário ocupado. O {L("profissional").lower()} tem agendamento das '
             f'{conflito.data_hora.strftime("%H:%M")} às {fim_conf.strftime("%H:%M")}.',
             409,
+        )
+
+    # Bloqueia o passado por instante exato (não só por data) — cobre o caso
+    # de horário já passado HOJE, que o check de antecedência acima (por
+    # dia) não pega.
+    if data_hora <= naive_brasilia():
+        raise APIError('Este horário já passou. Escolha um horário futuro.', 422)
+
+    # Revalida contra a agenda real (ConfiguracaoAgenda, HorarioBloqueado,
+    # PausaBarbeiro) — verificar_conflito só olha OUTROS agendamentos, então
+    # sozinho não pega o gestor reduzindo o horário/bloqueando o dia/pausa
+    # enquanto o cliente tinha a página de booking aberta. Chamado UMA vez
+    # só, fora de qualquer loop de serviço (gerar_slots pode ser custoso).
+    slots_validos = gerar_slots(barbeiro_id, data_hora.date(), duracao_total)
+    if data_hora.strftime('%H:%M') not in slots_validos:
+        raise APIError(
+            f'Este horário não está mais disponível para este {L("profissional").lower()}. '
+            'Atualize a página e escolha outro.',
+            422,
         )
 
     # Calcula preços: sempre tenta resolver plano automaticamente para cada serviço

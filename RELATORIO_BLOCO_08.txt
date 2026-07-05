@@ -1,0 +1,110 @@
+═══════════════════════════════════════════════════════════════════════════════
+RELATÓRIO — BLOCO 2.3: Revalidação de slot e passado no POST
+BarberOS v1.0 → v1.1 | Script 08 de 20
+═══════════════════════════════════════════════════════════════════════════════
+
+COMMIT
+───────────────────────────────────────────────────────────────────────────────
+(a ser criado ao final deste relatório) bloco-2.3: revalidacao de slot e passado no POST
+2 arquivos: app/routes/pub/agendamento.py, app/routes/gestor/agendamento.py.
+
+CONFIRMAÇÕES FEITAS ANTES DE ESCREVER O CÓDIGO
+───────────────────────────────────────────────────────────────────────────────
+- `cliente/agendamento.py` REUSA `_criar_agendamento_core` de
+  `pub/agendamento.py` (import direto) — confirmado já no Bloco 07. Corrigir
+  o core corrige os dois fluxos (público e autenticado) de uma vez, sem
+  duplicar código.
+- Assinatura real de `gerar_slots(resource_id, data, duracao_necessaria) ->
+  list[str]` (app/utils/agenda.py) — retorna lista de strings 'HH:MM', não
+  objetos. Comparação feita com `data_hora.strftime('%H:%M') in slots`.
+- `gerar_slots` JÁ filtra horários passados quando `data == hoje_brasilia()`
+  (linha `agora = naive_brasilia() if data == hoje_brasilia() else None`).
+  Ou seja, o bloqueio de passado (item 1a) e a revalidação de slot (item 1b)
+  se sobrepõem parcialmente para "hoje" — mantive os dois mesmo assim
+  (defesa em camadas, como o próprio bloco pediu), e o de passado cobre
+  também um caso que gerar_slots sozinho não cobriria: se por algum motivo o
+  slot solicitado nem bater com a grade de intervalos (ex: 17:35 num
+  intervalo de 30min), a checagem de passado ainda pega separadamente.
+- `antecedencia_maxima_dias` (item 2) **já existia** em
+  `_criar_agendamento_core` antes deste bloco (bloqueio com base em
+  `config.antecedencia_maxima_dias`, linhas originais 157-163) — nada foi
+  adicionado aqui, só confirmado que já está correto.
+
+MUDANÇAS
+───────────────────────────────────────────────────────────────────────────────
+1. app/routes/pub/agendamento.py `_criar_agendamento_core` — logo após a
+   checagem de conflito (`verificar_conflito`) e antes de calcular preços:
+   a) `if data_hora <= naive_brasilia(): APIError('Este horário já passou.
+      Escolha um horário futuro.', 422)` — pega horário já passado HOJE
+      (o check de antecedência antigo só olha o DIA, não o instante exato).
+   b) `slots_validos = gerar_slots(barbeiro_id, data_hora.date(),
+      duracao_total)` — chamado UMA VEZ (usa `duracao_total`, já calculado
+      fora de qualquer loop de serviço) — `if data_hora.strftime('%H:%M')
+      not in slots_validos: APIError('Este horário não está mais disponível
+      para este {profissional}. Atualize a página e escolha outro.', 422)`.
+
+2. app/routes/gestor/agendamento.py `agendamento_manual` — adicionado
+   bloqueio de passado (`data_hora <= naive_brasilia()` → 422), MAS
+   propositalmente SEM a revalidação de `gerar_slots` — decisão de produto
+   documentada no código: o gestor pode encaixar um agendamento manual fora
+   da grade normal (fora do expediente configurado, etc.). Mantido o
+   `verificar_conflito` que já existia.
+
+VALIDAÇÃO OBRIGATÓRIA
+───────────────────────────────────────────────────────────────────────────────
+Ambiente: tenant de teste "QA Bloco08" (id=14), apagado ao final.
+
+1. Cenário completo do bug relatado (via curl direto na API, reproduzindo o
+   que a UI faria com a página aberta):
+   - GET slots do dia+3, fechamento 18:00 → confirmei que 17:30 estava na
+     lista.
+   - Login gestor → `PUT /api/v1/gestor/barbeiros/13/agenda` reduzindo
+     `horario_fechamento` para 17:00 (simulando o gestor mexendo enquanto o
+     cliente tem a página de booking aberta).
+   - POST /agendar no MESMO horário 17:30 (que já não existe mais na grade):
+     **422** — `"Este horário não está mais disponível para este barbeiro.
+     Atualize a página e escolha outro."` PASSOU.
+   - Confirmei também que um slot AINDA válido (16:00, dentro do novo
+     horário) continua funcionando normalmente: 201. PASSOU.
+   - **Validado visualmente com Playwright** (Chromium headless real): abri
+     `/b/qa-bloco08`, disparei a mesma requisição de dentro da página (reusando
+     as funções reais `toast()`/fetch da página), e confirmei que a mensagem
+     de erro aparece de fato no DOM (`#toasts .toast`) — não só no JSON de
+     resposta. Nenhum erro de JS/console (só o log padrão do navegador para
+     a resposta HTTP 422, que é esperado em qualquer erro de fetch).
+
+2. POST direto (curl) com data de ONTEM: **400** "Não é possível agendar no
+   passado." (check de antecedência antigo, por dia — já existia). Testado
+   também com um horário de HOJE que já passou (mesmo dia, hora anterior à
+   atual): **422** "Este horário já passou. Escolha um horário futuro." (o
+   check novo, por instante exato). Ambos os casos cobertos.
+
+3. Agendamento manual do gestor:
+   - Com data no passado: 422 "Este horário já passou..." PASSOU.
+   - Fora do expediente configurado (20h, fechamento é 17h) — sem revalidação
+     de slot: **201**, criado normalmente. Confirma que a restrição de grade
+     não se aplica ao agendamento manual, conforme decisão documentada.
+
+4. Agendamento normal segue funcionando (item 1 acima já cobre); auto-skip de
+   barbeiro único (frontend, `booking.html` linha ~489, `if (barbs.length ===
+   1)`) não foi tocado — nenhuma mudança de backend afeta essa lógica de UI.
+
+5. Smoke geral: dashboards de gestor e página pública de agendamento, 200.
+   Nenhum traceback inesperado no log do servidor durante toda a bateria de
+   testes.
+
+6. `python -c "from app import create_app; create_app()"`: sem erro (190
+   rotas, antes e depois).
+
+FRONTEND
+───────────────────────────────────────────────────────────────────────────────
+Nenhuma mudança necessária: `app/templates/pub/booking.html` já tinha
+`apiFetch()` extraindo `d.erro` do corpo da resposta e disparando
+`toast(e.message, 'error')` em qualquer falha (incluindo 422) — confirmado
+com Playwright que a mensagem nova aparece corretamente na tela.
+
+PRÓXIMOS PASSOS
+───────────────────────────────────────────────────────────────────────────────
+- Script 09 (commits protegidos com try/except + log) ou Script 10 (silent
+  failures — inclui a validação de ConfiguracaoAgenda ausente, relacionada
+  ao tema deste bloco).
