@@ -22,8 +22,8 @@ def _barbeiro_do_usuario(usuario_id, barbearia_id):
     ).first()
 
 
-def _at_id_do_ag(agendamento_id):
-    at = Atendimento.query.filter_by(agendamento_id=agendamento_id).first()
+def _at_id_do_ag(agendamento_id, barbearia_id):
+    at = Atendimento.query.filter_by(agendamento_id=agendamento_id, barbearia_id=barbearia_id).first()
     return at.id if at else None
 
 

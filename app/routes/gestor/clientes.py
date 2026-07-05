@@ -5,9 +5,13 @@ from app.extensions import db
 from app.models import Cliente, Usuario, Agendamento, AgendamentoServico, Servico, Barbeiro
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
+from app.labels import L
 from app.utils.tz import hoje_brasilia, naive_brasilia
 
 gestor_clientes_bp = Blueprint('gestor_clientes', __name__, url_prefix='/api/v1/gestor')
+
+# Migra para app/constants.py no Script 14.
+_STATUS_CLIENTE_VALIDOS = {'ativo', 'novos', 'em_risco', 'vip', 'inativos'}
 
 
 def _bid():
@@ -75,6 +79,14 @@ def listar_clientes():
     q_texto  = request.args.get('q', '').strip()
     filtro   = request.args.get('status', '').strip()
     barb_f   = request.args.get('barbeiro_id', type=int)
+
+    if filtro and filtro not in _STATUS_CLIENTE_VALIDOS:
+        raise APIError(f'Status inválido: "{filtro}".', 422)
+
+    if barb_f:
+        b = Barbeiro.query.filter_by(id=barb_f, barbearia_id=bid).first()
+        if not b:
+            raise APIError(f'{L("profissional")} não encontrado.', 404)
 
     # ── Todos os clientes para stats/insights ─────────────────────────────────
     todos = Cliente.query.filter_by(barbearia_id=bid).all()

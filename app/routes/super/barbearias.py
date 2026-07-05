@@ -22,6 +22,19 @@ _TIPOS_UPLOAD = {
     'boas_vindas': 'imagem_boas_vindas_url',
 }
 
+
+def _validar_magic_bytes_imagem(arq):
+    """Valida os bytes reais do arquivo (JPEG/PNG/WebP) — mimetype do client é forjável."""
+    arq.stream.seek(0)
+    header = arq.stream.read(12)
+    arq.stream.seek(0)
+    e_jpeg = header[:3] == b'\xff\xd8\xff'
+    e_png  = header[:8] == b'\x89PNG\r\n\x1a\n'
+    e_webp = header[:4] == b'RIFF' and header[8:12] == b'WEBP'
+    if not (e_jpeg or e_png or e_webp):
+        raise APIError('Arquivo não é JPG, PNG ou WebP válido.', 400)
+
+
 def _cfg_cloudinary():
     cloudinary.config(
         cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
@@ -396,6 +409,7 @@ def upload_imagem_customizacao(barbearia_id):
     if arq.tell() > _MAX_BYTES:
         raise APIError('Arquivo muito grande. Máximo 5 MB.')
     arq.seek(0)
+    _validar_magic_bytes_imagem(arq)
 
     _cfg_cloudinary()
     public_id = f'barbearia_{barbearia_id}_{tipo}'

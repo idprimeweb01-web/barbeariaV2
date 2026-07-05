@@ -12,6 +12,9 @@ from app.labels import L
 
 planos_bp = Blueprint('gestor_planos', __name__, url_prefix='/api/v1/gestor')
 
+# Mesma lista aceita por ClientePlanoSolicitacao.status. Migra para app/constants.py no Script 14.
+_STATUS_SOLICITACAO_VALIDOS = {'pendente', 'aprovado', 'rejeitado'}
+
 
 def _fmt_plano(p, com_servicos=False):
     d = {
@@ -265,6 +268,8 @@ def listar_solicitacoes():
     q = ClientePlanoSolicitacao.query.filter_by(barbearia_id=g.barbearia_id)
     status_f = request.args.get('status', 'pendente')
     if status_f:
+        if status_f not in _STATUS_SOLICITACAO_VALIDOS:
+            raise APIError(f'Status inválido: "{status_f}".', 422)
         q = q.filter_by(status=status_f)
     solic = q.order_by(ClientePlanoSolicitacao.criado_em.desc()).all()
     return jsonify([_fmt_solicitacao(s) for s in solic]), 200

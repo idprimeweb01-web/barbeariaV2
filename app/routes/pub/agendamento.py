@@ -543,6 +543,18 @@ _TIPOS_COMPROVANTE = {'image/jpeg', 'image/jpg', 'image/png'}
 _MAX_BYTES_COMP    = 5 * 1024 * 1024
 
 
+def _validar_magic_bytes(arq):
+    """Valida os bytes reais do arquivo (JPEG/PNG) — mimetype do client é forjável.
+    Assume que o stream já está no início; deixa o stream de volta no início ao final."""
+    arq.stream.seek(0)
+    header = arq.stream.read(8)
+    arq.stream.seek(0)
+    e_jpeg = header[:3] == b'\xff\xd8\xff'
+    e_png  = header[:8] == b'\x89PNG\r\n\x1a\n'
+    if not (e_jpeg or e_png):
+        raise APIError('Arquivo não é JPEG ou PNG válido.', 400)
+
+
 def _cfg_cloudinary_pub():
     cloudinary.config(
         cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
@@ -576,6 +588,7 @@ def upload_comprovante(slug, agendamento_id):
     if arq.tell() > _MAX_BYTES_COMP:
         raise APIError('Arquivo muito grande. Máximo 5 MB.', 400)
     arq.seek(0)
+    _validar_magic_bytes(arq)
 
     from datetime import datetime as _dt
     now  = _dt.utcnow()
@@ -603,7 +616,8 @@ def upload_comprovante(slug, agendamento_id):
     if not url:
         raise APIError('Cloudinary não retornou URL.', 502)
 
-    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=agendamento_id).first()
+    # Deriva do `ag` já validado (tenant do slug) em vez do path param cru — defesa em profundidade.
+    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=barbearia.id).first()
     if pix:
         pix.comprovante_url = url
 

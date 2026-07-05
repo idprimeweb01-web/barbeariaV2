@@ -1,0 +1,127 @@
+═══════════════════════════════════════════════════════════════════════════════
+RELATÓRIO — BLOCO 4.1: IDOR + filtros + upload seguro
+BarberOS v1.0 → v1.1 | Script 05 de 20
+═══════════════════════════════════════════════════════════════════════════════
+
+COMMIT
+───────────────────────────────────────────────────────────────────────────────
+(a ser criado ao final deste relatório) bloco-4.1: idor corrigido + whitelist filtros + magic bytes
+7 arquivos, todos em app/routes/.
+
+1. IDOR #1 — app/routes/gestor/clientes.py
+───────────────────────────────────────────────────────────────────────────────
+`listar_clientes()`: antes de usar `?barbeiro_id=` para filtrar, agora valida
+que o `Barbeiro` existe E pertence a `g.barbearia_id`. Se não → 404
+"Profissional não encontrado." em vez de deixar o filtro seguir.
+Nota de investigação: a query que já usava esse filtro (`ids_barb = {...
+Agendamento.query.filter_by(barbearia_id=bid, barbeiro_id=barb_f)...}`) já
+tinha `barbearia_id=bid` combinado no AND — ou seja, um `barbeiro_id` de
+outro tenant já resultava em lista vazia (nenhum dado vazava), não em
+vazamento de dados de outro tenant. O problema real era UX/robustez (retorno
+silencioso de "0 resultados" em vez de erro claro), não exposição de dados.
+A correção deixa o comportamento explícito e também serve de defesa em
+profundidade caso a query mude no futuro.
+
+2. IDOR #2 — app/routes/gestor/agendamento.py
+───────────────────────────────────────────────────────────────────────────────
+Mesma correção em `listar_agendamentos()`. Mesma observação: a query já
+encadeava `barbearia_id=g.barbearia_id` antes do filtro de `barbeiro_id`, meso
+efeito prático (nenhum vazamento de dados, mas retorno silencioso). Agora 404
+explícito.
+
+3. TENANT EM QUERIES SECUNDÁRIAS
+───────────────────────────────────────────────────────────────────────────────
+a) app/routes/pub/agendamento.py `upload_comprovante`: a busca do
+   `AgendamentoSolicitacaoPix` usava o path param `agendamento_id` cru.
+   Trocado para derivar de `ag.id` (o `Agendamento` já validado contra
+   `barbearia.id` do slug) + adicionado filtro `barbearia_id=barbearia.id`
+   explícito (a coluna existe no model). Como `agendamento_id` já era
+   idêntico a `ag.id` neste ponto do código, não havia bypass real — é
+   hardening de clareza/defesa em profundidade.
+b) app/routes/caixa.py `_at_id_do_ag`: adicionado parâmetro `barbearia_id` e
+   filtro correspondente. **Observação importante**: este arquivo
+   (`app/routes/caixa.py`) é código V1 mantido intencionalmente sem
+   registrar blueprint (ver `docs/Roadmap.md`, decisão em aberto sobre
+   reconstruir PDV no V2 ou descartar) — `grep caixa app/__init__.py` não
+   retorna nada, ou seja, esse endpoint NÃO está acessível via HTTP hoje.
+   Além disso, `_at_id_do_ag` não tinha nenhum chamador em todo o código
+   (`grep -rn _at_id_do_ag app/` só bate na própria definição). A correção
+   foi aplicada mesmo assim, porque é de graça e deixa o arquivo mais seguro
+   se um dia for revivido — mas não teve efeito prático em produção hoje.
+c) app/routes/barbeiro/agendamentos.py `aprovar_comprovante`: já derivava de
+   `ag.id` (validado) — confirmado correto conforme a tarefa pediu. Adicionei
+   `barbearia_id=ag.barbearia_id` ao filtro do PIX por consistência com o
+   padrão aplicado em (a).
+   Aproveitei para aplicar o mesmo padrão nos 3 lookups de PIX em
+   `app/routes/gestor/agendamento.py` (`_fmt_ag_gestor`, `aprovar_agendamento`,
+   `cancelar_agendamento_gestor`) — já derivavam de `ag.id` validado, só
+   faltava o `barbearia_id` explícito.
+
+4. WHITELIST DE STATUS
+───────────────────────────────────────────────────────────────────────────────
+- `gestor/clientes.py`: `_STATUS_CLIENTE_VALIDOS = {'ativo','novos','em_risco','vip','inativos'}`
+- `gestor/agendamento.py`: `_STATUS_AGENDAMENTO_VALIDOS` — mesma lista do
+  CHECK constraint `ck_agendamentos_status_valido` (Bloco 2.1), 9 valores.
+- `gestor/planos.py` (`listar_solicitacoes`): `_STATUS_SOLICITACAO_VALIDOS =
+  {'pendente','aprovado','rejeitado'}`
+Todos com comentário "migra para app/constants.py no Script 14" — não criei
+o módulo de constantes ainda, conforme a tarefa combinou.
+
+5. MAGIC BYTES
+───────────────────────────────────────────────────────────────────────────────
+- `app/routes/pub/agendamento.py`: nova `_validar_magic_bytes(arq)` (JPEG:
+  `\xff\xd8\xff`, PNG: `\x89PNG\r\n\x1a\n`), chamada em `upload_comprovante`
+  após as validações de mimetype/tamanho existentes.
+- `app/routes/super/barbearias.py` `upload_imagem_customizacao`: também
+  confiava só no mimetype (mesmo padrão). Adicionada
+  `_validar_magic_bytes_imagem(arq)` — igual à de cima, mas também aceita
+  WebP (`RIFF....WEBP`), já que esse endpoint permite `image/webp`.
+Confirmei com `grep -rn "\.mimetype" app/routes` que não existem outros
+endpoints de upload no projeto além desses dois.
+
+VALIDAÇÃO OBRIGATÓRIA
+───────────────────────────────────────────────────────────────────────────────
+Ambiente: 2 tenants de teste descartáveis (A=8, B=9), apagados ao final.
+
+1. Gestor da barbearia A filtrando por `barbeiro_id` de barbeiro da
+   barbearia B:
+   - `GET /api/v1/gestor/clientes?barbeiro_id=<id_B>` → 404 "Profissional
+     não encontrado.". PASSOU.
+   - `GET /api/v1/gestor/agendamentos?barbeiro_id=<id_B>` → 404. PASSOU.
+
+2. Upload de `.txt` renomeado para `.jpg` com `Content-Type: image/jpeg`
+   forjado:
+   - `pub/agendamento.py` comprovante: 400 "Arquivo não é JPEG ou PNG
+     válido.". PASSOU.
+   - `super/barbearias.py` customização: 400 "Arquivo não é JPG, PNG ou
+     WebP válido.". PASSOU.
+
+3. Upload de JPEG e PNG reais (gerados com Pillow, imagens 10x10 de verdade,
+   não só um header falso) continua funcionando fim a fim, incluindo o
+   upload real pro Cloudinary configurado no `.env` deste ambiente:
+   - Comprovante PIX: JPEG → 200 (URL Cloudinary retornada). PNG → 200.
+   - Customização super admin: PNG → 200.
+   PASSOU. **Nota:** isso criou 3 assets reais e pequenos (imagens de teste
+   10x10) na conta Cloudinary configurada (`dftntop4j`), sob
+   `barbearia/8/comprovantes/...` e `barberos/customizacao/barbearia_8_logo.png`
+   — não tentei apagá-los via API por estar fora do escopo pedido, mas fica
+   registrado para você decidir se quer limpar manualmente.
+
+4. `?status=agendadoo` (e variações inválidas nos outros 2 endpoints):
+   422 "Status inválido: ..." em todos os 3. Status válido (`agendado`)
+   continua retornando 200 normalmente. PASSOU.
+
+5. Smoke geral: dashboards de gestor/super, página pública de agendamento e
+   tela de login staff, todos 200. Nenhum erro inesperado no log do servidor
+   (só o traceback esperado do teste com arquivo `.txt` fingido, que já é o
+   comportamento correto sendo exercitado).
+
+6. `python -c "from app import create_app; create_app()"`: sem erro, antes e
+   depois de todas as mudanças (190 rotas).
+
+PRÓXIMOS PASSOS
+───────────────────────────────────────────────────────────────────────────────
+- Script 06 (paginação) ou Script 07 (locks, pré-requisito já satisfeito
+  desde o Bloco 2.1).
+- As listas de status "hardcoded" nos 3 arquivos deste bloco são candidatas
+  diretas ao `app/constants.py` do Script 14 — já deixei comentado onde.

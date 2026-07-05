@@ -17,6 +17,14 @@ from app.utils import normalizar_telefone
 
 gestor_agenda_bp = Blueprint('gestor_agenda', __name__, url_prefix='/api/v1/gestor')
 
+# Mesma lista aceita pelo CHECK constraint ck_agendamentos_status_valido (Bloco 2.1).
+# Migra para app/constants.py no Script 14.
+_STATUS_AGENDAMENTO_VALIDOS = {
+    'agendado', 'concluido', 'cancelado', 'em_atendimento',
+    'aguardando_comprovante', 'aguardando_aprovacao', 'aguardando_pagamento',
+    'nao_realizado', 'aguardando_transferencia',
+}
+
 
 def _fmt_ag_gestor(ag):
     fim = fim_agendamento(ag.data_hora, ag.duracao_minutos)
@@ -47,7 +55,7 @@ def _fmt_ag_gestor(ag):
             'comissao_valor':       comissao_valor,
         })
 
-    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id).first()
+    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=ag.barbearia_id).first()
 
     return {
         'id':               ag.id,
@@ -85,10 +93,15 @@ def listar_agendamentos():
 
     barbeiro_f = request.args.get('barbeiro_id', type=int)
     if barbeiro_f:
+        b = Barbeiro.query.filter_by(id=barbeiro_f, barbearia_id=g.barbearia_id).first()
+        if not b:
+            raise APIError(f'{L("profissional")} não encontrado.', 404)
         q = q.filter_by(barbeiro_id=barbeiro_f)
 
     status_f = request.args.get('status')
     if status_f:
+        if status_f not in _STATUS_AGENDAMENTO_VALIDOS:
+            raise APIError(f'Status inválido: "{status_f}".', 422)
         q = q.filter_by(status=status_f)
 
     ags = q.order_by(Agendamento.data_hora).all()
@@ -121,7 +134,7 @@ def aprovar_agendamento(ag_id):
             f'Agendamento não pode ser aprovado. Status atual: "{ag.status}".'
         )
 
-    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id).first()
+    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=ag.barbearia_id).first()
     if pix:
         pix.status = 'aprovado'
         pix.respondido_em = naive_brasilia()
@@ -145,7 +158,7 @@ def cancelar_agendamento_gestor(ag_id):
     if ag.status in ('cancelado', 'concluido'):
         raise APIError(f'Não é possível cancelar. Status atual: "{ag.status}".')
 
-    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id).first()
+    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=ag.barbearia_id).first()
     if pix and pix.status == 'pendente':
         pix.status = 'rejeitado'
 

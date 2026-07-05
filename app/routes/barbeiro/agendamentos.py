@@ -168,7 +168,7 @@ def aprovar_comprovante(ag_id):
     _aprovavel = {'aguardando_aprovacao', 'aguardando_comprovante', 'aguardando_pagamento'}
     if ag.status not in _aprovavel:
         raise APIError(f'Agendamento não pode ser aprovado. Status atual: "{ag.status}".', 422)
-    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id).first()
+    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=ag.barbearia_id).first()
     if pix:
         pix.status = 'aprovado'
         pix.respondido_em = naive_brasilia()
