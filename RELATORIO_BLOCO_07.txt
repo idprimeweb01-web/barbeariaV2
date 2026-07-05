@@ -1,0 +1,164 @@
+═══════════════════════════════════════════════════════════════════════════════
+RELATÓRIO — BLOCO 2.2: Locks e updates atômicos nos fluxos críticos
+BarberOS v1.0 → v1.1 | Script 07 de 20
+═══════════════════════════════════════════════════════════════════════════════
+
+COMMIT
+───────────────────────────────────────────────────────────────────────────────
+(a ser criado ao final deste relatório) bloco-2.2: locks e updates atomicos nos fluxos criticos
+8 arquivos: 6 rotas/utils Python alterados + teste_concorrencia.py (novo).
+
+ANÁLISE DO ITEM 4 (ClientePlanoUso / uq_plano_uso_dia) — feita ANTES de mudar código
+───────────────────────────────────────────────────────────────────────────────
+Investiguei toda referência a `ClientePlanoUso` e `semana_do_mes` no código:
+- Toda verificação de limite (`_resolver_plano` em pub/agendamento.py,
+  equivalente em cliente/planos.py) conta uso POR MÊS (ano+mês) — nunca por
+  dia. Não existe hoje nenhuma regra de negócio de "1 uso por dia" explícita
+  em lugar nenhum.
+- `ClientePlanoUso.semana_do_mes` é GRAVADO mas nunca LIDO em lugar nenhum do
+  código — resquício de um design que parece ter previsto granularidade
+  semanal e nunca chegou a ser implementado na verificação. O campo `usado`
+  (sempre True) também nunca é consultado.
+- Conclusão levada para você: a constraint `uq_plano_uso_dia` (cliente_plano_id,
+  servico_id, data_uso) do Bloco 2.1 é razoável para o caso de uso real — nada
+  no código sugere necessidade de negócio de "2x o mesmo serviço, mesmo plano,
+  mesmo dia".
+- Você escolheu: dentro do MESMO booking, só a 1ª ocorrência de
+  (cliente_plano_id, servico_id) consome o plano; repetições no mesmo
+  pedido/dia são cobradas como avulso. Sem migration nova.
+
+Implementado exatamente assim em `_criar_agendamento_core`
+(app/routes/pub/agendamento.py) — um `set()` local rastreia (cliente_plano_id,
+servico_id) já consumidos NESTE booking; se `_resolver_plano` disser que o
+item é coberto pelo plano mas a combinação já foi usada neste mesmo pedido,
+o item vira avulso (preço cheio). Validado: um booking com o mesmo serviço
+2x retornou o 1º item com `is_plano:true, preco:0.0` e o 2º com
+`is_plano:false, preco:40.0` — só 1 linha em `cliente_plano_uso` foi criada
+(conferido direto no banco).
+
+**Achado colateral, não relacionado a este bloco**: nem `pub/agendamento.py`
+nem `cliente/agendamento.py` de fato repassam `cupom_codigo` do request para
+`_criar_agendamento_core` — o parâmetro existe na função mas nenhum dos dois
+endpoints o preenche a partir de `request.get_json()`. Ou seja, hoje não dá
+pra aplicar cupom no ato de criar o agendamento via API pública/cliente
+(a lógica de `validar_cupom`/`incrementar_uso_cupom` só é exercitada pelos
+callers em barbeiro/gestor, que operam sobre agendamento já criado). Não
+mexi nisso — é uma lacuna de funcionalidade pré-existente, fora do escopo de
+concorrência deste bloco.
+
+MUDANÇAS POR ITEM
+───────────────────────────────────────────────────────────────────────────────
+1. Double-booking (app/utils/agenda.py, app/routes/pub/agendamento.py):
+   - `verificar_conflito`: query agora usa `.with_for_update()` nos
+     agendamentos do barbeiro no dia antes de checar sobreposição.
+   - `_criar_agendamento_core`: `db.session.add(ag); db.session.flush()`
+     agora dentro de try/except IntegrityError → rollback + APIError
+     'Este horário acabou de ser reservado. Escolha outro.' (409). Cobre o
+     caso em que não há linha nenhuma pra travar (1º agendamento do
+     barbeiro no dia) e a `uq_ag_barbeiro_slot` (Bloco 2.1) é quem pega.
+   - `cliente/agendamento.py` usa a MESMA `_criar_agendamento_core` — corrigido
+     automaticamente, sem duplicar código.
+
+2. Dupla aprovação de plano PIX (gestor/planos.py):
+   - `aprovar_solicitacao`: busca com `.with_for_update()`; status != 'pendente'
+     agora é 409 (era 400); `ClientePlano.solicitacao_id=sol.id` preenchido;
+     commit com except IntegrityError específico (UNIQUE de solicitacao_id)
+     → 'Solicitação já aprovada por outro gestor.' (409).
+   - `rejeitar_solicitacao`: mesmo lock + status 409.
+
+3. Cupom atômico (app/utils/cupons.py):
+   - `incrementar_uso_cupom`/`decrementar_uso_cupom` agora fazem UPDATE
+     atômico via SQL direto (`UPDATE cupons SET quantidade_usos = ... WHERE
+     ... AND (quantidade_maxima_usos IS NULL OR quantidade_usos <
+     quantidade_maxima_usos)`), confirmando nomes reais de tabela/coluna
+     (`cupons`, `barbearia_id`, `quantidade_usos`, `quantidade_maxima_usos`).
+     `rowcount == 0` no incremento → APIError 'Cupom esgotado.' (422).
+   - Mudança de assinatura: as duas funções agora exigem `barbearia_id`
+     (usado no WHERE, defesa em profundidade — `cupom_id` já é PK única, mas
+     segue o padrão pedido). Atualizados os 5 call sites (barbeiro/
+     agendamentos.py x2, cliente/agendamento.py, gestor/agendamento.py x2,
+     pub/agendamento.py x1).
+   - `validar_cupom` mantido como pré-check de UX (mensagens específicas);
+     a fonte da verdade agora é sempre o UPDATE atômico.
+
+4. Limite de plano em multi-serviço: ver análise acima.
+
+5. Dupla aprovação de comprovante PIX (agendamento):
+   - `gestor/agendamento.py aprovar_agendamento` e
+     `barbeiro/agendamentos.py aprovar_comprovante`: busca do Agendamento
+     agora com `.with_for_update()`; mensagem de status inválido trocada
+     para 'Este agendamento já foi processado.' (409, era 422/400 com
+     mensagem técnica).
+
+6. teste_concorrencia.py (novo, raiz do projeto):
+   - Cria seus próprios dados de teste (barbearia/gestor/barbeiro/cliente/
+     plano descartáveis), roda os 2 testes de concorrência via HTTP real
+     contra um servidor de pé, imprime resumo, e apaga os dados ao final.
+   - Uso: `python teste_concorrencia.py [base_url]` (default
+     http://127.0.0.1:5000).
+
+OUTPUT REAL DO teste_concorrencia.py
+───────────────────────────────────────────────────────────────────────────────
+Testando concorrência contra http://127.0.0.1:5000
+Preparando dados de teste...
+
+[1] 10 threads agendando o MESMO slot (2026-07-10T14:00:00)...
+  Resultados: [409, 409, 409, 409, 409, 409, 409, 409, 409, 201]
+  201 (sucesso): 1  |  409 (conflito): 9  |  outros: []
+  PASSOU: esperado exatamente 1x 201 e 9x 409.
+
+[2] 5 threads aprovando a MESMA solicitação (#3)...
+  Resultados: [409, 200, 409, 409, 409]
+  200 (sucesso): 1  |  409 (conflito): 4  |  outros: []
+  PASSOU: esperado exatamente 1x 200 e 4x 409.
+
+=== RESUMO ===
+Double-booking:      PASSOU
+Dupla aprovação:     PASSOU
+
+Limpando dados de teste...
+
+Nenhum traceback/500 no log do servidor durante o teste — todos os conflitos
+viraram 409 limpo.
+
+VALIDAÇÃO OBRIGATÓRIA
+───────────────────────────────────────────────────────────────────────────────
+1. teste_concorrencia.py: PASSOU (output colado acima).
+2. Fluxo normal (1 usuário) idêntico ao de antes:
+   - Booking simples (1 serviço, sem repetição): 201, comportamento igual.
+   - Booking com o MESMO serviço 2x: 1º cobre pelo plano, 2º cobre como
+     avulso (novo comportamento do item 4 — documentado, não é regressão).
+   - Aprovação de solicitação de plano (1x): 200. Segunda tentativa na
+     mesma solicitação: 409 "Solicitação já foi aprovado." (rota antiga já
+     tinha essa checagem; agora com lock).
+   - Aprovação de comprovante PIX de agendamento (1x): 200. Segunda
+     tentativa no MESMO agendamento: 409 "Este agendamento já foi
+     processado." (antes seria 422 com mensagem técnica "Status atual: ...").
+   - Cupom: testado diretamente via função (incrementar 1x → ok; forçar
+     quantidade_maxima_usos=1 e incrementar de novo → APIError 'Cupom
+     esgotado.' 422; decrementar → ok). Não foi possível testar via o
+     endpoint de booking real porque — ver achado colateral acima — cupom
+     não é repassado por lá hoje.
+3. Smoke geral: nenhum traceback inesperado no log do servidor durante toda
+   a bateria de testes (concorrência + fluxo normal).
+4. `python -c "from app import create_app; create_app()"`: sem erro (190
+   rotas, antes e depois).
+
+MENSAGENS DE ERRO (todas em PT-BR, sem stack trace)
+───────────────────────────────────────────────────────────────────────────────
+- 409 'Este horário acabou de ser reservado. Escolha outro.'
+- 409 'Limite de uso do plano para este serviço foi atingido. Tente novamente
+  ou escolha outro serviço.' (corrida entre bookings paralelos no mesmo dia)
+- 409 'Solicitação já foi {status}.' / 'Solicitação já aprovada por outro
+  gestor.'
+- 422 'Cupom esgotado.'
+- 409 'Este agendamento já foi processado.'
+
+PRÓXIMOS PASSOS
+───────────────────────────────────────────────────────────────────────────────
+- Script 08 (revalidação de slot no POST, caso o barbeiro mude o horário
+  entre o cliente ver os slots e confirmar) é o próximo natural, já que este
+  bloco preparou o terreno de locking.
+- Achado da lacuna de cupom não aplicado no booking: candidato a reportar
+  como pendência de produto (não é bug de concorrência, é funcionalidade
+  nunca conectada).

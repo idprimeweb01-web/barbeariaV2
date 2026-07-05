@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from app.extensions import db
 from app.models import Cupom
 from app.exceptions import APIError
@@ -39,13 +40,24 @@ def calcular_desconto(cupom: Cupom, subtotal: float) -> float:
     return round(min(valor, subtotal), 2)
 
 
-def incrementar_uso_cupom(cupom_id: int):
-    cupom = db.session.get(Cupom, cupom_id)
-    if cupom:
-        cupom.quantidade_usos += 1
+def incrementar_uso_cupom(cupom_id: int, barbearia_id: int):
+    """UPDATE atômico — evita TOCTOU entre validar_cupom() (pré-check de UX)
+    e o incremento de fato: duas requisições concorrentes usando o último uso
+    disponível não podem, juntas, ultrapassar quantidade_maxima_usos."""
+    result = db.session.execute(text('''
+        UPDATE cupons SET quantidade_usos = quantidade_usos + 1
+        WHERE id = :id AND barbearia_id = :bk
+          AND (quantidade_maxima_usos IS NULL
+               OR quantidade_usos < quantidade_maxima_usos)
+    '''), {'id': cupom_id, 'bk': barbearia_id})
+    if result.rowcount == 0:
+        raise APIError('Cupom esgotado.', 422)
 
 
-def decrementar_uso_cupom(cupom_id: int):
-    cupom = db.session.get(Cupom, cupom_id)
-    if cupom and cupom.quantidade_usos > 0:
-        cupom.quantidade_usos -= 1
+def decrementar_uso_cupom(cupom_id: int, barbearia_id: int):
+    """UPDATE atômico — usado em cancelamento/rejeição. Não levanta erro se
+    não houver linha pra decrementar (ex: contador já em zero)."""
+    db.session.execute(text('''
+        UPDATE cupons SET quantidade_usos = quantidade_usos - 1
+        WHERE id = :id AND barbearia_id = :bk AND quantidade_usos > 0
+    '''), {'id': cupom_id, 'bk': barbearia_id})

@@ -9,6 +9,7 @@ import cloudinary
 import cloudinary.uploader
 from datetime import datetime, date
 from flask import Blueprint, request, jsonify, current_app
+from sqlalchemy.exc import IntegrityError
 from app.utils.tz import hoje_brasilia
 from app.extensions import db
 from app.models import (
@@ -194,11 +195,24 @@ def _criar_agendamento_core(
         )
 
     # Calcula preços: sempre tenta resolver plano automaticamente para cada serviço
+    # _resolver_plano só enxerga o uso já GRAVADO no banco — os usos do próprio
+    # booking (ex: 2x o mesmo serviço no mesmo pedido) ainda não existem lá.
+    # Sem este controle, dois itens iguais no mesmo booking passariam pelo
+    # plano mesmo com limite_uso_mensal=1, e colidiriam na uq_plano_uso_dia
+    # (Bloco 2.1) ao tentar gravar 2 ClientePlanoUso idênticos. Regra: dentro
+    # do MESMO booking, só a 1ª ocorrência de (plano, serviço) consome o
+    # plano — repetições no mesmo pedido são cobradas como avulso.
+    plano_usado_no_booking = set()
     itens_finais = []
     for s, _ in servicos_obj:
         cliente_plano_id, is_plano = _resolver_plano(
             cliente_id, barbearia_id, s.id, barbeiro_id, data_hora
         )
+        if is_plano and (cliente_plano_id, s.id) in plano_usado_no_booking:
+            cliente_plano_id, is_plano = None, False
+        elif is_plano:
+            plano_usado_no_booking.add((cliente_plano_id, s.id))
+
         preco = 0.0 if is_plano else float(s.preco)
         itens_finais.append({
             'servico': s,
@@ -234,11 +248,22 @@ def _criar_agendamento_core(
         observacao=observacao,
     )
     db.session.add(ag)
-    db.session.flush()
+    try:
+        db.session.flush()
+    except IntegrityError:
+        # Rede de segurança final: uq_ag_barbeiro_slot (Bloco 2.1) pegou uma
+        # corrida que o lock em verificar_conflito não pôde evitar (primeiro
+        # agendamento do barbeiro no dia — nada para travar com FOR UPDATE).
+        db.session.rollback()
+        raise APIError('Este horário acabou de ser reservado. Escolha outro.', 409)
 
     # Cupom só conta uso quando o agendamento nasce confirmado (sem PIX pendente)
     if cupom and status == 'agendado':
-        incrementar_uso_cupom(cupom.id)
+        try:
+            incrementar_uso_cupom(cupom.id, barbearia_id)
+        except APIError:
+            db.session.rollback()
+            raise
 
     servicos_info = []
     for item in itens_finais:
@@ -298,6 +323,15 @@ def _criar_agendamento_core(
 
     try:
         db.session.commit()
+    except IntegrityError:
+        # Corrida entre bookings PARALELOS (requisições diferentes) usando o
+        # mesmo (plano, serviço, dia) — uq_plano_uso_dia (Bloco 2.1) pegou.
+        db.session.rollback()
+        raise APIError(
+            'Limite de uso do plano para este serviço foi atingido. '
+            'Tente novamente ou escolha outro serviço.',
+            409,
+        )
     except Exception:
         db.session.rollback()
         raise APIError('Erro ao criar agendamento. Tente novamente.', 500)

@@ -144,7 +144,7 @@ def cancelar_agendamento(ag_id):
         )
 
     if ag.cupom_id and ag.status == 'agendado':
-        decrementar_uso_cupom(ag.cupom_id)
+        decrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
 
     ag.status = 'cancelado'
     try:

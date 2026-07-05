@@ -1,4 +1,5 @@
 from flask import Blueprint, request, g, jsonify
+from sqlalchemy.exc import IntegrityError
 from app.extensions import db
 from app.models import (
     Plano, PlanoServico, Servico, ClientePlano, ClientePlanoSolicitacao,
@@ -313,13 +314,16 @@ def _fmt_solicitacao(s):
 @planos_bp.put('/planos/solicitacoes/<int:sol_id>/aprovar')
 @gestor_required
 def aprovar_solicitacao(sol_id):
-    sol = ClientePlanoSolicitacao.query.filter_by(
-        id=sol_id, barbearia_id=g.barbearia_id
-    ).first()
+    sol = (
+        ClientePlanoSolicitacao.query
+        .filter_by(id=sol_id, barbearia_id=g.barbearia_id)
+        .with_for_update()
+        .first()
+    )
     if not sol:
         raise APIError('Solicitação não encontrada.', 404)
     if sol.status != 'pendente':
-        raise APIError(f'Solicitação já foi {sol.status}.')
+        raise APIError(f'Solicitação já foi {sol.status}.', 409)
 
     p = db.session.get(Plano, sol.plano_id)
     if not p or not p.ativo:
@@ -341,6 +345,7 @@ def aprovar_solicitacao(sol_id):
         data_inicio=hoje,
         data_fim=data_fim,
         ativo=True,
+        solicitacao_id=sol.id,
     )
     db.session.add(cp)
 
@@ -348,6 +353,9 @@ def aprovar_solicitacao(sol_id):
     sol.aprovado_em = naive_brasilia()
     try:
         db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        raise APIError('Solicitação já aprovada por outro gestor.', 409)
     except Exception:
         db.session.rollback()
         raise APIError('Erro ao aprovar solicitação. Tente novamente.', 500)
@@ -365,13 +373,16 @@ def aprovar_solicitacao(sol_id):
 @planos_bp.put('/planos/solicitacoes/<int:sol_id>/rejeitar')
 @gestor_required
 def rejeitar_solicitacao(sol_id):
-    sol = ClientePlanoSolicitacao.query.filter_by(
-        id=sol_id, barbearia_id=g.barbearia_id
-    ).first()
+    sol = (
+        ClientePlanoSolicitacao.query
+        .filter_by(id=sol_id, barbearia_id=g.barbearia_id)
+        .with_for_update()
+        .first()
+    )
     if not sol:
         raise APIError('Solicitação não encontrada.', 404)
     if sol.status != 'pendente':
-        raise APIError(f'Solicitação já foi {sol.status}.')
+        raise APIError(f'Solicitação já foi {sol.status}.', 409)
 
     dados = request.get_json(silent=True) or {}
     sol.status = 'rejeitado'

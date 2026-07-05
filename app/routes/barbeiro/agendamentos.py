@@ -150,7 +150,7 @@ def cancelar_agendamento(ag_id):
     if motivo:
         ag.observacao = motivo[:300]
     if ag.cupom_id and ag.status == 'agendado':
-        decrementar_uso_cupom(ag.cupom_id)
+        decrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
     ag.status = 'cancelado'
     db.session.commit()
     return jsonify({'id': ag.id, 'status': ag.status}), 200
@@ -162,18 +162,23 @@ def cancelar_agendamento(ag_id):
 @barbeiro_required
 def aprovar_comprovante(ag_id):
     b  = _get_barbeiro(g.user_id, g.barbearia_id)
-    ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id, barbeiro_id=b.id).first()
+    ag = (
+        Agendamento.query
+        .filter_by(id=ag_id, barbearia_id=g.barbearia_id, barbeiro_id=b.id)
+        .with_for_update()
+        .first()
+    )
     if not ag:
         raise APIError('Agendamento não encontrado.', 404)
     _aprovavel = {'aguardando_aprovacao', 'aguardando_comprovante', 'aguardando_pagamento'}
     if ag.status not in _aprovavel:
-        raise APIError(f'Agendamento não pode ser aprovado. Status atual: "{ag.status}".', 422)
+        raise APIError('Este agendamento já foi processado.', 409)
     pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=ag.barbearia_id).first()
     if pix:
         pix.status = 'aprovado'
         pix.respondido_em = naive_brasilia()
     if ag.cupom_id:
-        incrementar_uso_cupom(ag.cupom_id)
+        incrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
     ag.status = 'agendado'
     db.session.commit()
     return jsonify({'id': ag.id, 'status': 'agendado'}), 200

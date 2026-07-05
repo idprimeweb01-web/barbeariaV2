@@ -32,6 +32,11 @@ def verificar_conflito(resource_id: int, data_hora: datetime, duracao_minutos: i
             Agendamento.status != 'cancelado',
             db.func.date(Agendamento.data_hora) == dia,
         )
+        # Lock dos agendamentos do dia p/ este recurso — outra transação que
+        # tente reservar o mesmo slot espera até esta commitar/rollback.
+        # A constraint uq_ag_barbeiro_slot (Bloco 2.1) é a rede de segurança
+        # final se, mesmo assim, dois slots idênticos colidirem.
+        .with_for_update()
     )
     if excluir_id:
         q = q.filter(Agendamento.id != excluir_id)
