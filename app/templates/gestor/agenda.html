@@ -76,6 +76,11 @@
   resize: vertical; min-height: 80px; box-sizing: border-box; outline: none;
 }
 .modal-textarea:focus { border-color: var(--cor-primaria); }
+
+/* ── Paginação ─────────────────────────────────────── */
+.pg-controls { display: flex; justify-content: center; gap: 10px; margin-top: 16px; align-items: center; font-size: 13px; color: #888; }
+.pg-controls button { background: none; border: 1px solid #2a2a2a; color: #ccc; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
+.pg-controls button:disabled { opacity: .4; cursor: not-allowed; }
 </style>
 {% endblock %}
 
@@ -89,10 +94,10 @@
     <button class="ag-nav-btn" onclick="navegarDia(1)">›</button>
   </div>
   <input type="date" class="ag-sel" id="inputData" onchange="setData(this.value)">
-  <select class="ag-sel" id="selBarbeiro" style="min-width:140px" onchange="carregar()">
+  <select class="ag-sel" id="selBarbeiro" style="min-width:140px" onchange="_paginaAtual=1;carregar()">
     <option value="">Todos barbeiros</option>
   </select>
-  <select class="ag-sel" id="selStatus" style="min-width:140px" onchange="carregar()">
+  <select class="ag-sel" id="selStatus" style="min-width:140px" onchange="_paginaAtual=1;carregar()">
     <option value="">Todos os status</option>
     <option value="agendado">Agendado</option>
     <option value="aguardando_comprovante">Ag. comprovante</option>
@@ -123,6 +128,12 @@
       <tr><td colspan="6" style="text-align:center;padding:40px;color:#444">Carregando…</td></tr>
     </tbody>
   </table>
+</div>
+
+<div class="pg-controls" id="paginacao" style="display:none">
+  <button id="btnAnterior" onclick="irPagina(-1)">&lt; Anterior</button>
+  <span id="paginaLabel">Página 1 de 1</span>
+  <button id="btnProxima" onclick="irPagina(1)">Próxima &gt;</button>
 </div>
 
 <!-- ── Modal Cancelar ── -->
@@ -216,6 +227,8 @@ let _data    = new Date().toISOString().split('T')[0];
 let _barbs   = [];
 let _cancelId = null;
 let _pixId    = null;
+let _paginaAtual  = 1;
+let _totalPaginas = 1;
 
 // ── Boot ──────────────────────────────────────────────────
 (async function() {
@@ -245,25 +258,38 @@ function navegarDia(delta) {
   _data = d.toISOString().split('T')[0];
   document.getElementById('inputData').value = _data;
   atualizarLabel();
+  _paginaAtual = 1;
   carregar();
 }
 
-function setData(val) { _data = val; atualizarLabel(); carregar(); }
+function setData(val) { _data = val; atualizarLabel(); _paginaAtual = 1; carregar(); }
+
+function irPagina(delta) {
+  const nova = _paginaAtual + delta;
+  if (nova < 1 || nova > _totalPaginas) return;
+  _paginaAtual = nova;
+  carregar();
+}
 
 // ── Carregar agendamentos ─────────────────────────────────
 async function carregar() {
   const tb = document.getElementById('agTbody');
   tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:#444">Carregando…</td></tr>';
 
-  const p = new URLSearchParams({ data: _data });
+  const p = new URLSearchParams({ data: _data, page: _paginaAtual, per_page: 50 });
   const bid = document.getElementById('selBarbeiro').value;
   const st  = document.getElementById('selStatus').value;
   if (bid) p.set('barbeiro_id', bid);
   if (st)  p.set('status', st);
 
   try {
-    const ags = await Bos.get('/gestor/agendamentos?' + p);
-    renderTabela(Array.isArray(ags) ? ags : []);
+    const r = await Bos.get('/gestor/agendamentos?' + p);
+    renderTabela(r.dados || []);
+    _totalPaginas = r.pages || 1;
+    document.getElementById('paginaLabel').textContent = `Página ${r.page} de ${_totalPaginas}`;
+    document.getElementById('btnAnterior').disabled = r.page <= 1;
+    document.getElementById('btnProxima').disabled  = r.page >= _totalPaginas;
+    document.getElementById('paginacao').style.display = r.total > 0 ? 'flex' : 'none';
   } catch(e) {
     tb.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:#f87171">Erro: ${esc(e.message)}</td></tr>`;
   }

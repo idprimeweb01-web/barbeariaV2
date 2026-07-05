@@ -207,7 +207,21 @@ def listar_barbearias():
         q = q.filter_by(ativo=True)
     elif ativo_param == 'false':
         q = q.filter_by(ativo=False)
-    return jsonify([_fmt_barbearia(b) for b in q.order_by(Barbearia.nome).all()]), 200
+
+    try:
+        page     = max(1, int(request.args.get('page', 1)))
+        per_page = min(100, max(1, int(request.args.get('per_page', 50))))
+    except ValueError:
+        raise APIError('"page" e "per_page" devem ser inteiros.', 422)
+
+    paginado = q.order_by(Barbearia.nome).paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        'dados':    [_fmt_barbearia(b) for b in paginado.items],
+        'page':     paginado.page,
+        'per_page': paginado.per_page,
+        'total':    paginado.total,
+        'pages':    paginado.pages,
+    }), 200
 
 
 # ── GET /api/v1/super/barbearias/<id> ────────────────────────────────────────
@@ -495,23 +509,36 @@ def executar_lembretes_agora():
 @super_bp.get('/gestores')
 @super_required
 def listar_gestores():
-    gestores = (
+    q = (
         db.session.query(Usuario, Barbearia)
         .join(Barbearia, Barbearia.id == Usuario.barbearia_id, isouter=True)
         .filter(Usuario.perfil == 'gestor')
         .order_by(Usuario.nome)
-        .all()
     )
-    return jsonify([{
-        'id':           u.id,
-        'nome':         u.nome,
-        'email':        u.email,
-        'telefone':     u.telefone,
-        'ativo':        u.ativo,
-        'barbearia_id': u.barbearia_id,
-        'barbearia':    b.nome if b else None,
-        'bk_slug':      b.slug if b else None,
-    } for u, b in gestores]), 200
+
+    try:
+        page     = max(1, int(request.args.get('page', 1)))
+        per_page = min(100, max(1, int(request.args.get('per_page', 50))))
+    except ValueError:
+        raise APIError('"page" e "per_page" devem ser inteiros.', 422)
+
+    paginado = q.paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        'dados': [{
+            'id':           u.id,
+            'nome':         u.nome,
+            'email':        u.email,
+            'telefone':     u.telefone,
+            'ativo':        u.ativo,
+            'barbearia_id': u.barbearia_id,
+            'barbearia':    b.nome if b else None,
+            'bk_slug':      b.slug if b else None,
+        } for u, b in paginado.items],
+        'page':     paginado.page,
+        'per_page': paginado.per_page,
+        'total':    paginado.total,
+        'pages':    paginado.pages,
+    }), 200
 
 
 # ── GET /api/v1/super/features ───────────────────────────────────────────────

@@ -54,6 +54,10 @@
 }
 .modal-textarea:focus { border-color: var(--cor-primaria); }
 .char-count { font-size: 11px; color: #555; margin-top: 6px; }
+
+.pg-controls { display: flex; justify-content: center; gap: 10px; margin-top: 16px; align-items: center; font-size: 13px; color: #888; }
+.pg-controls button { background: none; border: 1px solid #2a2a2a; color: #ccc; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
+.pg-controls button:disabled { opacity: .4; cursor: not-allowed; }
 </style>
 {% endblock %}
 
@@ -64,6 +68,11 @@
   </p>
   <div class="pix-list" id="pixList">
     <div style="text-align: center; padding: 40px; color: #555;">Carregando solicitações...</div>
+  </div>
+  <div class="pg-controls" id="paginacao" style="display:none">
+    <button id="btnAnterior" onclick="irPagina(-1)">&lt; Anterior</button>
+    <span id="paginaLabel">Página 1 de 1</span>
+    <button id="btnProxima" onclick="irPagina(1)">Próxima &gt;</button>
   </div>
 </div>
 
@@ -87,14 +96,29 @@
 {% block scripts %}
 <script>
 let solicitacaoEmEdicao = null;
+let _paginaAtual  = 1;
+let _totalPaginas = 1;
 
 async function carregarSolicitacoes() {
   try {
-    const solicitacoes = await Bos.get('/gestor/planos/solicitacoes?status=pendente');
-    renderizarSolicitacoes(solicitacoes);
+    const params = new URLSearchParams({ status: 'pendente', page: _paginaAtual, per_page: 50 });
+    const r = await Bos.get('/gestor/planos/solicitacoes?' + params);
+    renderizarSolicitacoes(r.dados);
+    _totalPaginas = r.pages || 1;
+    document.getElementById('paginaLabel').textContent = `Página ${r.page} de ${_totalPaginas}`;
+    document.getElementById('btnAnterior').disabled = r.page <= 1;
+    document.getElementById('btnProxima').disabled  = r.page >= _totalPaginas;
+    document.getElementById('paginacao').style.display = r.total > 0 ? 'flex' : 'none';
   } catch (e) {
     document.getElementById('pixList').innerHTML = `<div class="pix-empty">❌ Erro: ${e.message}</div>`;
   }
+}
+
+function irPagina(delta) {
+  const nova = _paginaAtual + delta;
+  if (nova < 1 || nova > _totalPaginas) return;
+  _paginaAtual = nova;
+  carregarSolicitacoes();
 }
 
 function renderizarSolicitacoes(solicitacoes) {

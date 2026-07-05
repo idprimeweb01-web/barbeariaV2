@@ -31,10 +31,17 @@ def listar_agendamentos():
     status_f = request.args.get('status')
     if status_f:
         q = q.filter_by(status=status_f)
-    ags = q.order_by(Agendamento.data_hora.desc()).all()
+
+    try:
+        page     = max(1, int(request.args.get('page', 1)))
+        per_page = min(100, max(1, int(request.args.get('per_page', 50))))
+    except ValueError:
+        raise APIError('"page" e "per_page" devem ser inteiros.', 422)
+
+    paginado = q.order_by(Agendamento.data_hora.desc()).paginate(page=page, per_page=per_page, error_out=False)
 
     resultado = []
-    for ag in ags:
+    for ag in paginado.items:
         itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
         servicos_info = []
         for it in itens:
@@ -47,7 +54,13 @@ def listar_agendamentos():
             })
         resultado.append(_fmt_agendamento(ag, servicos_info))
 
-    return jsonify(resultado), 200
+    return jsonify({
+        'dados':    resultado,
+        'page':     paginado.page,
+        'per_page': paginado.per_page,
+        'total':    paginado.total,
+        'pages':    paginado.pages,
+    }), 200
 
 
 # ── POST /api/v1/cliente/agendamentos ────────────────────────────────────────

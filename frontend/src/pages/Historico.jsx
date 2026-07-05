@@ -34,12 +34,19 @@ export default function Historico() {
   const [statusFiltro, setStatusFiltro] = useState('')
   const [loading, setLoading]           = useState(true)
   const [cancelando, setCancelando]     = useState(null)
+  const [pagina, setPagina]             = useState(1)
+  const [totalPaginas, setTotalPaginas] = useState(1)
 
-  const carregar = (status = '') => {
+  const carregar = (status = '', page = 1) => {
     setLoading(true)
-    const qs = status ? `?status=${status}` : ''
-    api.get(`/agendamentos${qs}`)
-      .then(r => setAgendamentos(Array.isArray(r) ? r : []))
+    const params = new URLSearchParams({ page, per_page: 50 })
+    if (status) params.set('status', status)
+    api.get(`/agendamentos?${params}`)
+      .then(r => {
+        setAgendamentos(Array.isArray(r?.dados) ? r.dados : [])
+        setPagina(r?.page || 1)
+        setTotalPaginas(r?.pages || 1)
+      })
       .catch(() => setAgendamentos([]))
       .finally(() => setLoading(false))
   }
@@ -48,7 +55,13 @@ export default function Historico() {
 
   const handleFiltro = (s) => {
     setStatusFiltro(s)
-    carregar(s)
+    carregar(s, 1)
+  }
+
+  const irPagina = (delta) => {
+    const nova = pagina + delta
+    if (nova < 1 || nova > totalPaginas) return
+    carregar(statusFiltro, nova)
   }
 
   const handleCancelar = async (ag) => {
@@ -57,7 +70,7 @@ export default function Historico() {
     try {
       await api.post(`/agendamentos/${ag.id}/cancelar`, {})
       showToast('Agendamento cancelado.', 'info')
-      carregar(statusFiltro)
+      carregar(statusFiltro, pagina)
     } catch (e) {
       showToast(e.message, 'error')
     } finally {
@@ -143,6 +156,14 @@ export default function Historico() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!loading && agendamentos.length > 0 && (
+        <div className="pg-controls">
+          <button className="btn btn-ghost btn-sm" disabled={pagina <= 1} onClick={() => irPagina(-1)}>&lt; Anterior</button>
+          <span>Página {pagina} de {totalPaginas}</span>
+          <button className="btn btn-ghost btn-sm" disabled={pagina >= totalPaginas} onClick={() => irPagina(1)}>Próxima &gt;</button>
         </div>
       )}
     </Layout>

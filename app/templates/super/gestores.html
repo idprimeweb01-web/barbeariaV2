@@ -2,10 +2,18 @@
 {% block title %}Gestores{% endblock %}
 {% block page_title %}Gestores{% endblock %}
 
+{% block styles %}
+<style>
+.pg-controls { display: flex; justify-content: center; gap: 10px; margin-top: 16px; align-items: center; font-size: 13px; color: #888; }
+.pg-controls button { background: none; border: 1px solid #2a2a2a; color: #ccc; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
+.pg-controls button:disabled { opacity: .4; cursor: not-allowed; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="section-header" style="margin-bottom:16px">
   <span class="section-title">Gestores</span>
-  <input id="fBusca" type="text" placeholder="Buscar por nome ou e-mail…" oninput="renderTabela()"
+  <input id="fBusca" type="text" placeholder="Buscar por nome ou e-mail (nesta página)…" oninput="renderTabela()"
     style="background:#1e1e1e;border:1px solid #333;color:#ccc;padding:9px 14px;border-radius:8px;font-size:13px;font-family:inherit;width:240px">
 </div>
 
@@ -15,20 +23,41 @@
     <tbody id="tbody"><tr><td colspan="5" style="text-align:center;color:#444;padding:32px">Carregando…</td></tr></tbody>
   </table>
 </div>
+
+<div class="pg-controls" id="paginacao" style="display:none">
+  <button id="btnAnterior" onclick="irPagina(-1)">&lt; Anterior</button>
+  <span id="paginaLabel">Página 1 de 1</span>
+  <button id="btnProxima" onclick="irPagina(1)">Próxima &gt;</button>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 let _todos = [];
+let _paginaAtual  = 1;
+let _totalPaginas = 1;
 
 async function carregar() {
   try {
-    _todos = await Bos.get('/super/gestores');
+    const r = await Bos.get('/super/gestores?' + new URLSearchParams({ page: _paginaAtual, per_page: 50 }));
+    _todos = r.dados || [];
+    _totalPaginas = r.pages || 1;
+    document.getElementById('paginaLabel').textContent = `Página ${r.page} de ${_totalPaginas}`;
+    document.getElementById('btnAnterior').disabled = r.page <= 1;
+    document.getElementById('btnProxima').disabled  = r.page >= _totalPaginas;
+    document.getElementById('paginacao').style.display = r.total > 0 ? 'flex' : 'none';
     renderTabela();
   } catch(e) {
     document.getElementById('tbody').innerHTML =
       `<tr><td colspan="5" style="text-align:center;color:#f87171;padding:32px">${esc(e.message)}</td></tr>`;
   }
+}
+
+function irPagina(delta) {
+  const nova = _paginaAtual + delta;
+  if (nova < 1 || nova > _totalPaginas) return;
+  _paginaAtual = nova;
+  carregar();
 }
 
 function renderTabela() {

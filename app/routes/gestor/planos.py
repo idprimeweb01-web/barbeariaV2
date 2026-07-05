@@ -271,8 +271,23 @@ def listar_solicitacoes():
         if status_f not in _STATUS_SOLICITACAO_VALIDOS:
             raise APIError(f'Status inválido: "{status_f}".', 422)
         q = q.filter_by(status=status_f)
-    solic = q.order_by(ClientePlanoSolicitacao.criado_em.desc()).all()
-    return jsonify([_fmt_solicitacao(s) for s in solic]), 200
+
+    try:
+        page     = max(1, int(request.args.get('page', 1)))
+        per_page = min(100, max(1, int(request.args.get('per_page', 50))))
+    except ValueError:
+        raise APIError('"page" e "per_page" devem ser inteiros.', 422)
+
+    paginado = q.order_by(ClientePlanoSolicitacao.criado_em.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+    return jsonify({
+        'dados':    [_fmt_solicitacao(s) for s in paginado.items],
+        'page':     paginado.page,
+        'per_page': paginado.per_page,
+        'total':    paginado.total,
+        'pages':    paginado.pages,
+    }), 200
 
 
 def _fmt_solicitacao(s):

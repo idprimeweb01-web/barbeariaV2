@@ -145,6 +145,11 @@
   transition: border-color .2s; resize: vertical;
 }
 .ef-field input:focus, .ef-field textarea:focus { border-color: var(--cor-primaria); }
+
+/* ── Paginação ─────────────────────────────────────── */
+.pg-controls { display: flex; justify-content: center; gap: 10px; margin-top: 16px; align-items: center; font-size: 13px; color: #888; }
+.pg-controls button { background: none; border: 1px solid #2a2a2a; color: #ccc; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
+.pg-controls button:disabled { opacity: .4; cursor: not-allowed; }
 </style>
 {% endblock %}
 
@@ -240,6 +245,12 @@
   </table>
 </div>
 
+<div class="pg-controls" id="paginacao" style="display:none">
+  <button id="btnAnterior" onclick="irPagina(-1)">&lt; Anterior</button>
+  <span id="paginaLabel">Página 1 de 1</span>
+  <button id="btnProxima" onclick="irPagina(1)">Próxima &gt;</button>
+</div>
+
 <!-- Insights -->
 <div class="insights-grid" id="insightsGrid">
   <!-- preenchido via JS -->
@@ -307,6 +318,9 @@
   let _chart = null;
   let _editId = null;
   let _debT = null;
+  let _filtrosAtuais = {};
+  let _paginaAtual = 1;
+  let _totalPaginas = 1;
 
   function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function fmtR(v){ return 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -315,21 +329,36 @@
   function initials(n){ return (n||'?').trim().split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
 
   // ── Carregar ─────────────────────────────────────────────
-  async function carregar(opts = {}) {
+  async function carregar(opts = {}, pagina = 1) {
+    _filtrosAtuais = opts;
+    _paginaAtual = pagina;
     try {
       const params = new URLSearchParams();
       if (opts.q)          params.set('q', opts.q);
       if (opts.status)     params.set('status', opts.status);
       if (opts.barbeiro_id) params.set('barbeiro_id', opts.barbeiro_id);
+      params.set('page', _paginaAtual);
+      params.set('per_page', 50);
       _dados = await Bos.get('/gestor/clientes?' + params.toString());
       renderMetrics(_dados.stats);
       renderChart(_dados.chart_novos);
-      renderTabela(_dados.clientes);
+      renderTabela(_dados.dados);
       renderInsights(_dados.insights);
+      _totalPaginas = _dados.pages || 1;
+      document.getElementById('paginaLabel').textContent = `Página ${_dados.page} de ${_totalPaginas}`;
+      document.getElementById('btnAnterior').disabled = _dados.page <= 1;
+      document.getElementById('btnProxima').disabled  = _dados.page >= _totalPaginas;
+      document.getElementById('paginacao').style.display = _dados.total > 0 ? 'flex' : 'none';
     } catch(e) {
       document.getElementById('tbody').innerHTML =
         `<tr><td colspan="10" style="text-align:center;color:#f87171;padding:24px">${esc(e.message)}</td></tr>`;
     }
+  }
+
+  function irPagina(delta) {
+    const nova = _paginaAtual + delta;
+    if (nova < 1 || nova > _totalPaginas) return;
+    carregar(_filtrosAtuais, nova);
   }
 
   function _debouncarFiltros() {
@@ -616,9 +645,9 @@
 
   // ── CSV export ───────────────────────────────────────────
   function exportarCSV() {
-    if (!_dados?.clientes?.length) { toast('Sem dados para exportar.', 'info'); return; }
+    if (!_dados?.dados?.length) { toast('Sem dados para exportar.', 'info'); return; }
     const cols = ['Nome','Telefone','Email','Visitas','Total Gasto','Ticket Médio','Última Visita','Status','Desde'];
-    const rows = _dados.clientes.map(c => [
+    const rows = _dados.dados.map(c => [
       c.nome, c.telefone, c.email||'', c.total_visitas,
       c.total_gasto, c.ticket_medio,
       c.ultima_visita ? new Date(c.ultima_visita).toLocaleDateString('pt-BR') : '',

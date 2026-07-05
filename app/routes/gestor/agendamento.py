@@ -83,13 +83,15 @@ def listar_agendamentos():
     q = Agendamento.query.filter_by(barbearia_id=g.barbearia_id)
 
     data_f = request.args.get('data')
-    if data_f:
-        try:
-            from datetime import date
-            d = date.fromisoformat(data_f)
-            q = q.filter(db.func.date(Agendamento.data_hora) == d)
-        except ValueError:
-            raise APIError('Parâmetro "data" inválido. Use YYYY-MM-DD.')
+    if not data_f:
+        # Nunca retornar o histórico inteiro por omissão — default é hoje.
+        data_f = naive_brasilia().date().isoformat()
+    try:
+        from datetime import date
+        d = date.fromisoformat(data_f)
+        q = q.filter(db.func.date(Agendamento.data_hora) == d)
+    except ValueError:
+        raise APIError('Parâmetro "data" inválido. Use YYYY-MM-DD.')
 
     barbeiro_f = request.args.get('barbeiro_id', type=int)
     if barbeiro_f:
@@ -104,8 +106,20 @@ def listar_agendamentos():
             raise APIError(f'Status inválido: "{status_f}".', 422)
         q = q.filter_by(status=status_f)
 
-    ags = q.order_by(Agendamento.data_hora).all()
-    return jsonify([_fmt_ag_gestor(ag) for ag in ags]), 200
+    try:
+        page     = max(1, int(request.args.get('page', 1)))
+        per_page = min(100, max(1, int(request.args.get('per_page', 50))))
+    except ValueError:
+        raise APIError('"page" e "per_page" devem ser inteiros.', 422)
+
+    paginado = q.order_by(Agendamento.data_hora).paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        'dados':     [_fmt_ag_gestor(ag) for ag in paginado.items],
+        'page':      paginado.page,
+        'per_page':  paginado.per_page,
+        'total':     paginado.total,
+        'pages':     paginado.pages,
+    }), 200
 
 
 # ── GET /api/v1/gestor/agendamentos/<id> ─────────────────────────────────────

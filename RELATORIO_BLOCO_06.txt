@@ -1,0 +1,133 @@
+═══════════════════════════════════════════════════════════════════════════════
+RELATÓRIO — BLOCO 4.3: Paginação nos endpoints críticos + UI
+BarberOS v1.0 → v1.1 | Script 06 de 20
+═══════════════════════════════════════════════════════════════════════════════
+
+COMMIT
+───────────────────────────────────────────────────────────────────────────────
+(a ser criado ao final deste relatório) bloco-4.3: paginacao nos endpoints criticos + UI
+16 arquivos: 6 rotas Python, 6 templates Jinja, 1 página React (Historico.jsx)
++ 1 CSS React, 2 arquivos do bundle compilado (index.js/index.css).
+
+PADRÃO ADOTADO
+───────────────────────────────────────────────────────────────────────────────
+{ "dados": [...], "page": 1, "per_page": 50, "total": 1234, "pages": 25 }
+per_page: default 50, máximo 100 — em todos os 7 endpoints abaixo.
+
+TABELA ENDPOINT → TELA
+───────────────────────────────────────────────────────────────────────────────
+Endpoint                                    | Tela atualizada
+---------------------------------------------|----------------------------------------
+GET /api/v1/gestor/clientes (CRÍTICO)        | app/templates/gestor/clientes.html
+GET /api/v1/gestor/agendamentos (CRÍTICO)    | app/templates/gestor/agenda.html
+GET /api/v1/gestor/planos/solicitacoes       | app/templates/gestor/pix_approval.html *
+GET /api/v1/gestor/cupons                    | app/templates/gestor/cupons.html
+GET /api/v1/super/barbearias                 | app/templates/super/barbearias.html **
+GET /api/v1/super/gestores                   | app/templates/super/gestores.html
+GET /api/v1/cliente/agendamentos             | frontend/src/pages/Historico.jsx ***
+
+* A tarefa citava "gestor/planos.html aba solicitações" — não existe essa aba
+  nesse arquivo. Quem realmente consome `/gestor/planos/solicitacoes` é
+  `gestor/pix_approval.html` (tela "Solicitações de Plano (PIX)", rota
+  /gestor/pix-approval). Atualizei o arquivo certo.
+** A tarefa citava "super/barbearias/estabelecimentos" — o arquivo real
+  chama-se `super/barbearias.html` (título da página é "Estabelecimentos").
+*** Esta tela é parte do SPA React em `frontend/` (Vite), que compila para
+    `app/static/cliente_portal/`. Editei o código-fonte
+    (`frontend/src/pages/Historico.jsx` + `frontend/src/styles/index.css`)
+    e rodei `npm run build` — os artefatos compilados
+    (`app/static/cliente_portal/index.js` e `assets/index.css`) também estão
+    neste commit, pois são o que o navegador de fato carrega.
+
+BACKEND — DETALHES POR ENDPOINT
+───────────────────────────────────────────────────────────────────────────────
+1. gestor/clientes.py `listar_clientes` (CRÍTICO):
+   - Busca (?q=) migrada para `Cliente.nome/telefone/email.ilike(...)` no SQL.
+   - Filtro `?barbeiro_id=` continua via subconsulta em Agendamento (já era
+     uma única query, não N+1).
+   - Filtro `?status=` (novos/em_risco/vip/inativos): a classificação depende
+     de visitas/gasto agregados por cliente. Esse agregado já vem de UMA
+     única query (`_stats_map`, GROUP BY em Agendamento) — não há mudança
+     nisso. O que mudou: os IDs de clientes que batem com o status são
+     calculados a partir desse mapa (não de `.all()` de objetos Cliente
+     completos) e viram um `Cliente.id.in_(...)` ANTES do `.paginate()`. A
+     tabela em si nunca mais chama `.all()`.
+   - `.paginate(page, per_page, error_out=False)` na query final.
+   - Os widgets de dashboard (`stats`, `chart_novos`, `insights`) CONTINUAM
+     olhando o tenant inteiro (`todos = Cliente.query.filter_by(...).all()`)
+     — são contadores/gráfico/listas-top5 que precisam do panorama completo
+     por natureza (não é a "tabela que cresce sem limite" que a auditoria
+     apontou como crítico). Refinar isso com eager loading é
+     explicitamente Script 11, não deste bloco.
+   - **Efeito colateral esperado**: a exportação CSV agora exporta só a
+     PÁGINA atual (antes exportava todos os clientes filtrados). É
+     consequência direta de paginar a fonte de dados — não criei um
+     endpoint de export separado (fora de escopo).
+
+2. gestor/agendamento.py `listar_agendamentos` (CRÍTICO):
+   - `?data=` ausente → default `naive_brasilia().date()` (nunca mais retorna
+     o histórico inteiro). Testado com um agendamento "de 3 dias atrás" na
+     mesma base — sem `?data=`, ele NÃO aparece.
+   - `.paginate()` adicionado (útil quando `?status=` filtra sobre uma faixa
+     maior, como a tarefa observou).
+
+3. gestor/planos.py `listar_solicitacoes`, gestor/cupons.py `listar_cupons`,
+   super/barbearias.py `listar_barbearias` e `listar_gestores` (este último
+   usa `db.session.query(Usuario, Barbearia).join(...)` — confirmei que
+   `.paginate()` funciona normalmente numa query com join/2-tuplas),
+   cliente/agendamento.py `listar_agendamentos`: mesmo padrão, sem
+   complicações adicionais.
+
+FRONTEND — MUDANÇAS MÍNIMAS (sem redesign)
+───────────────────────────────────────────────────────────────────────────────
+Em cada template: JS passou a ler `resp.dados` em vez do array/chave antiga
+(`clientes`, ou array puro), adicionou `page`/`per_page` na query string, e
+ganhou um bloco `.pg-controls` (« Anterior | Página X de Y | Próxima »)
+reaproveitando exatamente o padrão visual já usado em `super/auditoria.html`
+(cores, bordas, disabled state — só troquei os nomes de classe de `.aud-pag`
+para `.pg-controls` para não colidir, já que cada arquivo tem seu próprio
+`<style>` local).
+
+VALIDAÇÃO OBRIGATÓRIA
+───────────────────────────────────────────────────────────────────────────────
+Ambiente: tenant de teste "QA Bloco06" (id=11) com 211 clientes fake + 1
+agendamento hoje + 1 de 3 dias atrás + 1 solicitação de plano pendente + 1
+cupom ativo. Tudo apagado ao final.
+
+1. Seed com 211 clientes → /gestor/clientes:
+   - Testado com Playwright (Chromium headless de verdade, não só a API):
+     login real, navegação real, DOM real. "Página 1 de 5" exibido
+     corretamente (211 / 50 = 5 páginas). Clique em "Próxima" mudou para
+     "Página 2 de 5" de fato. PASSOU.
+   - Busca por "Ana" retornou 27 linhas — confirma que a busca agora é no
+     SQL sobre o tenant inteiro (211 clientes), não um filtro local sobre
+     os 50 da página. PASSOU.
+
+2. /gestor/agenda sem `?data=` → só hoje:
+   - Testado direto na API (não só na UI, já que o frontend sempre manda
+     `data`): `GET /api/v1/gestor/agendamentos` sem parâmetro retornou
+     `total: 1` (só o agendamento de hoje), mesmo com um segundo
+     agendamento de 3 dias atrás presente no banco. PASSOU.
+
+3. Todas as 7 telas alteradas renderizam sem erro de console:
+   - Validação real com Playwright: login (gestor/super/cliente), navegação
+     para as 7 URLs, captura de `console.error` e `pageerror` do navegador.
+     Resultado: **zero erros de console em todas as 7 telas**, incluindo a
+     tela React (`cliente/historico`, que usa o bundle recompilado).
+
+4. Smoke geral: nenhum erro/traceback inesperado no log do servidor durante
+   toda a bateria de testes (login, navegação, paginação, busca).
+
+5. `python -c "from app import create_app; create_app()"`: sem erro (190
+   rotas, antes e depois).
+
+PRÓXIMOS PASSOS
+───────────────────────────────────────────────────────────────────────────────
+- Script 07 (locks) — pré-requisito (Script 03) já satisfeito.
+- Script 11 (eager loading / N+1) é onde os widgets de dashboard de
+  `gestor/clientes` (stats/chart/insights, que ainda escaneiam o tenant
+  inteiro) podem ganhar uma versão mais leve, se justificar pela escala real
+  de clientes por tenant.
+- Se algum dia for necessário exportar TODOS os clientes filtrados (não só
+  a página atual) em CSV, precisa de um endpoint de export dedicado
+  (sem paginação, ou com streaming) — não existe hoje.

@@ -88,45 +88,62 @@ def listar_clientes():
         if not b:
             raise APIError(f'{L("profissional")} não encontrado.', 404)
 
-    # ── Todos os clientes para stats/insights ─────────────────────────────────
+    try:
+        page     = max(1, int(request.args.get('page', 1)))
+        per_page = min(100, max(1, int(request.args.get('per_page', 50))))
+    except ValueError:
+        raise APIError('"page" e "per_page" devem ser inteiros.', 422)
+
+    # ── Todos os clientes do tenant — usado só para os widgets agregados
+    # (stats/gráfico/insights), que precisam do panorama completo por natureza.
+    # A tabela paginada abaixo NUNCA usa esta lista. ────────────────────────────
     todos = Cliente.query.filter_by(barbearia_id=bid).all()
     stats = _stats_map(bid)
 
-    # ── Filtrar para a tabela ─────────────────────────────────────────────────
-    filtrados = todos
+    # ── Query da tabela: busca migrada pro SQL, paginação no banco ────────────
+    q = Cliente.query.filter_by(barbearia_id=bid)
     if q_texto:
-        like = q_texto.lower()
-        filtrados = [c for c in todos if
-                     like in (c.nome or '').lower() or
-                     like in (c.telefone or '') or
-                     like in (c.email or '').lower()]
-
+        like = f'%{q_texto}%'
+        q = q.filter(
+            db.or_(
+                Cliente.nome.ilike(like),
+                Cliente.telefone.ilike(like),
+                Cliente.email.ilike(like),
+            )
+        )
     if barb_f:
         ids_barb = {ag.cliente_id for ag in
                     Agendamento.query.filter_by(barbearia_id=bid, barbeiro_id=barb_f).all()}
-        filtrados = [c for c in filtrados if c.id in ids_barb]
+        q = q.filter(Cliente.id.in_(ids_barb))
 
-    resultado = []
-    for c in filtrados:
-        v, gv, u = stats.get(c.id, (0, 0.0, None))
-        st = _status_cliente(c, v, gv, u, hoje)
-
-        if filtro:
-            match = False
+    if filtro:
+        # A classificação depende de visitas/gasto agregados (stats, já calculado
+        # em UMA query acima) — não sobre .all() de objetos completos por cliente.
+        ids_status = set()
+        for c in todos:
+            v, gv, u = stats.get(c.id, (0, 0.0, None))
+            st = _status_cliente(c, v, gv, u, hoje)
             dias_sem_visita = int((agora - u).days) if u else None
-            if filtro == 'ativo'    and st == 'ativo':                       match = True
-            elif filtro == 'novos'  and st == 'novo':                        match = True
-            elif filtro == 'em_risco' and st == 'em_risco':                  match = True
-            elif filtro == 'vip'    and st == 'vip':                         match = True
+            match = False
+            if filtro == 'ativo'      and st == 'ativo':  match = True
+            elif filtro == 'novos'    and st == 'novo':   match = True
+            elif filtro == 'em_risco' and st == 'em_risco': match = True
+            elif filtro == 'vip'      and st == 'vip':    match = True
             elif filtro == 'inativos' and (
                 (u is None and v == 0) or (dias_sem_visita is not None and dias_sem_visita > 30)
-            ):                                                                match = True
-            if not match:
-                continue
+            ):
+                match = True
+            if match:
+                ids_status.add(c.id)
+        q = q.filter(Cliente.id.in_(ids_status))
 
+    paginado = q.order_by(Cliente.nome).paginate(page=page, per_page=per_page, error_out=False)
+
+    # ── Stats por cliente calculados só para os itens da página atual ─────────
+    resultado = []
+    for c in paginado.items:
+        v, gv, u = stats.get(c.id, (0, 0.0, None))
         resultado.append(_fmt_cliente(c, v, gv, u, hoje))
-
-    resultado.sort(key=lambda x: x['nome'])
 
     # ── Stats totais (independentes dos filtros) ──────────────────────────────
     total      = len(todos)
@@ -198,7 +215,11 @@ def listar_clientes():
             'vip':          vip_count,
         },
         'chart_novos': chart,
-        'clientes':    resultado,
+        'dados':       resultado,
+        'page':        paginado.page,
+        'per_page':    paginado.per_page,
+        'total':       paginado.total,
+        'pages':       paginado.pages,
         'insights': {
             'em_risco':  em_risco,
             'follow_up': follow_up,

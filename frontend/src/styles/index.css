@@ -229,6 +229,10 @@ body {
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr:hover { background: rgba(255,255,255,.02); }
 
+/* ── Paginação ─────────────────────────────────────────────────── */
+.pg-controls { display: flex; justify-content: center; gap: 10px; margin-top: 16px; align-items: center; font-size: 13px; color: var(--muted); }
+.pg-controls button:disabled { opacity: .4; cursor: not-allowed; }
+
 /* ── Form ──────────────────────────────────────────────────────── */
 .field { margin-bottom: 14px; }
 .field label { display: block; font-size: 11px; color: var(--muted); font-weight: 700; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .3px; }

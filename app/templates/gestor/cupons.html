@@ -6,6 +6,14 @@
 <span class="breadcrumb-current">Cupons</span>
 {% endblock %}
 
+{% block styles %}
+<style>
+.pg-controls { display: flex; justify-content: center; gap: 10px; margin-top: 16px; align-items: center; font-size: 13px; color: #888; }
+.pg-controls button { background: none; border: 1px solid #2a2a2a; color: #ccc; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
+.pg-controls button:disabled { opacity: .4; cursor: not-allowed; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="section-header">
   <span class="section-title">Cupons</span>
@@ -21,6 +29,12 @@
       <tr><td colspan="8" style="text-align:center;color:#555;padding:32px">Carregando…</td></tr>
     </tbody>
   </table>
+</div>
+
+<div class="pg-controls" id="paginacao" style="display:none">
+  <button id="btnAnterior" onclick="irPagina(-1)">&lt; Anterior</button>
+  <span id="paginaLabel">Página 1 de 1</span>
+  <button id="btnProxima" onclick="irPagina(1)">Próxima &gt;</button>
 </div>
 
 <!-- Modal -->
@@ -62,15 +76,30 @@
 <script>
   let _todos = [];
   let _editId = null;
+  let _paginaAtual  = 1;
+  let _totalPaginas = 1;
 
   async function carregar() {
     try {
-      _todos = await Bos.get('/gestor/cupons');
+      const r = await Bos.get('/gestor/cupons?' + new URLSearchParams({ page: _paginaAtual, per_page: 50 }));
+      _todos = r.dados || [];
+      _totalPaginas = r.pages || 1;
+      document.getElementById('paginaLabel').textContent = `Página ${r.page} de ${_totalPaginas}`;
+      document.getElementById('btnAnterior').disabled = r.page <= 1;
+      document.getElementById('btnProxima').disabled  = r.page >= _totalPaginas;
+      document.getElementById('paginacao').style.display = r.total > 0 ? 'flex' : 'none';
     } catch(e) {
       _todos = [];
       toast(e.message, 'error');
     }
     renderTabela();
+  }
+
+  function irPagina(delta) {
+    const nova = _paginaAtual + delta;
+    if (nova < 1 || nova > _totalPaginas) return;
+    _paginaAtual = nova;
+    carregar();
   }
 
   function fmtTipo(t) { return t === 'percentual' ? 'Percentual' : 'Valor Fixo'; }
