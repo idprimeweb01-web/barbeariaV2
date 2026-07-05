@@ -4,6 +4,7 @@ from app.extensions import db
 from app.models import Barbeiro, ConfiguracaoAgenda, PausaBarbeiro
 from app.exceptions import APIError
 from app.decorators.auth import barbeiro_required
+from app.utils.db import commit_ou_falhar
 
 barbeiro_horario_bp = Blueprint('barbeiro_horario', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -95,7 +96,7 @@ def atualizar_horario():
     if 'loja_aberta' in dados:
         cfg.loja_aberta = bool(dados['loja_aberta'])
 
-    db.session.commit()
+    commit_ou_falhar('barbeiro.horario.atualizar_horario')
     return jsonify({'config': _fmt_config(cfg)}), 200
 
 
@@ -133,7 +134,7 @@ def criar_pausa():
         descricao=(dados.get('descricao') or '').strip() or None,
     )
     db.session.add(pausa)
-    db.session.commit()
+    commit_ou_falhar('barbeiro.horario.criar_pausa')
     return jsonify({'pausa': _fmt_pausa(pausa)}), 201
 
 
@@ -172,7 +173,7 @@ def editar_pausa(pausa_id):
     pausa.hora_inicio = hora_ini
     pausa.hora_fim    = hora_fim
     pausa.descricao   = (dados.get('descricao') or '').strip() or None
-    db.session.commit()
+    commit_ou_falhar('barbeiro.horario.editar_pausa')
     return jsonify({'pausa': _fmt_pausa(pausa)}), 200
 
 
@@ -188,5 +189,5 @@ def deletar_pausa(pausa_id):
     if not pausa:
         raise APIError('Pausa não encontrada.', 404)
     db.session.delete(pausa)
-    db.session.commit()
+    commit_ou_falhar('barbeiro.horario.deletar_pausa')
     return jsonify({'mensagem': 'Pausa removida.'}), 200

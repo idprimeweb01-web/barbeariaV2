@@ -1,0 +1,161 @@
+═══════════════════════════════════════════════════════════════════════════════
+RELATÓRIO — BLOCO 3.1: Commits protegidos com rollback e log
+BarberOS v1.0 → v1.1 | Script 09 de 20
+═══════════════════════════════════════════════════════════════════════════════
+
+COMMIT
+───────────────────────────────────────────────────────────────────────────────
+(a ser criado ao final deste relatório) bloco-3.1: commits protegidos com rollback e log
+27 arquivos: 1 novo (app/utils/db.py), 26 alterados (app/__init__.py +
+25 módulos com commits).
+
+CAMINHO REAL AJUSTADO (item da tarefa que pedia confirmação)
+───────────────────────────────────────────────────────────────────────────────
+`app/errors.py` não existe — `APIError` está em `app/exceptions.py`. Helper
+criado em `app/utils/db.py` com o import correto.
+
+HELPER (app/utils/db.py)
+───────────────────────────────────────────────────────────────────────────────
+def commit_ou_falhar(contexto: str, mensagem_usuario='Erro ao salvar. Tente
+novamente.'): faz db.session.commit(); em exceção, rollback + logger.error
+com contexto + exc_info=True + raise APIError(mensagem_usuario, 500).
+
+MÉTODO DE APLICAÇÃO NOS 71 (na prática 70) PONTOS DESPROTEGIDOS
+───────────────────────────────────────────────────────────────────────────────
+Dado o volume (70 ocorrências em 21 arquivos), escrevi um script Python
+usando o módulo `ast` para: (1) parsear cada arquivo, (2) identificar TODO
+`db.session.commit()` que NÃO está dentro do `body` de um `Try` (ou seja,
+sem try/except ao redor), (3) determinar a função-mãe de cada ocorrência via
+posição de linha, (4) substituir a linha por
+`commit_ou_falhar('<modulo>.<funcao>')` na MESMA indentação, preservando
+todo o resto do arquivo byte a byte, e (5) adicionar o import
+`from app.utils.db import commit_ou_falhar` em cada arquivo tocado.
+Rodei esse script, depois um segundo script (também via `ast`) para
+verificar que não sobrou nenhum commit fora de um `Try` — rodei essa
+verificação ANTES e DEPOIS para confirmar 0 desprotegidos ao final.
+Cada substituição é 1:1 (mesma indentação, mesma linha), então não há risco
+de ter alterado ordem de operações ou lógica ao redor.
+
+Contagem por arquivo (commits totais, protegidos ou desprotegidos, antes → ficam
+todos protegidos depois; nenhum foi removido, só envolvido):
+Arquivo                              | Commits (antes e depois, mesma contagem)
+---------------------------------------|----------------------------------------
+app/routes/auth.py                     | 1
+app/routes/barbeiro/agendamentos.py    | 5
+app/routes/barbeiro/clientes.py        | 1
+app/routes/barbeiro/horario.py         | 4
+app/routes/barbeiro/notificacoes.py    | 2
+app/routes/caixa.py *                  | 5
+app/routes/cliente/agendamento.py      | 1
+app/routes/cliente/notificacoes.py     | 2
+app/routes/cliente/perfil.py           | 1
+app/routes/cliente/planos.py           | 1
+app/routes/gestor/agendamento.py       | 7
+app/routes/gestor/barbearia.py         | 1
+app/routes/gestor/catalogo.py          | 7
+app/routes/gestor/clientes.py          | 1
+app/routes/gestor/cupons.py            | 3
+app/routes/gestor/planos.py            | 7
+app/routes/gestor/profissionais.py     | 7
+app/routes/pub/agendamento.py          | 2
+app/routes/pub/planos.py               | 1
+app/routes/super/barbearias.py         | 10
+app/routes/views/auth.py               | 2 (1 já protegido antes, do Bloco 01)
+app/routes/vip.py *                    | 4
+app/seeds.py                           | 3
+app/utils/scheduler.py                 | 1
+app/utils/vip.py                       | 2
+app/utils/auditoria.py (já ok)         | 1
+app/utils/notificacoes.py (já ok)      | 1
+---------------------------------------|----------------------------------------
+TOTAL                                  | ~83
+
+* `app/routes/caixa.py` e `app/routes/vip.py` são código V1 morto — nenhum
+  blueprint registrado em `app/__init__.py` (confirmado com grep, mesma
+  situação encontrada no Bloco 05). Protegidos mesmo assim, sem efeito
+  prático em produção hoje, mas corretos se algum dia forem revividos
+  (decisão em aberto no `docs/Roadmap.md`).
+
+ITEM 3 — OS "13" (na prática 10) JÁ PROTEGIDOS SEM LOG
+───────────────────────────────────────────────────────────────────────────────
+Confirmados via o mesmo script de análise: 10 blocos try/except que só
+faziam rollback+raise, sem nenhum log. Ação por caso:
+- 6 migrados diretamente para `commit_ou_falhar` (formato batia
+  exatamente): cliente/agendamento.py `cancelar_agendamento`,
+  cliente/planos.py `cancelar_assinatura`, gestor/planos.py `criar_plano`,
+  `editar_plano`, `desativar_plano`, `adicionar_servico_plano`,
+  `remover_servico_plano`, `rejeitar_solicitacao` (7, não 6 — corrigido
+  na contagem final).
+- 2 mantidos com try/except específico (NÃO migrados, conforme a exceção
+  da tarefa) por terem `except IntegrityError` dedicado instalado no
+  Script 07 — só adicionei `logger.error(...)`/`current_app.logger.error(...)`
+  no `except Exception` genérico que já existia depois do IntegrityError:
+  `gestor/planos.py aprovar_solicitacao` e
+  `pub/agendamento.py _criar_agendamento_core` (o commit final do booking).
+- Os outros 4 que meu script inicial contou como "protegido" já tinham log
+  (ex: `views/auth.py sair()`, do próprio Bloco 01) — não precisaram de
+  mudança.
+
+ITEM 4 — LOGGING CONFIGURADO EM create_app()
+───────────────────────────────────────────────────────────────────────────────
+Não havia NENHUMA chamada a `logging.basicConfig` em lugar nenhum do
+projeto — os `logger.error(...)` cairiam no handler "last resort" do Python
+(sem timestamp, indo pro stderr por padrão). Adicionada
+`_configurar_logging()` em `app/__init__.py`, chamada no início de
+`create_app()`:
+  logging.basicConfig(level=INFO, format='%(asctime)s %(levelname)s
+  [%(name)s] %(message)s', stream=sys.stdout)
+Guardado com `if root.handlers: return` — idempotente, não duplica handler
+se `create_app()` for chamado mais de uma vez (testes, reload). Stream
+`stdout` porque o `Procfile` já usa `--error-logfile -` no gunicorn
+(Railway coleta stdout como log).
+
+VALIDAÇÃO OBRIGATÓRIA
+───────────────────────────────────────────────────────────────────────────────
+1. grep final — nenhum `db.session.commit()` nu fora de `app/utils/db.py`:
+   confirmado com um script de verificação via `ast` (não só grep de texto,
+   que erraria em blocos multi-linha) — 0 desprotegidos. Os 5 arquivos que
+   ainda têm a string `db.session.commit()` literal
+   (gestor/planos.py, pub/agendamento.py, views/auth.py, utils/auditoria.py,
+   utils/notificacoes.py) têm todos try/except com log — confirmado linha a
+   linha.
+
+2. Simulação de falha real (não só mock): criei um barbeiro via
+   `POST /api/v1/gestor/barbeiros` com `comissao_percentual: 150` (viola a
+   `ck_barbeiros_comissao_percentual_range` do Bloco 2.1, mas passa por toda
+   validação de aplicação, que não checa faixa). Resultado:
+   - Resposta ao cliente: **500** `{"erro": "Erro ao salvar. Tente
+     novamente."}` — sem stack trace, sem detalhe de SQL.
+   - Log do servidor: linha com timestamp completa —
+     `2026-07-05 09:54:01,945 ERROR [app.utils.db] commit falhou em
+     gestor.profissionais.criar_barbeiro: (psycopg2.errors.CheckViolation)
+     ... viola a restrição de verificação "ck_barbeiros_comissao_percentual_range"`
+     — contexto exato (`gestor.profissionais.criar_barbeiro`) presente.
+   PASSOU integralmente.
+
+3. Smoke completo dos fluxos principais (ambiente: tenant de teste "QA
+   Bloco09", id=15, apagado ao final) — todas as operações de SUCESSO
+   testadas continuam retornando exatamente os mesmos códigos/corpos de
+   antes:
+   - barbeiro: iniciar (200) e concluir (200) atendimento.
+   - gestor: criar serviço (201), editar comissão de barbeiro válida (200),
+     editar cliente (200), criar cupom (201), criar plano (201), editar
+     agenda do barbeiro (200).
+   - auth: trocar senha (200).
+   Nenhum erro inesperado no log durante toda a bateria — só a 1 linha do
+   teste de falha simulada (item 2).
+
+4. `python -c "from app import create_app; create_app()"`: sem erro (190
+   rotas, antes e depois).
+
+REGRA "nenhuma mudança de comportamento em caso de sucesso"
+───────────────────────────────────────────────────────────────────────────────
+Confirmada pela própria técnica de substituição (1:1, mesma indentação, só
+a linha do commit muda) e pelos testes de smoke acima — todo o caminho de
+sucesso (response code, corpo, side effects) ficou idêntico.
+
+PRÓXIMOS PASSOS
+───────────────────────────────────────────────────────────────────────────────
+- Script 10 (silent failures — plano expira, slots explicam, cascata de
+  desativação) é o próximo natural — já usa o mesmo `commit_ou_falhar` como
+  base de commits protegidos.

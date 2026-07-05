@@ -3,6 +3,7 @@ from app.extensions import db
 from app.models import Notificacao
 from app.exceptions import APIError
 from app.decorators.auth import barbeiro_required
+from app.utils.db import commit_ou_falhar
 
 barbeiro_notif_bp = Blueprint('barbeiro_notificacoes', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -82,7 +83,7 @@ def marcar_lida(notif_id):
     if not n:
         raise APIError('Notificação não encontrada.', 404)
     n.lida = True
-    db.session.commit()
+    commit_ou_falhar('barbeiro.notificacoes.marcar_lida')
     return jsonify(_fmt(n)), 200
 
 
@@ -101,7 +102,7 @@ def marcar_todas_lidas():
         )
         .update({'lida': True})
     )
-    db.session.commit()
+    commit_ou_falhar('barbeiro.notificacoes.marcar_todas_lidas')
     return jsonify({'marcadas_lidas': atualizados}), 200
 
 

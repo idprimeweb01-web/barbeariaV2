@@ -8,6 +8,7 @@ from app.exceptions import APIError
 from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
 from app.utils.telefone import normalizar_telefone
 from app.labels import L
+from app.utils.db import commit_ou_falhar
 
 pub_planos_bp = Blueprint('pub_planos', __name__)
 
@@ -149,7 +150,7 @@ def solicitar_assinatura(slug, plano_id):
         status='pendente',
     )
     db.session.add(sol)
-    db.session.commit()
+    commit_ou_falhar('pub.planos.solicitar_assinatura')
 
     resposta = {
         'mensagem': f'Solicitação de {L("plano").lower()} enviada. Aguarde a aprovação.',

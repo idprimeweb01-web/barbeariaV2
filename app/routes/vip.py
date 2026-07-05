@@ -4,6 +4,7 @@ from app import db
 from app.models import VipNivel, ClientePlano
 from app.utils import get_barbearia_atual, registrar_auditoria
 from app.routes.auth import gestor_required
+from app.utils.db import commit_ou_falhar
 
 vip = Blueprint('vip', __name__, url_prefix='/api/vip')
 
@@ -81,7 +82,7 @@ def criar_nivel():
         modo_brinde_ativo=bool(dados.get('modo_brinde_ativo', True)),
     )
     db.session.add(vip_nivel)
-    db.session.commit()
+    commit_ou_falhar('vip.criar_nivel')
     registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'create', 'vip_nivel', vip_nivel.id,
                          f'Criou nível VIP {nivel}.')
     return jsonify({'mensagem': 'Nível VIP criado.', 'nivel': _fmt_nivel(vip_nivel)}), 201
@@ -132,7 +133,7 @@ def editar_nivel(nivel_id):
     if 'modo_brinde_ativo' in dados:
         vip_nivel.modo_brinde_ativo = bool(dados['modo_brinde_ativo'])
 
-    db.session.commit()
+    commit_ou_falhar('vip.editar_nivel')
     registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'vip_nivel', vip_nivel.id,
                          f'Editou nível VIP {vip_nivel.nivel}.')
     return jsonify({'mensagem': 'Nível VIP atualizado.', 'nivel': _fmt_nivel(vip_nivel)})
@@ -149,7 +150,7 @@ def toggle_modo_brinde(nivel_id):
         return _erro('Nível VIP não encontrado.', 404)
 
     vip_nivel.modo_brinde_ativo = not vip_nivel.modo_brinde_ativo
-    db.session.commit()
+    commit_ou_falhar('vip.toggle_modo_brinde')
     return jsonify({
         'mensagem': f"Modo brinde {'ativado' if vip_nivel.modo_brinde_ativo else 'desativado'}.",
         'nivel': _fmt_nivel(vip_nivel),
@@ -171,7 +172,7 @@ def deletar_nivel(nivel_id):
 
     nivel_num = vip_nivel.nivel
     db.session.delete(vip_nivel)
-    db.session.commit()
+    commit_ou_falhar('vip.deletar_nivel')
     registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'delete', 'vip_nivel', nivel_id,
                          f'Deletou nível VIP {nivel_num}.')
     return jsonify({'mensagem': 'Nível VIP deletado.', 'id': nivel_id})

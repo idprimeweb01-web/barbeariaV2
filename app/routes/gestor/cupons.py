@@ -6,6 +6,7 @@ from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.utils.features import feature_required
 from app.utils.tz import hoje_brasilia
+from app.utils.db import commit_ou_falhar
 
 cupons_bp = Blueprint('gestor_cupons', __name__, url_prefix='/api/v1/gestor')
 
@@ -113,7 +114,7 @@ def criar_cupom():
         ativo=dados.get('ativo', True) if isinstance(dados.get('ativo', True), bool) else True,
     )
     db.session.add(c)
-    db.session.commit()
+    commit_ou_falhar('gestor.cupons.criar_cupom')
     return jsonify(_fmt_cupom(c)), 201
 
 
@@ -177,7 +178,7 @@ def editar_cupom(cupom_id):
     if 'ativo' in dados and isinstance(dados.get('ativo'), bool):
         c.ativo = dados['ativo']
 
-    db.session.commit()
+    commit_ou_falhar('gestor.cupons.editar_cupom')
     return jsonify(_fmt_cupom(c)), 200
 
 
@@ -189,5 +190,5 @@ def excluir_cupom(cupom_id):
     if not c:
         raise APIError('Cupom não encontrado.', 404)
     c.ativo = False
-    db.session.commit()
+    commit_ou_falhar('gestor.cupons.excluir_cupom')
     return jsonify({'mensagem': 'Cupom desativado.'}), 200

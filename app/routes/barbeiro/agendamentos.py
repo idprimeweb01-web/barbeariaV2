@@ -6,6 +6,7 @@ from app.exceptions import APIError
 from app.decorators.auth import barbeiro_required
 from app.utils.cupons import incrementar_uso_cupom, decrementar_uso_cupom
 from app.utils.tz import hoje_brasilia, naive_brasilia
+from app.utils.db import commit_ou_falhar
 
 barbeiro_ag_bp = Blueprint('barbeiro_agendamentos', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -111,7 +112,7 @@ def iniciar_agendamento(ag_id):
     if ag.status != 'agendado':
         raise APIError(f'Não é possível iniciar agendamento com status "{ag.status}".', 422)
     ag.status = 'em_atendimento'
-    db.session.commit()
+    commit_ou_falhar('barbeiro.agendamentos.iniciar_agendamento')
     return jsonify({'id': ag.id, 'status': ag.status}), 200
 
 
@@ -130,7 +131,7 @@ def concluir_agendamento(ag_id):
     if dados.get('notas_internas'):
         ag.observacao = str(dados['notas_internas'])[:300]
     ag.status = 'concluido'
-    db.session.commit()
+    commit_ou_falhar('barbeiro.agendamentos.concluir_agendamento')
     return jsonify({'id': ag.id, 'status': ag.status}), 200
 
 
@@ -152,7 +153,7 @@ def cancelar_agendamento(ag_id):
     if ag.cupom_id and ag.status == 'agendado':
         decrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
     ag.status = 'cancelado'
-    db.session.commit()
+    commit_ou_falhar('barbeiro.agendamentos.cancelar_agendamento')
     return jsonify({'id': ag.id, 'status': ag.status}), 200
 
 
@@ -180,7 +181,7 @@ def aprovar_comprovante(ag_id):
     if ag.cupom_id:
         incrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
     ag.status = 'agendado'
-    db.session.commit()
+    commit_ou_falhar('barbeiro.agendamentos.aprovar_comprovante')
     return jsonify({'id': ag.id, 'status': 'agendado'}), 200
 
 
@@ -205,7 +206,7 @@ def adicionar_nota_agendamento(ag_id):
         conteudo=texto,
     )
     db.session.add(nota)
-    db.session.commit()
+    commit_ou_falhar('barbeiro.agendamentos.adicionar_nota_agendamento')
     return jsonify({
         'id':        nota.id,
         'conteudo':  nota.conteudo,

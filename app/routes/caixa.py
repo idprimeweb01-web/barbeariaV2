@@ -8,6 +8,7 @@ from app.models import (
 )
 from app.utils import get_barbearia_atual
 from app.routes.auth import barbeiro_required
+from app.utils.db import commit_ou_falhar
 
 caixa = Blueprint('caixa', __name__)
 
@@ -109,7 +110,7 @@ def abrir_atendimento():
             servico_id=servico.id, preco_unitario=servico.preco, quantidade=1,
         ))
 
-    db.session.commit()
+    commit_ou_falhar('caixa.abrir_atendimento')
     itens = AtendimentoItem.query.filter_by(atendimento_id=at.id).all()
     return jsonify({'mensagem': 'Atendimento aberto com sucesso.', 'atendimento': _fmt_atendimento(at, itens)}), 201
 
@@ -170,7 +171,7 @@ def adicionar_item(atendimento_id):
         )
 
     db.session.add(item)
-    db.session.commit()
+    commit_ou_falhar('caixa.adicionar_item')
     return jsonify({'mensagem': 'Item adicionado com sucesso.', 'item': _fmt_item(item)}), 201
 
 
@@ -197,7 +198,7 @@ def remover_item(atendimento_id, item_id):
         return _erro('Item não encontrado.', 404)
 
     db.session.delete(item)
-    db.session.commit()
+    commit_ou_falhar('caixa.remover_item')
     return jsonify({'mensagem': 'Item removido com sucesso.', 'id': item_id})
 
 
@@ -291,7 +292,7 @@ def efetuar_atendimento(atendimento_id):
         atendimento_id=atendimento_id, forma_pagamento=forma, valor=total, status='aprovado',
     )
     db.session.add(pagamento)
-    db.session.commit()
+    commit_ou_falhar('caixa.efetuar_atendimento')
 
     resp = {
         'mensagem':    'Atendimento efetuado com sucesso.',
@@ -404,7 +405,7 @@ def iniciar_atendimento(agendamento_id):
                 servico_id=servico.id, preco_unitario=servico.preco, quantidade=1,
             ))
 
-    db.session.commit()
+    commit_ou_falhar('caixa.iniciar_atendimento')
     itens = AtendimentoItem.query.filter_by(atendimento_id=at.id).all()
     return jsonify({'mensagem': 'Atendimento iniciado.', 'atendimento': _fmt_atendimento(at, itens)}), 201
 

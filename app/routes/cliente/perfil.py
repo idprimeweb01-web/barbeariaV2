@@ -4,6 +4,7 @@ from app.models import Cliente, Usuario, ClienteVip, VipNivel
 from app.exceptions import APIError
 from app.decorators.auth import cliente_required
 from app.utils import normalizar_telefone
+from app.utils.db import commit_ou_falhar
 
 cliente_perfil_bp = Blueprint('cliente_perfil', __name__, url_prefix='/api/v1/cliente')
 
@@ -60,7 +61,7 @@ def editar_perfil():
         cli.email = email
         usr.email = email
 
-    db.session.commit()
+    commit_ou_falhar('cliente.perfil.editar_perfil')
     return jsonify({
         'nome':     cli.nome,
         'telefone': cli.telefone,

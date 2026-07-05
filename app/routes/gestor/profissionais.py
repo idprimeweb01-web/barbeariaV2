@@ -9,6 +9,7 @@ from app.labels import L
 from app.utils import normalizar_telefone
 from app.utils.auditoria import registrar_auditoria
 from app.utils.auth import revogar_todos_tokens
+from app.utils.db import commit_ou_falhar
 
 profissionais_bp = Blueprint('gestor_profissionais', __name__, url_prefix='/api/v1/gestor')
 
@@ -126,7 +127,7 @@ def criar_barbeiro():
         ativo=True,
     )
     db.session.add(barbeiro)
-    db.session.commit()
+    commit_ou_falhar('gestor.profissionais.criar_barbeiro')
 
     return jsonify(_fmt_barbeiro(barbeiro)), 201
 
@@ -200,7 +201,7 @@ def editar_barbeiro(barbeiro_id):
             revogar_todos_tokens(u, 'usuario_desativado')
         auditoria_mudancas.append(f'ativo: {"ativado" if ativo else "desativado"}')
 
-    db.session.commit()
+    commit_ou_falhar('gestor.profissionais.editar_barbeiro')
 
     # Registra auditoria APÓS commit — falha de log não reverte a operação
     for descricao in auditoria_mudancas:
@@ -243,7 +244,7 @@ def atribuir_servico(barbeiro_id):
         raise APIError(f'{L("profissional")} já oferece este {L("servico").lower()}.', 409)
 
     db.session.add(BarbeiroServico(barbeiro_id=barbeiro_id, servico_id=servico_id))
-    db.session.commit()
+    commit_ou_falhar('gestor.profissionais.atribuir_servico')
 
     return jsonify({
         'mensagem': f'{L("servico")} atribuído ao {L("profissional").lower()}.',
@@ -266,7 +267,7 @@ def remover_servico(barbeiro_id, servico_id):
         raise APIError('Atribuição não encontrada.', 404)
 
     db.session.delete(bs)
-    db.session.commit()
+    commit_ou_falhar('gestor.profissionais.remover_servico')
     return jsonify({'mensagem': f'{L("servico")} removido do {L("profissional").lower()}.'}), 200
 
 
@@ -346,7 +347,7 @@ def put_agenda(barbeiro_id):
     if 'permite_horario_barbeiro' in dados:
         config.permite_horario_barbeiro = bool(dados['permite_horario_barbeiro'])
 
-    db.session.commit()
+    commit_ou_falhar('gestor.profissionais.put_agenda')
     return jsonify({'config': _fmt_config(config)}), 200
 
 
@@ -386,7 +387,7 @@ def criar_pausa(barbeiro_id):
         descricao=(dados.get('descricao') or '').strip() or None,
     )
     db.session.add(pausa)
-    db.session.commit()
+    commit_ou_falhar('gestor.profissionais.criar_pausa')
     return jsonify({'pausa': _fmt_pausa(pausa)}), 201
 
 
@@ -401,5 +402,5 @@ def deletar_pausa(barbeiro_id, pausa_id):
     if not pausa:
         raise APIError('Pausa não encontrada.', 404)
     db.session.delete(pausa)
-    db.session.commit()
+    commit_ou_falhar('gestor.profissionais.deletar_pausa')
     return jsonify({'mensagem': 'Pausa removida.'}), 200

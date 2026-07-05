@@ -4,6 +4,7 @@ from app.extensions import db
 from app.models import Barbearia, BarbeariaCustomizacao
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
+from app.utils.db import commit_ou_falhar
 
 gestor_barbearia_bp = Blueprint('gestor_barbearia', __name__, url_prefix='/api/v1/gestor')
 
@@ -50,7 +51,7 @@ def salvar_pix():
         v = (dados['banco'] or '').strip()
         b.pix_banco = v or None
 
-    db.session.commit()
+    commit_ou_falhar('gestor.barbearia.salvar_pix')
     return jsonify({'mensagem': 'PIX configurado com sucesso.'}), 200
 
 

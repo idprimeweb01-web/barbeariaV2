@@ -3,6 +3,7 @@ from app.extensions import db
 from app.models import Agendamento, AgendamentoServico, Servico, Barbeiro, Cliente, ClienteNota
 from app.exceptions import APIError
 from app.decorators.auth import barbeiro_required
+from app.utils.db import commit_ou_falhar
 
 barbeiro_cli_bp = Blueprint('barbeiro_clientes', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -163,7 +164,7 @@ def criar_nota(cliente_id):
         conteudo=texto,
     )
     db.session.add(nota)
-    db.session.commit()
+    commit_ou_falhar('barbeiro.clientes.criar_nota')
     return jsonify({
         'id':        nota.id,
         'tipo':      nota.tipo,

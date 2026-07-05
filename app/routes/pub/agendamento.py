@@ -26,6 +26,7 @@ from app.utils.notificacoes import notificar_cliente
 from app.utils.features import feature_ativa
 from app.utils.cupons import validar_cupom, incrementar_uso_cupom
 from app.labels import L
+from app.utils.db import commit_ou_falhar
 
 pub_bp = Blueprint('pub', __name__, url_prefix='/api/v1/pub')
 
@@ -351,8 +352,9 @@ def _criar_agendamento_core(
             'Tente novamente ou escolha outro serviço.',
             409,
         )
-    except Exception:
+    except Exception as exc:
         db.session.rollback()
+        current_app.logger.error('commit falhou em pub.agendamento._criar_agendamento_core: %s', exc, exc_info=True)
         raise APIError('Erro ao criar agendamento. Tente novamente.', 500)
 
     # Notificação de confirmação de agendamento (stub — sem envio real)
@@ -677,6 +679,6 @@ def upload_comprovante(slug, agendamento_id):
     if ag.status == 'aguardando_comprovante':
         ag.status = 'aguardando_aprovacao'
 
-    db.session.commit()
+    commit_ou_falhar('pub.agendamento.upload_comprovante')
 
     return jsonify({'mensagem': 'Comprovante enviado com sucesso.', 'url': url, 'status': ag.status}), 200

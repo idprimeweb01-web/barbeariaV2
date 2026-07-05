@@ -3,6 +3,7 @@ from app.extensions import db
 from app.models import Notificacao, Cliente
 from app.exceptions import APIError
 from app.decorators.auth import cliente_required
+from app.utils.db import commit_ou_falhar
 
 cliente_notif_bp = Blueprint('cliente_notificacoes', __name__, url_prefix='/api/v1/cliente')
 
@@ -95,7 +96,7 @@ def marcar_lida(notif_id):
     if not n:
         raise APIError('Notificação não encontrada.', 404)
     n.lida = True
-    db.session.commit()
+    commit_ou_falhar('cliente.notificacoes.marcar_lida')
     return jsonify(_fmt(n)), 200
 
 
@@ -116,7 +117,7 @@ def marcar_todas_lidas():
         )
         .update({'lida': True})
     )
-    db.session.commit()
+    commit_ou_falhar('cliente.notificacoes.marcar_todas_lidas')
     return jsonify({'marcadas_lidas': atualizados}), 200
 
 

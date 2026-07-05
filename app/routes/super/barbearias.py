@@ -12,6 +12,7 @@ from app.models import (
 from app.exceptions import APIError
 from app.decorators.auth import super_required
 from app.utils import normalizar_telefone
+from app.utils.db import commit_ou_falhar
 
 _TIPOS_IMAGEM = {'image/jpeg', 'image/jpg', 'image/png', 'image/webp'}
 _MAX_BYTES     = 5 * 1024 * 1024  # 5 MB
@@ -187,7 +188,7 @@ def criar_barbearia():
             ativo=False,
         ))
 
-    db.session.commit()
+    commit_ou_falhar('super.barbearias.criar_barbearia')
 
     return jsonify({
         'mensagem': 'Barbearia criada com sucesso.',
@@ -281,7 +282,7 @@ def editar_barbearia(barbearia_id):
         v = (dados['estado'] or '').strip().upper()
         b.estado = v[:2] or None
 
-    db.session.commit()
+    commit_ou_falhar('super.barbearias.editar_barbearia')
     return jsonify({'mensagem': 'Barbearia atualizada.', 'barbearia': _fmt_barbearia(b)}), 200
 
 
@@ -302,7 +303,7 @@ def desativar_barbearia(barbearia_id):
         'ativo': False,
         'token_valido_apos': datetime.now(timezone.utc),
     })
-    db.session.commit()
+    commit_ou_falhar('super.barbearias.desativar_barbearia')
 
     return jsonify({'mensagem': 'Barbearia desativada.', 'id': barbearia_id}), 200
 
@@ -319,7 +320,7 @@ def ativar_barbearia(barbearia_id):
     b.ativo = True
     # Reativa apenas o gestor — barbeiros e clientes reativam via gestor
     Usuario.query.filter_by(barbearia_id=barbearia_id, perfil='gestor').update({'ativo': True})
-    db.session.commit()
+    commit_ou_falhar('super.barbearias.ativar_barbearia')
 
     return jsonify({'mensagem': 'Barbearia reativada.', 'id': barbearia_id}), 200
 
@@ -354,7 +355,7 @@ def toggle_feature(barbearia_id, nome_feature):
         fb = FeatureBarbearia(barbearia_id=barbearia_id, feature_id=fm.id, ativo=True)
         db.session.add(fb)
 
-    db.session.commit()
+    commit_ou_falhar('super.barbearias.toggle_feature')
 
     estado = 'ativada' if fb.ativo else 'desativada'
     return jsonify({'feature': nome_feature, 'ativo': fb.ativo, 'mensagem': f'Feature {estado}.'}), 200
@@ -396,7 +397,7 @@ def editar_customizacao(barbearia_id):
     if 'fonte' in dados:
         c.fonte = (dados['fonte'] or '').strip() or c.fonte
 
-    db.session.commit()
+    commit_ou_falhar('super.barbearias.editar_customizacao')
     return jsonify({'mensagem': 'Customização atualizada.', 'customizacao': _fmt_customizacao(c)}), 200
 
 
@@ -451,7 +452,7 @@ def upload_imagem_customizacao(barbearia_id):
 
     campo = _TIPOS_UPLOAD[tipo]
     setattr(c, campo, url)
-    db.session.commit()
+    commit_ou_falhar('super.barbearias.upload_imagem_customizacao')
 
     return jsonify({'mensagem': 'Imagem atualizada.', 'tipo': tipo, 'url': url}), 200
 
@@ -480,7 +481,7 @@ def remover_imagem_customizacao(barbearia_id):
         pass  # imagem já pode não existir mais no Cloudinary; segue removendo a referência
 
     setattr(c, campo, None)
-    db.session.commit()
+    commit_ou_falhar('super.barbearias.remover_imagem_customizacao')
 
     return jsonify({'mensagem': 'Imagem removida.', 'tipo': tipo}), 200
 
@@ -693,7 +694,7 @@ def put_segmento_rotulos(seg_id):
         val = (dados.get(col) or '').strip()
         if val:
             setattr(row, col, val[:50])
-    db.session.commit()
+    commit_ou_falhar('super.barbearias.put_segmento_rotulos')
     L.invalidar(seg_id)
     return jsonify({'mensagem': 'Rótulos atualizados com sucesso.'}), 200
 
@@ -722,5 +723,5 @@ def patch_barbearia_segmento(barbearia_id):
         if not seg:
             raise APIError('Segmento não encontrado.', 404)
         b.segmento_id = seg.id
-    db.session.commit()
+    commit_ou_falhar('super.barbearias.patch_barbearia_segmento')
     return jsonify({'mensagem': 'Segmento atualizado.', 'segmento_id': b.segmento_id}), 200

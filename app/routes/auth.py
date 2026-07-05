@@ -8,6 +8,7 @@ from app.extensions import db
 from app.models import Usuario
 from app.exceptions import APIError
 from app.utils.auth import revogar_todos_tokens
+from app.utils.db import commit_ou_falhar
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/v1/auth')
 
@@ -109,6 +110,6 @@ def trocar_senha():
 
     usuario.senha = generate_password_hash(senha_nova)
     revogar_todos_tokens(usuario, 'troca_senha')
-    db.session.commit()
+    commit_ou_falhar('auth.trocar_senha')
 
     return jsonify({'mensagem': 'Senha alterada com sucesso.'}), 200

@@ -9,6 +9,7 @@ from app.utils.cupons import decrementar_uso_cupom
 from app.utils.tz import naive_brasilia
 from app.labels import L
 from app.routes.pub.agendamento import _get_config, _criar_agendamento_core, _fmt_agendamento
+from app.utils.db import commit_ou_falhar
 
 cliente_bp = Blueprint('cliente', __name__, url_prefix='/api/v1/cliente')
 
@@ -147,9 +148,8 @@ def cancelar_agendamento(ag_id):
         decrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
 
     ag.status = 'cancelado'
-    try:
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        raise APIError(f'Erro ao cancelar {L("agendamento").lower()}. Tente novamente.', 500)
+    commit_ou_falhar(
+        'cliente.agendamento.cancelar_agendamento',
+        f'Erro ao cancelar {L("agendamento").lower()}. Tente novamente.',
+    )
     return jsonify({'mensagem': f'{L("agendamento")} cancelado com sucesso.', 'id': ag_id}), 200

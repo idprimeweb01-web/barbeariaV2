@@ -3,6 +3,7 @@ Executar via CLI: flask seed-metadata / flask seed-admin
 """
 from werkzeug.security import generate_password_hash
 from app.extensions import db
+from app.utils.db import commit_ou_falhar
 
 # Features disponíveis na plataforma — ordem é só para legibilidade
 FEATURES = [
@@ -28,7 +29,7 @@ def seed_feature_metadata():
             db.session.add(FeatureMetadata(nome=nome, descricao=descricao))
         elif existente.descricao != descricao:
             existente.descricao = descricao
-    db.session.commit()
+    commit_ou_falhar('seeds.seed_feature_metadata')
     print(f'[seed] FeatureMetadata: {len(FEATURES)} features sincronizadas.')
 
 
@@ -102,7 +103,7 @@ def seed_segmentos():
         for col, val in cols.items():
             setattr(row, col, val)
 
-    db.session.commit()
+    commit_ou_falhar('seeds.seed_segmentos')
     L.invalidar()
     print(f'[seed] {len(_SEGMENTOS)} segmentos sincronizados.')
 
@@ -131,7 +132,7 @@ def seed_super_admin():
             ativo=True,
         )
         db.session.add(admin)
-        db.session.commit()
+        commit_ou_falhar('seeds.seed_super_admin')
         print('[seed] super_admin criado: adm@barbearia.com / 123456')
         print('[AVISO] Altere a senha do super_admin em produção imediatamente.')
     else:

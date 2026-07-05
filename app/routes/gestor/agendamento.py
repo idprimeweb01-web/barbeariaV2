@@ -14,6 +14,7 @@ from app.utils.cupons import incrementar_uso_cupom, decrementar_uso_cupom
 from app.utils.tz import naive_brasilia
 from app.labels import L
 from app.utils import normalizar_telefone
+from app.utils.db import commit_ou_falhar
 
 gestor_agenda_bp = Blueprint('gestor_agenda', __name__, url_prefix='/api/v1/gestor')
 
@@ -160,7 +161,7 @@ def aprovar_agendamento(ag_id):
         incrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
 
     ag.status = 'agendado'
-    db.session.commit()
+    commit_ou_falhar('gestor.agendamento.aprovar_agendamento')
     return jsonify({'mensagem': f'{L("agendamento")} aprovado.', 'id': ag_id, 'status': 'agendado'}), 200
 
 
@@ -183,7 +184,7 @@ def cancelar_agendamento_gestor(ag_id):
         decrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
 
     ag.status = 'cancelado'
-    db.session.commit()
+    commit_ou_falhar('gestor.agendamento.cancelar_agendamento_gestor')
     return jsonify({'mensagem': f'{L("agendamento")} cancelado pelo gestor.', 'id': ag_id}), 200
 
 
@@ -358,7 +359,7 @@ def agendamento_manual():
         preco_unitario=sv.preco,
         is_plano=False,
     ))
-    db.session.commit()
+    commit_ou_falhar('gestor.agendamento.agendamento_manual')
 
     return jsonify({'mensagem': 'Agendamento criado.', 'id': ag.id}), 201
 
@@ -525,7 +526,7 @@ def criar_bloqueio():
             ))
         criados += 1
 
-    db.session.commit()
+    commit_ou_falhar('gestor.agendamento.criar_bloqueio')
     return jsonify({'mensagem': f'{criados} bloqueio(s) criado(s).', 'total': criados}), 201
 
 
@@ -548,7 +549,7 @@ def remover_bloqueio(bloqueio_id):
     for b in irmãos:
         db.session.delete(b)
 
-    db.session.commit()
+    commit_ou_falhar('gestor.agendamento.remover_bloqueio')
     return jsonify({'mensagem': 'Bloqueio removido.'}), 200
 
 
@@ -584,7 +585,7 @@ def criar_bloqueio_barbeiro(barbeiro_id):
         data_hora_fim=fim,
         motivo=motivo,
     ))
-    db.session.commit()
+    commit_ou_falhar('gestor.agendamento.criar_bloqueio_barbeiro')
     return jsonify({'mensagem': 'Horário bloqueado.'}), 201
 
 
@@ -654,7 +655,7 @@ def responder_solicitacao(solic_id):
         for blk in blks:
             db.session.delete(blk)
 
-    db.session.commit()
+    commit_ou_falhar('gestor.agendamento.responder_solicitacao')
     msg = ('Solicitação aprovada. Bloqueios removidos.' if novo_status == 'aprovado'
            else 'Solicitação rejeitada.')
     return jsonify({'mensagem': msg}), 200

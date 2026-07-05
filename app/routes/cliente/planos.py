@@ -8,6 +8,7 @@ from app.exceptions import APIError
 from app.decorators.auth import cliente_required
 from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
 from app.utils.tz import hoje_brasilia
+from app.utils.db import commit_ou_falhar
 from app.labels import L
 
 cliente_planos_bp = Blueprint('cliente_planos', __name__, url_prefix='/api/v1/cliente')
@@ -109,11 +110,10 @@ def cancelar_assinatura(cp_id):
     if not cp.ativo:
         raise APIError(f'{L("plano")} já está inativo.')
     cp.ativo = False
-    try:
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        raise APIError(f'Erro ao salvar {L("plano")}. Tente novamente.', 500)
+    commit_ou_falhar(
+        'cliente.planos.cancelar_assinatura',
+        f'Erro ao salvar {L("plano")}. Tente novamente.',
+    )
     return jsonify({'mensagem': f'{L("plano")} cancelado.', 'id': cp_id}), 200
 
 

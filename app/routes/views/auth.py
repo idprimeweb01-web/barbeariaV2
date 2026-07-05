@@ -11,6 +11,7 @@ from flask_jwt_extended import (
 from werkzeug.security import check_password_hash, generate_password_hash
 from app.extensions import db
 from app.models import Usuario, Barbearia, Cliente, TokenRevogado
+from app.utils.db import commit_ou_falhar
 
 views_bp = Blueprint('views', __name__)
 
@@ -605,7 +606,7 @@ def cliente_cadastro_post(slug):
         )
         db.session.add(cliente)
 
-    db.session.commit()
+    commit_ou_falhar('views.auth.cliente_cadastro_post')
 
     access_token  = create_access_token(identity=str(usuario.id))
     refresh_token = create_refresh_token(identity=str(usuario.id))

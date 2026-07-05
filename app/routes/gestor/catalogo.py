@@ -4,6 +4,7 @@ from app.models import Servico, Produto
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.labels import L
+from app.utils.db import commit_ou_falhar
 
 catalogo_bp = Blueprint('gestor_catalogo', __name__, url_prefix='/api/v1/gestor')
 
@@ -87,7 +88,7 @@ def criar_servico():
         ativo=True,
     )
     db.session.add(s)
-    db.session.commit()
+    commit_ou_falhar('gestor.catalogo.criar_servico')
     return jsonify(_fmt_servico(s)), 201
 
 
@@ -131,7 +132,7 @@ def editar_servico(servico_id):
     if 'ativo' in dados:
         s.ativo = bool(dados['ativo'])
 
-    db.session.commit()
+    commit_ou_falhar('gestor.catalogo.editar_servico')
     return jsonify(_fmt_servico(s)), 200
 
 
@@ -142,7 +143,7 @@ def desativar_servico(servico_id):
     if not s:
         raise APIError(f'{L("servico")} não encontrado.', 404)
     s.ativo = False
-    db.session.commit()
+    commit_ou_falhar('gestor.catalogo.desativar_servico')
     return jsonify({'mensagem': f'{L("servico")} desativado.'}), 200
 
 
@@ -195,7 +196,7 @@ def criar_produto():
         ativo=True,
     )
     db.session.add(p)
-    db.session.commit()
+    commit_ou_falhar('gestor.catalogo.criar_produto')
     return jsonify(_fmt_produto(p)), 201
 
 
@@ -234,7 +235,7 @@ def editar_produto(produto_id):
     if 'ativo' in dados:
         p.ativo = bool(dados['ativo'])
 
-    db.session.commit()
+    commit_ou_falhar('gestor.catalogo.editar_produto')
     return jsonify(_fmt_produto(p)), 200
 
 
@@ -245,7 +246,7 @@ def desativar_produto(produto_id):
     if not p:
         raise APIError(f'{L("produto")} não encontrado.', 404)
     p.ativo = False
-    db.session.commit()
+    commit_ou_falhar('gestor.catalogo.desativar_produto')
     return jsonify({'mensagem': f'{L("produto")} desativado.'}), 200
 
 
@@ -272,7 +273,7 @@ def ajustar_estoque(produto_id):
         )
 
     p.quantidade_estoque = novo
-    db.session.commit()
+    commit_ou_falhar('gestor.catalogo.ajustar_estoque')
     return jsonify({
         'produto_id':         p.id,
         'quantidade_anterior': anterior,

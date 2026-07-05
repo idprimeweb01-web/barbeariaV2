@@ -1,3 +1,4 @@
+import logging
 from flask import Blueprint, request, g, jsonify
 from sqlalchemy.exc import IntegrityError
 from app.extensions import db
@@ -10,6 +11,9 @@ from app.decorators.auth import gestor_required
 from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.labels import L
+from app.utils.db import commit_ou_falhar
+
+logger = logging.getLogger(__name__)
 
 planos_bp = Blueprint('gestor_planos', __name__, url_prefix='/api/v1/gestor')
 
@@ -101,11 +105,7 @@ def criar_plano():
         ativo=True,
     )
     db.session.add(p)
-    try:
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        raise APIError(f'Erro ao salvar {L("plano").lower()}. Tente novamente.', 500)
+    commit_ou_falhar('gestor.planos.criar_plano', f'Erro ao salvar {L("plano").lower()}. Tente novamente.')
     return jsonify(_fmt_plano(p, com_servicos=True)), 201
 
 
@@ -142,11 +142,7 @@ def editar_plano(plano_id):
     if 'ativo' in dados:
         p.ativo = bool(dados['ativo'])
 
-    try:
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        raise APIError(f'Erro ao salvar {L("plano").lower()}. Tente novamente.', 500)
+    commit_ou_falhar('gestor.planos.editar_plano', f'Erro ao salvar {L("plano").lower()}. Tente novamente.')
     return jsonify(_fmt_plano(p, com_servicos=True)), 200
 
 
@@ -157,11 +153,7 @@ def editar_plano(plano_id):
 def desativar_plano(plano_id):
     p = _get_plano_ou_404(plano_id, g.barbearia_id)
     p.ativo = False
-    try:
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        raise APIError(f'Erro ao desativar {L("plano").lower()}. Tente novamente.', 500)
+    commit_ou_falhar('gestor.planos.desativar_plano', f'Erro ao desativar {L("plano").lower()}. Tente novamente.')
     return jsonify({'mensagem': f'{L("plano")} desativado.', 'id': plano_id}), 200
 
 
@@ -207,11 +199,10 @@ def adicionar_servico_plano(plano_id):
         dias_expiracao=dias, ativo=True,
     )
     db.session.add(ps)
-    try:
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        raise APIError(f'Erro ao salvar {L("servico").lower()} do {L("plano").lower()}. Tente novamente.', 500)
+    commit_ou_falhar(
+        'gestor.planos.adicionar_servico_plano',
+        f'Erro ao salvar {L("servico").lower()} do {L("plano").lower()}. Tente novamente.',
+    )
 
     return jsonify({
         'mensagem': f'{L("servico")} adicionado ao {L("plano").lower()}.',
@@ -232,11 +223,10 @@ def remover_servico_plano(plano_id, servico_id):
     if not ps:
         raise APIError(f'{L("servico")} não encontrado neste {L("plano").lower()}.', 404)
     db.session.delete(ps)
-    try:
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        raise APIError(f'Erro ao remover {L("servico").lower()} do {L("plano").lower()}. Tente novamente.', 500)
+    commit_ou_falhar(
+        'gestor.planos.remover_servico_plano',
+        f'Erro ao remover {L("servico").lower()} do {L("plano").lower()}. Tente novamente.',
+    )
     return jsonify({'mensagem': f'{L("servico")} removido do {L("plano").lower()}.'}), 200
 
 
@@ -356,8 +346,9 @@ def aprovar_solicitacao(sol_id):
     except IntegrityError:
         db.session.rollback()
         raise APIError('Solicitação já aprovada por outro gestor.', 409)
-    except Exception:
+    except Exception as exc:
         db.session.rollback()
+        logger.error('commit falhou em gestor.planos.aprovar_solicitacao: %s', exc, exc_info=True)
         raise APIError('Erro ao aprovar solicitação. Tente novamente.', 500)
 
     return jsonify({
@@ -387,10 +378,6 @@ def rejeitar_solicitacao(sol_id):
     dados = request.get_json(silent=True) or {}
     sol.status = 'rejeitado'
     sol.motivo_rejeicao = (dados.get('motivo') or '').strip() or 'Rejeitado pelo gestor.'
-    try:
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        raise APIError('Erro ao rejeitar solicitação. Tente novamente.', 500)
+    commit_ou_falhar('gestor.planos.rejeitar_solicitacao', 'Erro ao rejeitar solicitação. Tente novamente.')
 
     return jsonify({'mensagem': 'Solicitação rejeitada.', 'id': sol_id}), 200

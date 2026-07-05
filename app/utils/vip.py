@@ -1,5 +1,6 @@
 from datetime import timedelta
 from app.utils.tz import hoje_brasilia
+from app.utils.db import commit_ou_falhar
 
 
 def _get_or_create_cliente_vip(cliente_id, barbearia_id):
@@ -19,7 +20,7 @@ def incrementar_nivel_vip(cliente_id, barbearia_id):
     cv = _get_or_create_cliente_vip(cliente_id, barbearia_id)
     cv.nivel_vip_atual = (cv.nivel_vip_atual or 0) + 1
     cv.data_proxima_renovacao = hoje_brasilia() + timedelta(days=30)
-    db.session.commit()
+    commit_ou_falhar('utils.vip.incrementar_nivel_vip')
     return cv.nivel_vip_atual
 
 
@@ -29,5 +30,5 @@ def resetar_nivel_vip(cliente_id, barbearia_id):
     cv = _get_or_create_cliente_vip(cliente_id, barbearia_id)
     cv.nivel_vip_atual = 0
     cv.data_proxima_renovacao = None
-    db.session.commit()
+    commit_ou_falhar('utils.vip.resetar_nivel_vip')
     return cv.nivel_vip_atual

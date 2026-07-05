@@ -7,6 +7,7 @@ from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.labels import L
 from app.utils.tz import hoje_brasilia, naive_brasilia
+from app.utils.db import commit_ou_falhar
 
 gestor_clientes_bp = Blueprint('gestor_clientes', __name__, url_prefix='/api/v1/gestor')
 
@@ -336,5 +337,5 @@ def editar_cliente(cliente_id):
             if u_obj:
                 u_obj.ativo = c.ativo
 
-    db.session.commit()
+    commit_ou_falhar('gestor.clientes.editar_cliente')
     return jsonify({'mensagem': 'Cliente atualizado.', 'id': c.id}), 200

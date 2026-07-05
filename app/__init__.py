@@ -1,4 +1,6 @@
 import os
+import sys
+import logging
 from datetime import timedelta
 from flask import Flask, jsonify
 from dotenv import load_dotenv
@@ -11,7 +13,23 @@ from .extensions import db, migrate, jwt  # noqa: E402 — importado após load_
 __all__ = ['db', 'migrate', 'jwt', 'create_app']
 
 
+def _configurar_logging():
+    """Garante que logger.error(...) dos módulos da aplicação (ex: commit_ou_falhar)
+    apareça com timestamp em stdout — é o que gunicorn/Railway coletam como log
+    (Procfile já usa --error-logfile -). Idempotente: não duplica handler se
+    create_app() for chamado mais de uma vez (ex: testes)."""
+    root = logging.getLogger()
+    if root.handlers:
+        return
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s %(levelname)s [%(name)s] %(message)s',
+        stream=sys.stdout,
+    )
+
+
 def create_app(config=None):
+    _configurar_logging()
     app = Flask(__name__)
 
     # ── Config ────────────────────────────────────────────────────────────────
