@@ -1,7 +1,8 @@
 from datetime import datetime
 from flask import Blueprint, request, g, jsonify
+from sqlalchemy.orm import selectinload
 from app.extensions import db
-from app.models import Agendamento, AgendamentoServico, Cliente, Servico, Barbeiro
+from app.models import Agendamento, AgendamentoServico, Cliente, Servico, Barbeiro, Usuario
 from app.exceptions import APIError
 from app.decorators.auth import cliente_required
 from app.utils.agenda import fim_agendamento
@@ -28,7 +29,11 @@ def _get_cliente_do_usuario():
 @cliente_required
 def listar_agendamentos():
     cliente = _get_cliente_do_usuario()
-    q = Agendamento.query.filter_by(cliente_id=cliente.id, barbearia_id=g.barbearia_id)
+    q = (
+        Agendamento.query
+        .options(selectinload(Agendamento.itens).selectinload(AgendamentoServico.servico))
+        .filter_by(cliente_id=cliente.id, barbearia_id=g.barbearia_id)
+    )
     status_f = request.args.get('status')
     if status_f:
         q = q.filter_by(status=status_f)
@@ -41,19 +46,30 @@ def listar_agendamentos():
 
     paginado = q.order_by(Agendamento.data_hora.desc()).paginate(page=page, per_page=per_page, error_out=False)
 
+    barbeiro_ids = {ag.barbeiro_id for ag in paginado.items if ag.barbeiro_id}
+    barbeiro_nomes = {}
+    if barbeiro_ids:
+        barbeiros = {b.id: b for b in Barbeiro.query.filter(Barbeiro.id.in_(barbeiro_ids)).all()}
+        usuarios = {u.id: u for u in Usuario.query.filter(
+            Usuario.id.in_({b.usuario_id for b in barbeiros.values()})
+        ).all()}
+        barbeiro_nomes = {
+            bid: (usuarios.get(b.usuario_id).nome if usuarios.get(b.usuario_id) else None)
+            for bid, b in barbeiros.items()
+        }
+
     resultado = []
     for ag in paginado.items:
-        itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
-        servicos_info = []
-        for it in itens:
-            s = db.session.get(Servico, it.servico_id)
-            servicos_info.append({
+        servicos_info = [
+            {
                 'servico_id': it.servico_id,
-                'nome':       s.nome if s else None,
+                'nome':       it.servico.nome if it.servico else None,
                 'preco':      float(it.preco_unitario),
                 'is_plano':   it.is_plano,
-            })
-        resultado.append(_fmt_agendamento(ag, servicos_info))
+            }
+            for it in ag.itens
+        ]
+        resultado.append(_fmt_agendamento(ag, servicos_info, barbeiro_nomes))
 
     return jsonify({
         'dados':    resultado,

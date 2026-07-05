@@ -288,6 +288,12 @@ class Agendamento(TenantMixin, db.Model):
     cupom_id         = db.Column(db.Integer, db.ForeignKey('cupons.id'), nullable=True)
     valor_desconto   = db.Column(db.Numeric(10, 2), nullable=False, default=0)
 
+    # ── Bloco 5.1: relationship somente-leitura para eager loading (selectinload).
+    # viewonly=True — o código continua criando AgendamentoServico via
+    # `agendamento_id=ag.id` explícito, não via `ag.itens.append(...)`; isso
+    # aqui é só pra permitir carregar em lote, nunca pra escrever.
+    itens = db.relationship('AgendamentoServico', viewonly=True, lazy='select')
+
 
 class AgendamentoServico(db.Model):
     __tablename__ = 'agendamento_servicos'
@@ -299,6 +305,9 @@ class AgendamentoServico(db.Model):
     preco_unitario   = db.Column(db.Numeric(10, 2), nullable=False)
     is_plano         = db.Column(db.Boolean, nullable=False, default=False)
     cliente_plano_id = db.Column(db.Integer, db.ForeignKey('cliente_plano.id'), nullable=True)
+
+    # ── Bloco 5.1: idem, somente-leitura, sem backref no Servico.
+    servico = db.relationship('Servico', viewonly=True, lazy='select')
 
 
 class AgendamentoSolicitacaoPix(db.Model):

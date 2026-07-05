@@ -1,5 +1,6 @@
 from datetime import date
 from flask import Blueprint, request, g, jsonify
+from sqlalchemy.orm import selectinload
 from app.extensions import db
 from app.models import Agendamento, AgendamentoServico, AgendamentoSolicitacaoPix, Servico, Barbeiro, Cliente, ClienteNota
 from app.exceptions import APIError
@@ -18,45 +19,68 @@ def _get_barbeiro(user_id, barbearia_id):
     return b
 
 
-def _fmt_ag(ag):
-    cli   = db.session.get(Cliente, ag.cliente_id)
-    itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
-    servicos_info = []
-    for it in itens:
-        s = db.session.get(Servico, it.servico_id)
-        servicos_info.append({
-            'nome':             s.nome if s else None,
-            'duracao_minutos':  s.duracao_minutos if s else None,
-            'preco':            float(it.preco_unitario),
+def _batch_historico(barbearia_id, cliente_ids):
+    """{cliente_id: [até 5 últimas visitas concluídas, mais recente primeiro]}.
+    Uma query só (não uma por cliente) — eager load dos itens/serviço junto."""
+    if not cliente_ids:
+        return {}
+    ags_h = (
+        Agendamento.query
+        .options(selectinload(Agendamento.itens).selectinload(AgendamentoServico.servico))
+        .filter(
+            Agendamento.barbearia_id == barbearia_id,
+            Agendamento.cliente_id.in_(cliente_ids),
+            Agendamento.status == 'concluido',
+        )
+        .order_by(Agendamento.data_hora.desc())
+        .all()
+    )
+    out = {}
+    for h in ags_h:
+        lst = out.setdefault(h.cliente_id, [])
+        if len(lst) >= 5:
+            continue
+        nomes = [it.servico.nome for it in h.itens if it.servico]
+        lst.append({
+            'data':    h.data_hora.strftime('%d/%m/%Y'),
+            'hora':    h.data_hora.strftime('%H:%M'),
+            'servico': ', '.join(nomes) or '—',
+            'valor':   float(h.valor_total),
         })
+    return out
 
-    # Últimas 5 visitas do cliente (concluídas)
-    historico = []
-    if cli:
-        ags_h = (Agendamento.query
-                 .filter_by(barbearia_id=ag.barbearia_id, cliente_id=cli.id, status='concluido')
-                 .order_by(Agendamento.data_hora.desc()).limit(5).all())
-        for h in ags_h:
-            h_itens = AgendamentoServico.query.filter_by(agendamento_id=h.id).all()
-            nomes   = [db.session.get(Servico, hi.servico_id).nome
-                       for hi in h_itens
-                       if db.session.get(Servico, hi.servico_id)]
-            historico.append({
-                'data':    h.data_hora.strftime('%d/%m/%Y'),
-                'hora':    h.data_hora.strftime('%H:%M'),
-                'servico': ', '.join(nomes) or '—',
-                'valor':   float(h.valor_total),
-            })
 
-    # Notas do cliente registradas por qualquer barbeiro desta barbearia
-    notas = []
-    if cli:
-        notas_q = (ClienteNota.query
-                   .filter_by(barbearia_id=ag.barbearia_id, cliente_id=cli.id)
-                   .order_by(ClienteNota.criado_em.desc()).limit(5).all())
-        notas = [{'conteudo': n.conteudo, 'tipo': n.tipo,
-                  'criado_em': n.criado_em.strftime('%d/%m/%Y') if n.criado_em else None}
-                 for n in notas_q]
+def _batch_notas(barbearia_id, cliente_ids):
+    """{cliente_id: [até 5 notas mais recentes]} — uma query só."""
+    if not cliente_ids:
+        return {}
+    notas_q = (
+        ClienteNota.query
+        .filter(ClienteNota.barbearia_id == barbearia_id, ClienteNota.cliente_id.in_(cliente_ids))
+        .order_by(ClienteNota.criado_em.desc())
+        .all()
+    )
+    out = {}
+    for n in notas_q:
+        lst = out.setdefault(n.cliente_id, [])
+        if len(lst) >= 5:
+            continue
+        lst.append({
+            'conteudo':  n.conteudo, 'tipo': n.tipo,
+            'criado_em': n.criado_em.strftime('%d/%m/%Y') if n.criado_em else None,
+        })
+    return out
+
+
+def _fmt_ag(ag, cli, historico, notas):
+    servicos_info = [
+        {
+            'nome':            it.servico.nome if it.servico else None,
+            'duracao_minutos': it.servico.duracao_minutos if it.servico else None,
+            'preco':           float(it.preco_unitario),
+        }
+        for it in ag.itens
+    ]
 
     return {
         'id':              ag.id,
@@ -80,7 +104,11 @@ def _fmt_ag(ag):
 @barbeiro_required
 def listar_agendamentos():
     b = _get_barbeiro(g.user_id, g.barbearia_id)
-    q = Agendamento.query.filter_by(barbearia_id=g.barbearia_id, barbeiro_id=b.id)
+    q = (
+        Agendamento.query
+        .options(selectinload(Agendamento.itens).selectinload(AgendamentoServico.servico))
+        .filter_by(barbearia_id=g.barbearia_id, barbeiro_id=b.id)
+    )
 
     data_f = request.args.get('data')
     if data_f:
@@ -97,7 +125,18 @@ def listar_agendamentos():
         q = q.filter(Agendamento.status == status_f)
 
     ags = q.order_by(Agendamento.data_hora).all()
-    return jsonify([_fmt_ag(ag) for ag in ags]), 200
+    if not ags:
+        return jsonify([]), 200
+
+    cliente_ids = {ag.cliente_id for ag in ags}
+    clientes = {c.id: c for c in Cliente.query.filter(Cliente.id.in_(cliente_ids)).all()}
+    historico_map = _batch_historico(g.barbearia_id, cliente_ids)
+    notas_map = _batch_notas(g.barbearia_id, cliente_ids)
+
+    return jsonify([
+        _fmt_ag(ag, clientes.get(ag.cliente_id), historico_map.get(ag.cliente_id, []), notas_map.get(ag.cliente_id, []))
+        for ag in ags
+    ]), 200
 
 
 # ── PATCH iniciar ─────────────────────────────────────────────────────────────

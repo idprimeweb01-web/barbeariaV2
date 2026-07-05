@@ -1,6 +1,7 @@
 import calendar
 from datetime import date, datetime, timedelta, time as time_t
 from flask import Blueprint, request, g, jsonify
+from sqlalchemy.orm import selectinload
 from app.extensions import db
 from app.models import (
     Agendamento, AgendamentoServico, AgendamentoSolicitacaoPix,
@@ -27,16 +28,22 @@ _STATUS_AGENDAMENTO_VALIDOS = {
 }
 
 
-def _fmt_ag_gestor(ag):
+def _fmt_ag_gestor(ag, clientes=None, barbeiros=None, pixes=None):
+    """
+    clientes/barbeiros/pixes: dicts pré-carregados em lote {id: objeto} —
+    passados pela listagem (Bloco 5.1) pra evitar N+1. Quando None (chamadas
+    de item único: detalhar/aprovar/cancelar), cai numa query pontual —
+    aceitável, não é o padrão de loop que causa N+1.
+    """
     fim = fim_agendamento(ag.data_hora, ag.duracao_minutos)
-    cliente = db.session.get(Cliente, ag.cliente_id)
-    barbeiro = db.session.get(Barbeiro, ag.barbeiro_id)
+    cliente = clientes.get(ag.cliente_id) if clientes is not None else db.session.get(Cliente, ag.cliente_id)
+    barbeiro = barbeiros.get(ag.barbeiro_id) if barbeiros is not None else db.session.get(Barbeiro, ag.barbeiro_id)
     barbeiro_nome = barbeiro.usuario.nome if barbeiro and barbeiro.usuario else None
 
-    itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
+    itens = ag.itens  # relationship (selectinload em lote quando a query de origem eager-carrega)
     servicos_info = []
     for it in itens:
-        s = db.session.get(Servico, it.servico_id)
+        s = it.servico
         # Comissão separada: atendimento de plano usa comissao_plano_percentual
         if it.is_plano:
             comissao_pct = float(barbeiro.comissao_plano_percentual) if barbeiro else 0
@@ -56,7 +63,9 @@ def _fmt_ag_gestor(ag):
             'comissao_valor':       comissao_valor,
         })
 
-    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=ag.barbearia_id).first()
+    pix = pixes.get(ag.id) if pixes is not None else (
+        AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=ag.barbearia_id).first()
+    )
 
     return {
         'id':               ag.id,
@@ -81,7 +90,11 @@ def _fmt_ag_gestor(ag):
 @gestor_agenda_bp.get('/agendamentos')
 @gestor_required
 def listar_agendamentos():
-    q = Agendamento.query.filter_by(barbearia_id=g.barbearia_id)
+    q = (
+        Agendamento.query
+        .options(selectinload(Agendamento.itens).selectinload(AgendamentoServico.servico))
+        .filter_by(barbearia_id=g.barbearia_id)
+    )
 
     data_f = request.args.get('data')
     if not data_f:
@@ -114,8 +127,17 @@ def listar_agendamentos():
         raise APIError('"page" e "per_page" devem ser inteiros.', 422)
 
     paginado = q.order_by(Agendamento.data_hora).paginate(page=page, per_page=per_page, error_out=False)
+
+    ags_pagina = paginado.items
+    clientes  = {c.id: c for c in Cliente.query.filter(
+        Cliente.id.in_({ag.cliente_id for ag in ags_pagina})).all()} if ags_pagina else {}
+    barbeiros = {b.id: b for b in Barbeiro.query.filter(
+        Barbeiro.id.in_({ag.barbeiro_id for ag in ags_pagina})).all()} if ags_pagina else {}
+    pixes = {p.agendamento_id: p for p in AgendamentoSolicitacaoPix.query.filter(
+        AgendamentoSolicitacaoPix.agendamento_id.in_({ag.id for ag in ags_pagina})).all()} if ags_pagina else {}
+
     return jsonify({
-        'dados':     [_fmt_ag_gestor(ag) for ag in paginado.items],
+        'dados':     [_fmt_ag_gestor(ag, clientes, barbeiros, pixes) for ag in ags_pagina],
         'page':      paginado.page,
         'per_page':  paginado.per_page,
         'total':     paginado.total,
@@ -192,16 +214,16 @@ def cancelar_agendamento_gestor(ag_id):
 # Grade do Dia
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _fmt_ag_grade(ag):
-    """Formato compacto para exibição na grade diária."""
-    cliente = db.session.get(Cliente, ag.cliente_id)
-    itens   = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
+def _fmt_ag_grade(ag, clientes):
+    """Formato compacto para exibição na grade diária. `clientes`: dict {id: Cliente} pré-carregado."""
+    cliente = clientes.get(ag.cliente_id)
+    itens   = ag.itens  # eager-carregado (selectinload) pelo caller
 
     sv_nome  = '—'
     sv_preco = 0.0
     servicos = []
     for it in itens:
-        sv = db.session.get(Servico, it.servico_id)
+        sv = it.servico
         nome = sv.nome if sv else '—'
         sub  = float(it.preco_unitario)
         servicos.append({'nome': nome, 'subtotal': sub})
@@ -259,6 +281,7 @@ def grade_do_dia():
     dia_fim = datetime.combine(data, time_t(23, 59, 59))
     ags = (
         Agendamento.query
+        .options(selectinload(Agendamento.itens).selectinload(AgendamentoServico.servico))
         .filter(
             Agendamento.barbearia_id == bid,
             Agendamento.barbeiro_id == barbeiro_f,
@@ -268,6 +291,8 @@ def grade_do_dia():
         .order_by(Agendamento.data_hora)
         .all()
     )
+    clientes_grade = {c.id: c for c in Cliente.query.filter(
+        Cliente.id.in_({ag.cliente_id for ag in ags})).all()} if ags else {}
 
     return jsonify({
         'config':       {
@@ -276,7 +301,7 @@ def grade_do_dia():
             'intervalo_minutos':  config.intervalo_minutos if config else 30,
         } if config else None,
         'servicos':     [{'id': s.id, 'nome': s.nome, 'duracao_minutos': s.duracao_minutos, 'preco': float(s.preco)} for s in servicos],
-        'agendamentos': [_fmt_ag_grade(ag) for ag in ags],
+        'agendamentos': [_fmt_ag_grade(ag, clientes_grade) for ag in ags],
     }), 200
 
 

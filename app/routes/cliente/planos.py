@@ -36,13 +36,22 @@ def _uso_mes_atual(cliente_plano_id, servico_id):
     ).count()
 
 
-def _fmt_assinatura(cp):
-    plano = db.session.get(Plano, cp.plano_id)
-    servicos_plano = PlanoServico.query.filter_by(plano_id=cp.plano_id, ativo=True).all()
+def _fmt_assinatura(cp, planos=None, servicos_por_plano=None, servicos_map=None, usos=None):
+    """
+    planos/servicos_por_plano/servicos_map/usos: lookups pré-carregados em
+    lote (Bloco 5.1) — quando None (chamada de item único: detalhar), cai em
+    query pontual por assinatura, aceitável fora de um loop.
+    """
+    plano = planos.get(cp.plano_id) if planos is not None else db.session.get(Plano, cp.plano_id)
+    if servicos_por_plano is not None:
+        servicos_plano = servicos_por_plano.get(cp.plano_id, [])
+    else:
+        servicos_plano = PlanoServico.query.filter_by(plano_id=cp.plano_id, ativo=True).all()
+
     servicos = []
     for ps in servicos_plano:
-        svc = db.session.get(Servico, ps.servico_id)
-        uso = _uso_mes_atual(cp.id, ps.servico_id)
+        svc = servicos_map.get(ps.servico_id) if servicos_map is not None else db.session.get(Servico, ps.servico_id)
+        uso = usos.get((cp.id, ps.servico_id), 0) if usos is not None else _uso_mes_atual(cp.id, ps.servico_id)
         limite = limite_para_fora(ps.limite_uso_mensal)
         servicos.append({
             'servico_id':        ps.servico_id,
@@ -78,7 +87,37 @@ def listar_minhas_assinaturas():
     elif ativo == 'false':
         q = q.filter_by(ativo=False)
     assinaturas = q.order_by(ClientePlano.criado_em.desc()).all()
-    return jsonify([_fmt_assinatura(cp) for cp in assinaturas]), 200
+    if not assinaturas:
+        return jsonify([]), 200
+
+    plano_ids = {cp.plano_id for cp in assinaturas}
+    planos = {p.id: p for p in Plano.query.filter(Plano.id.in_(plano_ids)).all()}
+
+    ps_rows = PlanoServico.query.filter(
+        PlanoServico.plano_id.in_(plano_ids), PlanoServico.ativo == True
+    ).all()
+    servicos_por_plano = {}
+    for ps in ps_rows:
+        servicos_por_plano.setdefault(ps.plano_id, []).append(ps)
+    servico_ids = {ps.servico_id for ps in ps_rows}
+    servicos_map = {s.id: s for s in Servico.query.filter(Servico.id.in_(servico_ids)).all()} if servico_ids else {}
+
+    hoje = hoje_brasilia()
+    cp_ids = {cp.id for cp in assinaturas}
+    uso_rows = ClientePlanoUso.query.filter(
+        ClientePlanoUso.cliente_plano_id.in_(cp_ids),
+        db.extract('year',  ClientePlanoUso.data_uso) == hoje.year,
+        db.extract('month', ClientePlanoUso.data_uso) == hoje.month,
+    ).all()
+    usos = {}
+    for u in uso_rows:
+        key = (u.cliente_plano_id, u.servico_id)
+        usos[key] = usos.get(key, 0) + 1
+
+    return jsonify([
+        _fmt_assinatura(cp, planos, servicos_por_plano, servicos_map, usos)
+        for cp in assinaturas
+    ]), 200
 
 
 # ── GET /api/v1/cliente/planos/<id> ──────────────────────────────────────────

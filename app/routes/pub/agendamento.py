@@ -56,10 +56,19 @@ def _get_config(barbearia_id: int) -> ConfiguracaoAgendamento:
     return c
 
 
-def _fmt_agendamento(ag, servicos_info):
+def _fmt_agendamento(ag, servicos_info, barbeiro_nomes=None):
+    """
+    barbeiro_nomes: dict {barbeiro_id: nome} pré-carregado em lote (Bloco 5.1)
+    para uso em listagens. Quando None (chamada de item único: criar/detalhar),
+    cai na query pontual, aceitável fora de um loop.
+    """
     fim = fim_agendamento(ag.data_hora, ag.duracao_minutos)
-    br = db.session.get(Barbeiro, ag.barbeiro_id) if ag.barbeiro_id else None
-    br_usr = db.session.get(Usuario, br.usuario_id) if br else None
+    if barbeiro_nomes is not None:
+        nome = barbeiro_nomes.get(ag.barbeiro_id)
+    else:
+        br = db.session.get(Barbeiro, ag.barbeiro_id) if ag.barbeiro_id else None
+        br_usr = db.session.get(Usuario, br.usuario_id) if br else None
+        nome = br_usr.nome if br_usr else None
     return {
         'id':               ag.id,
         'status':           ag.status,
@@ -73,7 +82,7 @@ def _fmt_agendamento(ag, servicos_info):
         'metodo_pagamento': ag.metodo_pagamento,
         'observacao':       ag.observacao,
         'barbeiro_id':      ag.barbeiro_id,
-        'barbeiro_nome':    br_usr.nome if br_usr else None,
+        'barbeiro_nome':    nome,
         'servicos':         servicos_info,
     }
 

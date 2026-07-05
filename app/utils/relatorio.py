@@ -56,6 +56,7 @@ def gerar_dados(barbearia_id: int, de: date, ate: date, colunas: list[str]) -> l
     Retorna lista de dicts com apenas as colunas solicitadas.
     Sempre filtra por barbearia_id (isolamento tenant).
     """
+    from sqlalchemy.orm import selectinload
     from app.extensions import db
     from app.models import (
         Agendamento, AgendamentoServico, Servico,
@@ -64,6 +65,7 @@ def gerar_dados(barbearia_id: int, de: date, ate: date, colunas: list[str]) -> l
 
     ags = (
         Agendamento.query
+        .options(selectinload(Agendamento.itens).selectinload(AgendamentoServico.servico))
         .filter(
             Agendamento.barbearia_id == barbearia_id,
             db.func.date(Agendamento.data_hora) >= de,
@@ -73,6 +75,26 @@ def gerar_dados(barbearia_id: int, de: date, ate: date, colunas: list[str]) -> l
         .all()
     )
 
+    if not ags:
+        return []
+
+    # Batch: clientes e barbeiros (+ usuário do barbeiro) usados no relatório inteiro.
+    clientes = {}
+    if 'cliente' in colunas:
+        clientes = {c.id: c for c in Cliente.query.filter(
+            Cliente.id.in_({ag.cliente_id for ag in ags})).all()}
+
+    barbeiro_nomes = {}
+    if 'barbeiro' in colunas:
+        barbeiros = {b.id: b for b in Barbeiro.query.filter(
+            Barbeiro.id.in_({ag.barbeiro_id for ag in ags})).all()}
+        usuarios = {u.id: u for u in Usuario.query.filter(
+            Usuario.id.in_({b.usuario_id for b in barbeiros.values()})).all()} if barbeiros else {}
+        barbeiro_nomes = {
+            bid: (usuarios.get(b.usuario_id).nome if usuarios.get(b.usuario_id) else '—')
+            for bid, b in barbeiros.items()
+        }
+
     resultado = []
     for ag in ags:
         linha: dict = {}
@@ -81,16 +103,11 @@ def gerar_dados(barbearia_id: int, de: date, ate: date, colunas: list[str]) -> l
             linha['data'] = ag.data_hora.strftime('%d/%m/%Y %H:%M')
 
         if 'cliente' in colunas:
-            cli = db.session.get(Cliente, ag.cliente_id)
+            cli = clientes.get(ag.cliente_id)
             linha['cliente'] = cli.nome if cli else '—'
 
         if 'servico' in colunas:
-            itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
-            nomes = []
-            for it in itens:
-                s = db.session.get(Servico, it.servico_id)
-                if s:
-                    nomes.append(s.nome + (' [P]' if it.is_plano else ''))
+            nomes = [it.servico.nome + (' [P]' if it.is_plano else '') for it in ag.itens if it.servico]
             linha['servico'] = ', '.join(nomes) if nomes else '—'
 
         if 'status' in colunas:
@@ -100,9 +117,7 @@ def gerar_dados(barbearia_id: int, de: date, ate: date, colunas: list[str]) -> l
             linha['valor_total'] = float(ag.valor_total)
 
         if 'barbeiro' in colunas:
-            br = db.session.get(Barbeiro, ag.barbeiro_id)
-            br_u = db.session.get(Usuario, br.usuario_id) if br else None
-            linha['barbeiro'] = br_u.nome if br_u else '—'
+            linha['barbeiro'] = barbeiro_nomes.get(ag.barbeiro_id, '—')
 
         if 'metodo' in colunas:
             linha['metodo'] = ag.metodo_pagamento or '—'
@@ -111,8 +126,7 @@ def gerar_dados(barbearia_id: int, de: date, ate: date, colunas: list[str]) -> l
             linha['duracao'] = ag.duracao_minutos
 
         if 'is_plano' in colunas:
-            itens = itens if 'servico' in colunas else AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
-            linha['is_plano'] = any(it.is_plano for it in itens)
+            linha['is_plano'] = any(it.is_plano for it in ag.itens)
 
         resultado.append(linha)
 

@@ -1,4 +1,5 @@
 from flask import Blueprint, g, jsonify
+from sqlalchemy.orm import selectinload
 from app.extensions import db
 from app.models import (
     Agendamento, AgendamentoServico, Servico, Barbeiro, Usuario, Cliente,
@@ -41,6 +42,7 @@ def dashboard_barbeiro():
     # Agendamentos de hoje
     ags_hoje = (
         Agendamento.query
+        .options(selectinload(Agendamento.itens))
         .filter(
             Agendamento.barbearia_id == g.barbearia_id,
             Agendamento.barbeiro_id == barbeiro.id,
@@ -53,6 +55,7 @@ def dashboard_barbeiro():
     # Agendamentos do mês
     ags_mes = (
         Agendamento.query
+        .options(selectinload(Agendamento.itens))
         .filter(
             Agendamento.barbearia_id == g.barbearia_id,
             Agendamento.barbeiro_id == barbeiro.id,
@@ -63,13 +66,12 @@ def dashboard_barbeiro():
         .all()
     )
 
-    # Comissão: calcula via AgendamentoServico para separar plano vs avulso
+    # Comissão: calcula via AgendamentoServico (já eager-carregado) para separar plano vs avulso
     def _comissao_ags(ags_list):
         total_comissao = 0.0
         total_receita  = 0.0
         for ag in ags_list:
-            itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
-            total_comissao += _calcular_comissao(itens, barbeiro)
+            total_comissao += _calcular_comissao(ag.itens, barbeiro)
             total_receita  += float(ag.valor_total)
         return round(total_comissao, 2), round(total_receita, 2)
 
@@ -80,6 +82,7 @@ def dashboard_barbeiro():
     agora = naive_brasilia()
     proximos = (
         Agendamento.query
+        .options(selectinload(Agendamento.itens).selectinload(AgendamentoServico.servico))
         .filter(
             Agendamento.barbearia_id == g.barbearia_id,
             Agendamento.barbeiro_id == barbeiro.id,
@@ -91,15 +94,16 @@ def dashboard_barbeiro():
         .all()
     )
 
+    clientes_proximos = {
+        c.id: c for c in Cliente.query.filter(
+            Cliente.id.in_({ag.cliente_id for ag in proximos})
+        ).all()
+    } if proximos else {}
+
     proximos_fmt = []
     for ag in proximos:
-        cli = db.session.get(Cliente, ag.cliente_id)
-        itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
-        servicos_nomes = []
-        for it in itens:
-            s = db.session.get(Servico, it.servico_id)
-            if s:
-                servicos_nomes.append(s.nome)
+        cli = clientes_proximos.get(ag.cliente_id)
+        servicos_nomes = [it.servico.nome for it in ag.itens if it.servico]
         proximos_fmt.append({
             'id':              ag.id,
             'data_hora':       ag.data_hora.isoformat(),
@@ -116,8 +120,7 @@ def dashboard_barbeiro():
         avulso_mes = 0.0
         plano_mes  = 0.0
         for ag in ags_mes:
-            itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
-            for it in itens:
+            for it in ag.itens:
                 if it.is_plano:
                     plano_mes  += float(it.preco_unitario) * float(barbeiro.comissao_plano_percentual) / 100
                 else:
