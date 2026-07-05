@@ -144,7 +144,7 @@ class Barbeiro(db.Model):
 
     id                        = db.Column(db.Integer, primary_key=True)
     barbearia_id              = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, index=True)
-    usuario_id                = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    usuario_id                = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False, index=True)
     foto                      = db.Column(db.String(255))
     bio                       = db.Column(db.String(300))
     comissao_percentual       = db.Column(db.Numeric(5, 2), nullable=False, default=0)
@@ -167,7 +167,7 @@ class Cliente(db.Model):
 
     id              = db.Column(db.Integer, primary_key=True)
     barbearia_id    = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, index=True)
-    usuario_id      = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
+    usuario_id      = db.Column(db.Integer, db.ForeignKey('usuarios.id'), index=True)
     nome            = db.Column(db.String(100), nullable=False)
     telefone        = db.Column(db.String(20), nullable=False)
     email           = db.Column(db.String(150))
@@ -212,7 +212,7 @@ class BarbeiroServico(db.Model):
 
     id          = db.Column(db.Integer, primary_key=True)
     barbeiro_id = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=False, index=True)
-    servico_id  = db.Column(db.Integer, db.ForeignKey('servicos.id'), nullable=False)
+    servico_id  = db.Column(db.Integer, db.ForeignKey('servicos.id'), nullable=False, index=True)
 
 
 class Produto(TenantMixin, db.Model):
@@ -285,7 +285,7 @@ class Agendamento(TenantMixin, db.Model):
     metodo_pagamento = db.Column(db.String(20), nullable=False, default='local')  # pix, local
     criado_em        = db.Column(db.DateTime, default=_utcnow)
     # ── Cupons de desconto ────────────────────────────────────────────────────
-    cupom_id         = db.Column(db.Integer, db.ForeignKey('cupons.id'), nullable=True)
+    cupom_id         = db.Column(db.Integer, db.ForeignKey('cupons.id'), nullable=True, index=True)
     valor_desconto   = db.Column(db.Numeric(10, 2), nullable=False, default=0)
 
     # ── Bloco 5.1: relationship somente-leitura para eager loading (selectinload).
@@ -304,7 +304,7 @@ class AgendamentoServico(db.Model):
     quantidade       = db.Column(db.Integer, nullable=False, default=1)
     preco_unitario   = db.Column(db.Numeric(10, 2), nullable=False)
     is_plano         = db.Column(db.Boolean, nullable=False, default=False)
-    cliente_plano_id = db.Column(db.Integer, db.ForeignKey('cliente_plano.id'), nullable=True)
+    cliente_plano_id = db.Column(db.Integer, db.ForeignKey('cliente_plano.id'), nullable=True, index=True)
 
     # ── Bloco 5.1: idem, somente-leitura, sem backref no Servico.
     servico = db.relationship('Servico', viewonly=True, lazy='select')
@@ -365,7 +365,7 @@ class Atendimento(TenantMixin, db.Model):
     id              = db.Column(db.Integer, primary_key=True)
     agendamento_id  = db.Column(db.Integer, db.ForeignKey('agendamentos.id'), nullable=False, unique=True)
     barbeiro_id     = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=False, index=True)
-    cliente_id      = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
+    cliente_id      = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False, index=True)
     status_operacao = db.Column(db.String(20), nullable=False)  # efetuado, nao_efetuado
     total           = db.Column(db.Numeric(10, 2))
     criado_em       = db.Column(db.DateTime, default=_utcnow)
@@ -433,7 +433,7 @@ class Plano(TenantMixin, db.Model):
     __tablename__ = 'planos'
 
     id            = db.Column(db.Integer, primary_key=True)
-    barbeiro_id   = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=True)
+    barbeiro_id   = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=True, index=True)
     nome          = db.Column(db.String(150), nullable=False)
     descricao     = db.Column(db.Text)
     preco_mensal  = db.Column(db.Numeric(10, 2), nullable=False)
@@ -453,7 +453,7 @@ class PlanoServico(db.Model):
 
     id                = db.Column(db.Integer, primary_key=True)
     plano_id          = db.Column(db.Integer, db.ForeignKey('planos.id'), nullable=False, index=True)
-    servico_id        = db.Column(db.Integer, db.ForeignKey('servicos.id'), nullable=False)
+    servico_id        = db.Column(db.Integer, db.ForeignKey('servicos.id'), nullable=False, index=True)
     limite_uso_mensal = db.Column(db.Integer, nullable=False)  # 99999 = ilimitado (sentinela)
     dias_expiracao    = db.Column(db.Integer, nullable=False)
     ativo             = db.Column(db.Boolean, default=True, nullable=False)
@@ -465,7 +465,7 @@ class ClientePlano(db.Model):
     id           = db.Column(db.Integer, primary_key=True)
     barbearia_id = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, index=True)
     cliente_id   = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False, index=True)
-    plano_id     = db.Column(db.Integer, db.ForeignKey('planos.id'), nullable=False)
+    plano_id     = db.Column(db.Integer, db.ForeignKey('planos.id'), nullable=False, index=True)
     barbeiro_id  = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=True)  # null = plano aberto
     data_inicio  = db.Column(db.Date, nullable=False)
     data_fim     = db.Column(db.Date)
@@ -493,7 +493,7 @@ class ClientePlanoUso(db.Model):
 
     id               = db.Column(db.Integer, primary_key=True)
     cliente_plano_id = db.Column(db.Integer, db.ForeignKey('cliente_plano.id'), nullable=False, index=True)
-    servico_id       = db.Column(db.Integer, db.ForeignKey('servicos.id'), nullable=False)
+    servico_id       = db.Column(db.Integer, db.ForeignKey('servicos.id'), nullable=False, index=True)
     data_uso         = db.Column(db.Date, nullable=False)
     semana_do_mes    = db.Column(db.Integer, nullable=False)
     usado            = db.Column(db.Boolean, default=False, nullable=False)
@@ -504,7 +504,7 @@ class ClientePlanoSolicitacao(db.Model):
 
     id               = db.Column(db.Integer, primary_key=True)
     barbearia_id     = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, index=True)
-    cliente_id       = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
+    cliente_id       = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False, index=True)
     plano_id         = db.Column(db.Integer, db.ForeignKey('planos.id'), nullable=False)
     barbeiro_id      = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=True)  # null = plano aberto
     valor            = db.Column(db.Numeric(10, 2), nullable=False)
@@ -627,8 +627,8 @@ class AuditoriaLog(db.Model):
     __tablename__ = 'auditoria_log'
 
     id           = db.Column(db.Integer, primary_key=True)
-    usuario_id   = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
-    barbearia_id = db.Column(db.Integer, db.ForeignKey('barbearias.id'))
+    usuario_id   = db.Column(db.Integer, db.ForeignKey('usuarios.id'), index=True)
+    barbearia_id = db.Column(db.Integer, db.ForeignKey('barbearias.id'), index=True)
     tipo_acao    = db.Column(db.String(50), nullable=False)   # create, edit, delete, login
     entidade     = db.Column(db.String(100), nullable=False)
     entidade_id  = db.Column(db.Integer)
