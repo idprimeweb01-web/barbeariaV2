@@ -39,8 +39,8 @@ export const api = {
   },
 
   planos: {
-    listar:    ()        => _req('GET',  `/pub/${SLUG}/planos`),
-    solicitar: (id, body) => _req('POST', `/pub/${SLUG}/planos/${id}/solicitar`, body),
+    listar:    ()        => _req('GET',  `/api/v1/pub/${SLUG}/planos`),
+    solicitar: (id, body) => _req('POST', `/api/v1/pub/${SLUG}/planos/${id}/solicitar`, body),
   },
 
   logout: async () => {

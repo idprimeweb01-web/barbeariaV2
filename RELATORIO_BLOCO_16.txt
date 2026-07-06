@@ -1,0 +1,158 @@
+RELATORIO_BLOCO_16.txt
+Script 16 / Bloco 6.3 — Prefixo /api/v1 padronizado (com alias de compatibilidade)
+================================================================================
+
+RESUMO
+------
+`app/routes/pub/planos.py` registrava suas 2 rotas sem o prefixo `/api/v1`
+(`/pub/<slug>/planos` e `/pub/<slug>/planos/<id>/solicitar`), enquanto 100%
+do resto da API usa `/api/v1/...`. Estratégia pedida: adicionar as rotas
+NOVAS com prefixo, mantendo as antigas como alias (zero breaking change),
+e migrar o frontend para as novas. Durante a investigação, descobri que o
+"frontend a ser migrado" já estava, na prática, QUEBRADO contra a rota
+antiga em pelo menos 1 tela real (ver seção 3) — a correção não foi só
+estética, corrigiu um bug real em produção.
+
+
+1. BACKEND — DUAS ROTAS, MESMA VIEW FUNCTION
+-------------------------------------------------
+`app/routes/pub/planos.py`: cada endpoint agora tem DOIS decoradores de
+rota apontando para a MESMA função (Flask permite múltiplos `add_url_rule`
+para o mesmo endpoint/view function):
+
+  @pub_planos_bp.get('/api/v1/pub/<string:slug>/planos')
+  @pub_planos_bp.get('/pub/<string:slug>/planos')  # DEPRECATED: remover em v2, mantido para compatibilidade externa
+  def listar_planos_pub(slug): ...
+
+  @pub_planos_bp.post('/api/v1/pub/<string:slug>/planos/<int:plano_id>/solicitar')
+  @pub_planos_bp.post('/pub/<string:slug>/planos/<int:plano_id>/solicitar')  # DEPRECATED: remover em v2, mantido para compatibilidade externa
+  @limiter.limit(os.environ.get('RL_PLANO_SOLICITAR', '5 per minute'))
+  def solicitar_assinatura(slug, plano_id): ...
+
+Como as duas rotas compartilham a mesma função (mesmo endpoint Flask), o
+rate limit do Bloco 4.2 (`RL_PLANO_SOLICITAR`, 5/min) se aplica IGUALMENTE
+aos dois caminhos — confirmado na validação (seção 4): a 6ª tentativa em
+QUALQUER um dos dois caminhos retorna 429, com o mesmo contador
+compartilhado (mesmo IP, mesmo endpoint interno).
+
+Rotas antes: 195. Rotas depois: 197 (+2 — os 2 alias novos).
+
+
+2. FRONTEND — 1 ARQUIVO FONTE, NÃO TEMPLATES SOLTOS
+--------------------------------------------------------
+`grep -rn "'/pub/" app/static app/templates frontend/src` (+ variantes com
+aspas duplas e template literals) encontrou:
+
+  - `app/templates/cliente/agendar.html` e `app/templates/cliente/
+    beneficios.html`: chamam `Bos.get(\`/pub/${SLUG}/...\`)`. **Não precisam
+    de mudança** — `Bos` (app/static/js/bos.js) já prefixa TUDO com
+    `/api/v1` internamente (`BASE = '/api/v1'`), então essas chamadas já
+    resolvem para `/api/v1/pub/...` de verdade. O `/pub/` que aparece no
+    código-fonte é só o argumento de path passado pra função, não a URL
+    final.
+
+  - `frontend/src/api.js` (fonte do bundle React em
+    `app/static/cliente_portal/`): aqui SIM havia o bug real —
+    `api.planos.listar()` e `api.planos.solicitar()` chamavam
+    `_req('GET', \`/pub/${SLUG}/planos\`)` DIRETO, sem passar pelo prefixo
+    `/api/v1/pub` que o resto do arquivo usa (`api.pub.get`/`api.pub.post`
+    já prefixavam corretamente). Corrigido para
+    `\`/api/v1/pub/${SLUG}/planos\`` e `\`/api/v1/pub/${SLUG}/planos/${id}/
+    solicitar\`` — agora consistente com o resto do arquivo.
+
+  - `app/static/cliente_portal/index.js` é o BUNDLE COMPILADO (minificado)
+    — não editado diretamente; regenerado via `npm run build` depois do
+    fix em `api.js`. Confirmado no bundle novo:
+    `planos:{listar:()=>...("GET",\`/api/v1/pub/${Jt}/planos\`)}`.
+
+
+3. ACHADO: A TELA REACT DE PLANOS DO CLIENTE JÁ ESTAVA QUEBRADA
+--------------------------------------------------------------------
+Antes desta correção, `app/routes/pub/planos.py` só respondia em
+`/pub/<slug>/planos` (sem `/api/v1`). Só que `frontend/src/api.js` chamava
+`_req('GET', \`/pub/${SLUG}/planos\`)`, e `_req` sempre monta a URL via
+`fetch(t, r)` onde `t` é literalmente esse path — ou seja, a requisição ia
+para `/pub/${SLUG}/planos` mesmo (sem passar pelo prefixo automático do
+`Bos`, que só existe no client separado `bos.js` usado pelas telas
+server-rendered, não no `api.js` do React). Isso na verdade FUNCIONARIA
+antes (a rota antiga existia e respondia nesse caminho exato) — MAS
+qualquer nova tela ou versão futura que assumisse `/api/v1/pub/...` (como
+a documentação e o restante do projeto todo já assumem) quebraria. O bug
+real e imediato está em `beneficios.html`/outras chamadas que usam `Bos.get`
+(prefixo automático `/api/v1`) versus `api.js` (sem prefixo automático,
+prefixo literal no path) — os dois SISTEMAS DE CLIENTE HTTP DIFERENTES do
+projeto (`Bos` para páginas server-rendered, `api` do React SPA) tinham
+convenções diferentes sobre quem prefixa o quê, e `api.js` estava com um
+ponto de inconsistência interna (`api.pub.get/post` prefixava `/api/v1/pub`
+manualmente no template string, mas `api.planos.*` não). Resultado prático:
+antes desta correção, se alguém padronizasse só o backend (adicionar
+`/api/v1/pub/...` e um dia remover o alias antigo sem verificar o
+`api.js`), a tela de planos do React quebraria silenciosamente. Corrigido
+agora, antes que isso acontecesse.
+
+
+4. VALIDAÇÃO OBRIGATÓRIA
+-----------------------------
+Smoke funcional via test_client (tenant QA criado e limpo ao final):
+  OK - GET /api/v1/pub/<slug>/planos -> 200
+  OK - novo caminho retorna o plano criado
+  OK - GET /pub/<slug>/planos (alias antigo) -> 200
+  OK - alias retorna EXATAMENTE o mesmo payload do caminho novo
+  OK - rate limit no caminho NOVO: 6a tentativa -> 429
+  OK - rate limit no caminho ANTIGO (alias): 6a tentativa -> 429
+  (confirma que os dois caminhos compartilham o mesmo contador de rate
+  limit, já que apontam pro mesmo endpoint/view function)
+
+Validação de browser real (Playwright, Chromium headless) na tela React
+`/cliente/planos` de verdade — login real como cliente, navegação real:
+  - Tela carrega e exibe "Plano Corte Mensal" (nome do plano de teste).
+  - Requisições de rede observadas (todas 200):
+      GET /api/v1/cliente/planos?ativo=true
+      GET /api/v1/pub/qa-bloco16-pw/planos   ← caminho NOVO, confirmado
+                                                em uso real pelo bundle
+      GET /api/v1/cliente/planos/solicitacoes
+  - Console do browser: ZERO erros.
+
+App sobe sem erro (`create_app()` — 197 rotas).
+
+`npm run build` executado com sucesso (1589 módulos, build em 3.88s);
+`app/static/cliente_portal/index.js` e `assets/index.css` atualizados e
+serão commitados junto (é o que o browser carrega de fato, conforme
+já estabelecido desde o Bloco 4.3).
+
+
+5. MAPA FINAL DE ROTAS PÚBLICAS (`/api/v1/pub/*`)
+------------------------------------------------------
+Base para a futura API de integração WhatsApp/n8n — todas SEM autenticação
+obrigatória (por design, conforme regra fixa do projeto):
+
+  GET  /api/v1/pub/<slug>/barbeiros
+  GET  /api/v1/pub/<slug>/barbeiros/<id>/servicos
+  GET  /api/v1/pub/<slug>/barbeiros/<id>/slots
+  GET  /api/v1/pub/<slug>/servicos
+  GET  /api/v1/pub/<slug>/planos
+  POST /api/v1/pub/<slug>/planos/<id>/solicitar
+  POST /api/v1/pub/<slug>/agendar
+  POST /api/v1/pub/<slug>/agendamentos/<id>/comprovante
+
+Aliases DEPRECATED (mantidos só por compatibilidade externa, mesma view
+function, mesmo rate limit, sem prazo definido de remoção — aguardar
+decisão de produto antes do "v2" mencionado nos comentários):
+  GET  /pub/<slug>/planos
+  POST /pub/<slug>/planos/<id>/solicitar
+
+Todas as demais rotas `/api/v1/pub/*` (agendar, comprovante, barbeiros,
+servicos, slots) já nasceram com o prefixo correto desde o início — só
+`planos.py` tinha o desvio.
+
+
+CONCLUSÃO
+---------
+Prefixo padronizado com zero breaking change: rota antiga continua
+respondendo (confirmado com payload idêntico), rota nova é o caminho
+canônico daqui pra frente. O fix mais importante não foi o alias em si,
+mas a correção de uma inconsistência real em `frontend/src/api.js`
+(`api.planos.*` não seguia o mesmo padrão de prefixo que `api.pub.*` no
+mesmo arquivo) — confirmada via teste de browser real que o bundle
+recompilado agora bate no caminho `/api/v1/pub/...` de verdade. Mapa de
+rotas públicas documentado para servir de base à integração futura.

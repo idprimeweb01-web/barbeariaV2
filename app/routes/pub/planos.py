@@ -45,9 +45,10 @@ def _fmt_plano_pub(p):
     }
 
 
-# ── GET /pub/<slug>/planos ────────────────────────────────────────────────────
+# ── GET /api/v1/pub/<slug>/planos ─────────────────────────────────────────────
 
-@pub_planos_bp.get('/pub/<string:slug>/planos')
+@pub_planos_bp.get('/api/v1/pub/<string:slug>/planos')
+@pub_planos_bp.get('/pub/<string:slug>/planos')  # DEPRECATED: remover em v2, mantido para compatibilidade externa
 def listar_planos_pub(slug):
     """Lista planos ativos disponíveis para assinatura."""
     b = _get_barbearia_ou_404(slug)
@@ -64,11 +65,12 @@ def listar_planos_pub(slug):
     return jsonify([_fmt_plano_pub(p) for p in planos]), 200
 
 
-# ── POST /pub/<slug>/planos/<id>/solicitar ───────────────────────────────────
+# ── POST /api/v1/pub/<slug>/planos/<id>/solicitar ────────────────────────────
 # Cria ClientePlanoSolicitacao com status=pendente.
 # Ativação só acontece após aprovação do gestor (PIX manual ou outro método).
 
-@pub_planos_bp.post('/pub/<string:slug>/planos/<int:plano_id>/solicitar')
+@pub_planos_bp.post('/api/v1/pub/<string:slug>/planos/<int:plano_id>/solicitar')
+@pub_planos_bp.post('/pub/<string:slug>/planos/<int:plano_id>/solicitar')  # DEPRECATED: remover em v2, mantido para compatibilidade externa
 @limiter.limit(os.environ.get('RL_PLANO_SOLICITAR', '5 per minute'))
 def solicitar_assinatura(slug, plano_id):
     b = _get_barbearia_ou_404(slug)
