@@ -1,12 +1,12 @@
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import get_jwt_identity
+from flask import Blueprint, request, g, jsonify
 from app import db
-from app.models import VipNivel, ClientePlano
-from app.utils import get_barbearia_atual, registrar_auditoria
-from app.routes.auth import gestor_required
+from app.models import VipNivel, ClienteVip
+from app.utils import registrar_auditoria
+from app.decorators.auth import gestor_required
+from app.utils.features import feature_required
 from app.utils.db import commit_ou_falhar
 
-vip = Blueprint('vip', __name__, url_prefix='/api/vip')
+vip_bp = Blueprint('vip', __name__, url_prefix='/api/v1/gestor/vip')
 
 TIPOS_BRINDE_VALIDOS = {'fisico', 'desconto'}
 
@@ -28,22 +28,23 @@ def _fmt_nivel(v):
     }
 
 
-# ── GET /api/vip/niveis ──────────────────────────────────────────────────────────
+# ── GET /api/v1/gestor/vip/niveis ─────────────────────────────────────────────────
 
-@vip.get('/niveis')
+@vip_bp.get('/niveis')
 @gestor_required
 def listar_niveis():
-    barbearia_id = get_barbearia_atual()
+    barbearia_id = g.barbearia_id
     rows = VipNivel.query.filter_by(barbearia_id=barbearia_id).order_by(VipNivel.nivel).all()
     return jsonify([_fmt_nivel(v) for v in rows])
 
 
-# ── POST /api/vip/niveis ──────────────────────────────────────────────────────────
+# ── POST /api/v1/gestor/vip/niveis ────────────────────────────────────────────────
 
-@vip.post('/niveis')
+@vip_bp.post('/niveis')
 @gestor_required
+@feature_required('vip_brindes')
 def criar_nivel():
-    barbearia_id = get_barbearia_atual()
+    barbearia_id = g.barbearia_id
     dados = request.get_json(silent=True)
     if not dados:
         return _erro('Corpo da requisição inválido ou ausente.')
@@ -83,17 +84,18 @@ def criar_nivel():
     )
     db.session.add(vip_nivel)
     commit_ou_falhar('vip.criar_nivel')
-    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'create', 'vip_nivel', vip_nivel.id,
+    registrar_auditoria(g.user_id, barbearia_id, 'create', 'vip_nivel', vip_nivel.id,
                          f'Criou nível VIP {nivel}.')
     return jsonify({'mensagem': 'Nível VIP criado.', 'nivel': _fmt_nivel(vip_nivel)}), 201
 
 
-# ── PUT /api/vip/niveis/<id> ──────────────────────────────────────────────────────
+# ── PUT /api/v1/gestor/vip/niveis/<id> ────────────────────────────────────────────
 
-@vip.put('/niveis/<int:nivel_id>')
+@vip_bp.put('/niveis/<int:nivel_id>')
 @gestor_required
+@feature_required('vip_brindes')
 def editar_nivel(nivel_id):
-    barbearia_id = get_barbearia_atual()
+    barbearia_id = g.barbearia_id
     vip_nivel = VipNivel.query.filter_by(id=nivel_id, barbearia_id=barbearia_id).first()
     if not vip_nivel:
         return _erro('Nível VIP não encontrado.', 404)
@@ -134,17 +136,18 @@ def editar_nivel(nivel_id):
         vip_nivel.modo_brinde_ativo = bool(dados['modo_brinde_ativo'])
 
     commit_ou_falhar('vip.editar_nivel')
-    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'edit', 'vip_nivel', vip_nivel.id,
+    registrar_auditoria(g.user_id, barbearia_id, 'edit', 'vip_nivel', vip_nivel.id,
                          f'Editou nível VIP {vip_nivel.nivel}.')
     return jsonify({'mensagem': 'Nível VIP atualizado.', 'nivel': _fmt_nivel(vip_nivel)})
 
 
-# ── PUT /api/vip/niveis/<id>/modo-brinde ─────────────────────────────────────────
+# ── PUT /api/v1/gestor/vip/niveis/<id>/modo-brinde ────────────────────────────────
 
-@vip.put('/niveis/<int:nivel_id>/modo-brinde')
+@vip_bp.put('/niveis/<int:nivel_id>/modo-brinde')
 @gestor_required
+@feature_required('vip_brindes')
 def toggle_modo_brinde(nivel_id):
-    barbearia_id = get_barbearia_atual()
+    barbearia_id = g.barbearia_id
     vip_nivel = VipNivel.query.filter_by(id=nivel_id, barbearia_id=barbearia_id).first()
     if not vip_nivel:
         return _erro('Nível VIP não encontrado.', 404)
@@ -157,22 +160,23 @@ def toggle_modo_brinde(nivel_id):
     })
 
 
-# ── DELETE /api/vip/niveis/<id> ──────────────────────────────────────────────────
+# ── DELETE /api/v1/gestor/vip/niveis/<id> ─────────────────────────────────────────
 
-@vip.delete('/niveis/<int:nivel_id>')
+@vip_bp.delete('/niveis/<int:nivel_id>')
 @gestor_required
+@feature_required('vip_brindes')
 def deletar_nivel(nivel_id):
-    barbearia_id = get_barbearia_atual()
+    barbearia_id = g.barbearia_id
     vip_nivel = VipNivel.query.filter_by(id=nivel_id, barbearia_id=barbearia_id).first()
     if not vip_nivel:
         return _erro('Nível VIP não encontrado.', 404)
 
-    if ClientePlano.query.filter_by(nivel_vip=vip_nivel.id).first():
+    if ClienteVip.query.filter_by(barbearia_id=barbearia_id, nivel_vip_atual=vip_nivel.nivel).first():
         return _erro('Este nível VIP está vinculado a clientes. Inative-o em vez de deletar.', 409)
 
     nivel_num = vip_nivel.nivel
     db.session.delete(vip_nivel)
     commit_ou_falhar('vip.deletar_nivel')
-    registrar_auditoria(int(get_jwt_identity()), barbearia_id, 'delete', 'vip_nivel', nivel_id,
+    registrar_auditoria(g.user_id, barbearia_id, 'delete', 'vip_nivel', nivel_id,
                          f'Deletou nível VIP {nivel_num}.')
     return jsonify({'mensagem': 'Nível VIP deletado.', 'id': nivel_id})

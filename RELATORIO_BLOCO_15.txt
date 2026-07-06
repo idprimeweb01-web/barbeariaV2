@@ -1,0 +1,181 @@
+RELATORIO_BLOCO_15.txt
+Script 15 / Bloco 6.2 — Blueprint VIP registrado + feature guards
+================================================================================
+
+RESUMO
+------
+`app/routes/vip.py` existia mas NUNCA rodou em produção nem em dev — a
+auditoria prévia (pedida antes de registrar) confirmou que o arquivo
+literalmente não conseguia ser importado (ImportError). Não era só "falta
+registrar o blueprint": o código em si estava quebrado em múltiplos pontos,
+e o FRONTEND correspondente (`gestor/vip.html`) também nunca funcionou,
+pois chamava um objeto JS (`api.vip.*`) que não existe em lugar nenhum do
+projeto. Tudo foi corrigido antes do registro, conforme pedido.
+
+
+1. AUDITORIA PRÉVIA — ACHADOS (todos corrigidos)
+-----------------------------------------------------
+
+a) **`from app.utils import get_barbearia_atual` — função inexistente.**
+   Confirmado via `ImportError: cannot import name 'get_barbearia_atual'`
+   ao tentar importar o blueprint isoladamente. Corrigido: todo uso de
+   `barbearia_id = get_barbearia_atual()` virou `barbearia_id = g.barbearia_id`
+   (padrão usado em 100% dos outros arquivos de `app/routes/gestor/`).
+
+b) **`from app.routes.auth import gestor_required` — módulo errado.**
+   `app/routes/auth.py` não define `gestor_required` (só tem login/refresh/
+   me/trocar_senha da API JWT pura). O decorator real é
+   `app.decorators.auth.gestor_required` — é o que toda rota de gestor no
+   projeto usa. Corrigido.
+
+c) **`from flask_jwt_extended import get_jwt_identity` + `int(get_jwt_identity())`
+   — inconsistente com o padrão do projeto.** Toda rota de gestor usa
+   `g.user_id` (populado por `load_user_context`, `app/context.py`) em vez
+   de chamar `get_jwt_identity()` diretamente. Corrigido nas 4 chamadas de
+   `registrar_auditoria`.
+
+d) **`ClientePlano.query.filter_by(nivel_vip=vip_nivel.id)` em `deletar_nivel`
+   — campo e modelo ERRADOS.** `ClientePlano` não tem nenhum campo
+   `nivel_vip` (isso levantaria `InvalidRequestError` do SQLAlchemy assim
+   que a query fosse montada). O campo real que guarda o nível VIP do
+   cliente é `ClienteVip.nivel_vip_atual` (um INTEGER com o NÚMERO do
+   nível, não uma FK para `VipNivel.id`). Corrigido para:
+   `ClienteVip.query.filter_by(barbearia_id=barbearia_id, nivel_vip_atual=vip_nivel.nivel).first()`
+   — usando o modelo certo, o campo certo, comparando pelo NÚMERO do nível
+   (não pelo id), e escopado por `barbearia_id` (isolamento de tenant, já
+   que `nivel_vip_atual` é só um inteiro que pode colidir entre tenants).
+   Esse era o guard que impede deletar um nível VIP em uso — estava
+   completamente inoperante antes (quebraria com 500 assim que alguém
+   tentasse deletar qualquer nível).
+
+e) **Tenant isolation**: todas as queries já filtravam por `barbearia_id`
+   corretamente (uma vez com o valor certo vindo de `g.barbearia_id`) — sem
+   outros problemas de isolamento encontrados.
+
+f) **Commits protegidos**: já usava `commit_ou_falhar` em todos os 4
+   endpoints de escrita (padrão do Script 09) — nenhuma mudança necessária.
+
+g) **Validação de payload**: já razoável (nivel inteiro positivo, whitelist
+   de `tipo_brinde`, valor_desconto numérico não-negativo quando aplicável)
+   — nenhuma lacuna crítica encontrada, nenhuma mudança feita aqui.
+
+h) **Timezone**: `VipNivel.criado_em` usa `_utcnow` (timestamp de sistema,
+   não lógica de negócio) — mesma exceção já documentada e aceita desde a
+   resolução da DT-001. Nenhuma mudança necessária.
+
+i) **URL prefix**: era `/api/vip` (sem `/api/v1`, inconsistente com 100% do
+   resto da API). Corrigido para `/api/v1/gestor/vip` — decisão detalhada
+   na seção 3.
+
+
+2. FRONTEND — `api.vip.*` NÃO EXISTE (achado adicional, fora da lista
+   original de auditoria, mas bloqueava 100% do funcionamento da tela)
+------------------------------------------------------------------------------
+`app/templates/gestor/vip.html` chamava `api.vip.listar()`,
+`api.vip.criar()`, `api.vip.editar()`, `api.vip.toggleModoBrinde()`,
+`api.vip.deletar()`. Busquei em todo o projeto (`app/templates/`,
+`app/static/js/`) por qualquer definição de um objeto global `api` — não
+existe NENHUMA. O único cliente HTTP real do projeto é `Bos`
+(`app/static/js/bos.js`, `BASE = '/api/v1'`, métodos `get/post/put/patch/
+delete`), usado por todas as outras telas do gestor (`cupons.html` como
+referência). Ou seja, a tela VIP nunca funcionou nem no frontend — teria
+disparado `ReferenceError: api is not defined` no console do browser desde
+sempre.
+
+Corrigido: as 5 chamadas em `vip.html` foram reescritas para usar `Bos.get/
+post/put/delete('/gestor/vip/niveis...')`, igual ao padrão de `cupons.html`.
+
+
+3. DECISÃO: PREFIXO E NOME DA FEATURE (desvios do texto literal da tarefa,
+   com justificativa)
+------------------------------------------------------------------------------
+- **Prefixo**: registrei em `/api/v1/gestor/vip` (não `/api/vip` como
+  estava, nem um genérico `/api/v1`). A tarefa pedia "testar com a UI
+  existente... se a tela chamar endpoints com prefixo diferente do
+  registrado, alinhar" — como a tela NÃO tinha nenhuma chamada real
+  funcionando (`api.vip` não existe), não havia um "prefixo esperado" para
+  alinhar; escolhi `/api/v1/gestor/vip` por ser o padrão de todo o resto do
+  gestor (`/api/v1/gestor/cupons`, `/api/v1/gestor/planos` etc.) e por ser
+  gestor-only (`@gestor_required` em toda rota).
+
+- **Nome da feature**: a tarefa diz `@feature_required('vip')`, mas o
+  catálogo real de features (`app/seeds.py`, `FEATURES`) usa a chave
+  `'vip_brindes'`, não `'vip'`. Confirmei que `feature_ativa(barbearia_id,
+  'vip')` SEMPRE retornaria `False` (não existe `FeatureMetadata.nome=
+  'vip'`), o que bloquearia PERMANENTEMENTE qualquer gestor de usar a
+  feature, mesmo com ela contratada/ativa. Usei `'vip_brindes'` (a chave
+  real), documentado aqui. Confirmado via teste funcional: com
+  `FeatureBarbearia(feature_id=<id de 'vip_brindes'>, ativo=True)`, os
+  endpoints de escrita liberam corretamente.
+
+
+4. FEATURE GUARDS APLICADOS
+--------------------------------
+VIP (`app/routes/vip.py`) — `@feature_required('vip_brindes')` adicionado
+  em: `criar_nivel` (POST), `editar_nivel` (PUT), `toggle_modo_brinde`
+  (PUT), `deletar_nivel` (DELETE). NÃO em `listar_niveis` (GET) — leitura
+  livre, conforme pedido.
+
+Planos (`app/routes/gestor/planos.py`, BUG#6 bônus) —
+  `@feature_required('planos')` adicionado em: `criar_plano` (POST),
+  `editar_plano` (PATCH), `desativar_plano` (DELETE). NÃO em
+  `listar_planos`/`detalhar_plano` (GET) nem nos endpoints de
+  serviços-do-plano ou aprovação de solicitação (fora do escopo literal
+  "criar/editar/desativar plano" pedido pela tarefa).
+
+
+5. REGISTRO DO BLUEPRINT
+-----------------------------
+`app/__init__.py`: `from .routes.vip import vip_bp` +
+`app.register_blueprint(vip_bp)`, mesmo padrão dos outros 27 blueprints já
+registrados. Rotas confirmadas após o registro (190 → 195 rotas):
+  GET    /api/v1/gestor/vip/niveis
+  POST   /api/v1/gestor/vip/niveis
+  PUT    /api/v1/gestor/vip/niveis/<id>
+  PUT    /api/v1/gestor/vip/niveis/<id>/modo-brinde
+  DELETE /api/v1/gestor/vip/niveis/<id>
+
+
+6. VALIDAÇÃO OBRIGATÓRIA
+-----------------------------
+Smoke funcional via test_client (tenant QA criado e limpo ao final, 12
+verificações):
+  OK - login gestor
+  OK - criar nivel com feature OFF -> 403
+  OK - listar niveis (leitura) sem feature_required -> 200
+  OK - FeatureMetadata "vip_brindes" existe no catalogo
+  OK - criar nivel com feature ON -> 201
+  OK - listar niveis apos criar -> 1 item
+  OK - editar nivel -> 200
+  OK - toggle modo brinde -> 200
+  OK - deletar nivel vinculado a cliente -> 409 (guard funcionando)
+  OK - deletar nivel sem vinculo -> 200
+  OK - criar plano com feature "planos" OFF -> 403
+  OK - listar planos (leitura) sem feature_required -> 200
+  RESULTADO: 12/12 OK
+
+Validação de browser real (Playwright, Chromium headless) na tela
+/gestor/vip de verdade — login real, navegação real, formulário real:
+  - Estado vazio ("Nenhum nível VIP cadastrado.") renderiza corretamente.
+  - Criar nível pelo modal (nivel=1, descrição, tipo=físico) → aparece na
+    tabela imediatamente após salvar.
+  - Toggle do checkbox "modo brinde" → sem erro.
+  - Deletar pelo botão (com confirm() do browser) → tabela volta ao estado
+    vazio.
+  - Console do browser monitorado do início ao fim: ZERO erros
+    (`console.error`/`pageerror`) — confirma que o antigo `ReferenceError:
+    api is not defined` foi eliminado.
+
+App sobe sem erro (`create_app()` — 195 rotas, +5 em relação ao Bloco 6.1).
+
+
+CONCLUSÃO
+---------
+O blueprint VIP não podia simplesmente ser "registrado" — o código Python
+tinha 4 bugs que impediam até a importação/funcionamento básico (import
+inexistente, decorator do módulo errado, API de auth inconsistente, guard
+de deleção quebrado por campo/modelo errados), e o template correspondente
+chamava uma camada de API JavaScript que nunca existiu. Tudo corrigido
+antes do registro, feature guards aplicados exatamente como pedido (mais o
+bônus BUG#6 em planos), e validado de ponta a ponta com teste funcional
+(12/12) e um teste de browser real via Playwright (0 erros de console).

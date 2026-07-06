@@ -123,7 +123,7 @@ function onTipoChange() {
 
 async function carregarNiveis() {
   try {
-    const lista = await api.vip.listar();
+    const lista = await Bos.get('/gestor/vip/niveis');
     renderizarNiveis(lista);
   } catch (e) {
     document.getElementById('vipTbody').innerHTML =
@@ -223,8 +223,8 @@ async function salvarNivel() {
   const btn = document.getElementById('btnSalvarVip');
   btn.disabled = true;
   try {
-    if (nivelEmEdicao) await api.vip.editar(nivelEmEdicao, payload);
-    else await api.vip.criar(payload);
+    if (nivelEmEdicao) await Bos.put('/gestor/vip/niveis/' + nivelEmEdicao, payload);
+    else await Bos.post('/gestor/vip/niveis', payload);
     toast('Nível salvo.', 'success');
     fecharModal('modalVip');
     carregarNiveis();
@@ -237,7 +237,7 @@ async function salvarNivel() {
 
 async function toggleModoBrinde(id) {
   try {
-    await api.vip.toggleModoBrinde(id);
+    await Bos.put('/gestor/vip/niveis/' + id + '/modo-brinde');
     carregarNiveis();
   } catch (e) { toast(e.message, 'error'); carregarNiveis(); }
 }
@@ -245,7 +245,7 @@ async function toggleModoBrinde(id) {
 async function deletarNivel(id) {
   if (!confirm('Deletar este nível VIP permanentemente?')) return;
   try {
-    await api.vip.deletar(id);
+    await Bos.delete('/gestor/vip/niveis/' + id);
     toast('Nível deletado.', 'success');
     carregarNiveis();
   } catch (e) { toast(e.message, 'error'); }

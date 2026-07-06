@@ -8,6 +8,7 @@ from app.models import (
 )
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
+from app.utils.features import feature_required
 from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.labels import L
@@ -72,6 +73,7 @@ def listar_planos():
 
 @planos_bp.post('/planos')
 @gestor_required
+@feature_required('planos')
 def criar_plano():
     dados = request.get_json(silent=True)
     if not dados:
@@ -120,6 +122,7 @@ def detalhar_plano(plano_id):
 
 @planos_bp.patch('/planos/<int:plano_id>')
 @gestor_required
+@feature_required('planos')
 def editar_plano(plano_id):
     p = _get_plano_ou_404(plano_id, g.barbearia_id)
     dados = request.get_json(silent=True) or {}
@@ -148,6 +151,7 @@ def editar_plano(plano_id):
 
 @planos_bp.delete('/planos/<int:plano_id>')
 @gestor_required
+@feature_required('planos')
 def desativar_plano(plano_id):
     p = _get_plano_ou_404(plano_id, g.barbearia_id)
     p.ativo = False
