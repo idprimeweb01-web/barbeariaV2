@@ -1,5 +1,6 @@
+import os
 from flask import Blueprint, request, g, jsonify
-from app.extensions import db
+from app.extensions import db, limiter
 from app.models import (
     Barbearia, Plano, PlanoServico, Servico, Barbeiro,
     ClientePlanoSolicitacao, Cliente,
@@ -67,6 +68,7 @@ def listar_planos_pub(slug):
 # Ativação só acontece após aprovação do gestor (PIX manual ou outro método).
 
 @pub_planos_bp.post('/pub/<string:slug>/planos/<int:plano_id>/solicitar')
+@limiter.limit(os.environ.get('RL_PLANO_SOLICITAR', '5 per minute'))
 def solicitar_assinatura(slug, plano_id):
     b = _get_barbearia_ou_404(slug)
     dados = request.get_json(silent=True)

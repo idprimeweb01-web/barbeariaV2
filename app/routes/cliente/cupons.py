@@ -1,12 +1,15 @@
+import os
 from flask import Blueprint, request, g, jsonify
 from app.exceptions import APIError
 from app.decorators.auth import cliente_required
+from app.extensions import limiter
 from app.utils.cupons import validar_cupom
 
 cliente_cupons_bp = Blueprint('cliente_cupons', __name__, url_prefix='/api/v1/cliente')
 
 
 @cliente_cupons_bp.post('/cupons/validar')
+@limiter.limit(os.environ.get('RL_CUPOM_VALIDAR', '20 per minute'))
 @cliente_required
 def validar_cupom_cliente():
     dados = request.get_json(silent=True) or {}

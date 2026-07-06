@@ -8,8 +8,9 @@ from flask_jwt_extended import (
     create_access_token, create_refresh_token,
     verify_jwt_in_request, get_jwt_identity, get_jwt, decode_token,
 )
+import os
 from werkzeug.security import check_password_hash, generate_password_hash
-from app.extensions import db
+from app.extensions import db, limiter
 from app.models import Usuario, Barbearia, Cliente, TokenRevogado
 from app.utils.db import commit_ou_falhar
 
@@ -73,6 +74,7 @@ def entrar():
 # ── POST /entrar ──────────────────────────────────────────────────────────────
 
 @views_bp.post('/entrar')
+@limiter.limit(os.environ.get('RL_LOGIN', '5 per minute'))
 def entrar_post():
     dados = request.get_json(silent=True) or {}
     email  = (dados.get('email') or '').strip().lower()
@@ -487,6 +489,7 @@ def cliente_entrar(slug):
 
 
 @views_bp.post('/b/<slug>/entrar')
+@limiter.limit(os.environ.get('RL_LOGIN', '5 per minute'))
 def cliente_entrar_post(slug):
     barbearia = Barbearia.query.filter_by(slug=slug, ativo=True).first()
     if not barbearia:
@@ -546,6 +549,7 @@ def cliente_cadastro_view(slug):
 
 
 @views_bp.post('/b/<slug>/cadastro')
+@limiter.limit(os.environ.get('RL_CADASTRO', '5 per minute'))
 def cliente_cadastro_post(slug):
     from app.utils import normalizar_telefone
 

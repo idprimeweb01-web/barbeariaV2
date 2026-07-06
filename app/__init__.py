@@ -7,10 +7,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from .extensions import db, migrate, jwt  # noqa: E402 — importado após load_dotenv
+from .extensions import db, migrate, jwt, limiter  # noqa: E402 — importado após load_dotenv
 
 # Re-exporta db/migrate/jwt para que imports legados `from app import db` continuem funcionando
-__all__ = ['db', 'migrate', 'jwt', 'create_app']
+__all__ = ['db', 'migrate', 'jwt', 'limiter', 'create_app']
 
 
 def _configurar_logging():
@@ -76,6 +76,7 @@ def create_app(config=None):
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
+    limiter.init_app(app)
 
     # ── Contexto por requisição ───────────────────────────────────────────────
     from .context import load_user_context
@@ -104,8 +105,13 @@ def create_app(config=None):
     def handle_500(e):
         return jsonify({'erro': 'Erro interno do servidor.'}), 500
 
+    @app.errorhandler(429)
+    def handle_429(e):
+        return jsonify({'erro': 'Muitas tentativas. Aguarde um instante e tente novamente.'}), 429
+
     # ── Health check ──────────────────────────────────────────────────────────
     @app.get('/health')
+    @limiter.exempt
     def health():
         return jsonify({'status': 'ok'})
 

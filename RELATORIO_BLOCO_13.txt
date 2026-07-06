@@ -1,0 +1,192 @@
+RELATORIO_BLOCO_13.txt
+Script 13 / Bloco 4.2 — Rate limiting configurável (flask-limiter)
+================================================================================
+
+RESUMO
+------
+Zero rate limiting existia antes deste bloco. Adicionado flask-limiter com
+limite global default (300/min por IP, configurável via env) e 7 limites
+específicos nos endpoints sensíveis a brute force/spam/DoS (login staff,
+login cliente, cadastro, agendamento público, solicitação de plano, upload
+de comprovante, validação de cupom) e um limite generoso na consulta de
+slots (60/min, é polling normal de calendário). Todos os valores são
+configuráveis via variável de ambiente com fallback para o valor pedido no
+briefing — nenhuma automação futura (WhatsApp/n8n) fica bloqueada por um
+número hardcoded.
+
+Antes de escrever qualquer decorator, os 7 caminhos do briefing foram
+confirmados contra o código real — 2 divergiam do que o briefing supôs
+(ver seção 5).
+
+
+1. INSTALAÇÃO
+--------------
+`pip install flask-limiter` no venv local. Pacote e dependências transitivas
+pinadas em `requirements.txt` (mesmo estilo `==` já usado no projeto):
+  Flask-Limiter==4.1.1, limits==5.8.0, Deprecated==1.3.1, wrapt==2.2.2,
+  ordered-set==4.1.0.
+
+
+2. LIMITER GLOBAL
+--------------------
+`app/extensions.py`: novo singleton `limiter`, mesmo padrão já usado para
+`db`/`migrate`/`jwt` (declarado no módulo, `.init_app(app)` em
+`create_app()`):
+
+  limiter = Limiter(
+      key_func=get_remote_address,
+      default_limits=[os.environ.get('RATELIMIT_DEFAULT', '300 per minute')],
+      storage_uri=os.environ.get('RATELIMIT_STORAGE_URI', 'memory://'),
+  )
+
+`app/__init__.py`: `limiter.init_app(app)` logo após `jwt.init_app(app)`.
+
+**Nota de produção (Railway, múltiplos workers gunicorn):** `memory://` é
+por-worker — cada processo gunicorn tem sua própria contagem, então o
+limite real efetivo em produção com N workers é aproximadamente N× o valor
+configurado (um IP malicioso pode ser roteado entre workers e "resetar" a
+contagem a cada troca). Antes de ir a produção com mais de 1 worker, setar
+`RATELIMIT_STORAGE_URI` para um Redis compartilhado (ex: plugin Redis do
+Railway, `redis://...`) — flask-limiter suporta nativamente via `limits`
+(dependência já instalada). Documentado aqui e não implementado (fora do
+escopo local, requer provisionar o Redis).
+
+
+3. LIMITES ESPECÍFICOS (todos via env, com o default pedido no briefing)
+----------------------------------------------------------------------------
+  Rota                                              Env var             Default    Arquivo:linha
+  ─────────────────────────────────────────────────────────────────────────────────────────────
+  POST /entrar                                      RL_LOGIN             5/min    app/routes/views/auth.py:77
+  POST /b/<slug>/entrar                             RL_LOGIN             5/min    app/routes/views/auth.py:492
+  POST /b/<slug>/cadastro                           RL_CADASTRO          5/min    app/routes/views/auth.py:552
+  POST /api/v1/pub/<slug>/agendar                   RL_AGENDAR          10/min    app/routes/pub/agendamento.py:566
+  POST /pub/<slug>/planos/<id>/solicitar            RL_PLANO_SOLICITAR   5/min    app/routes/pub/planos.py:71
+  POST /api/v1/pub/<slug>/agendamentos/<id>/comprovante  RL_COMPROVANTE   3/min    app/routes/pub/agendamento.py:680
+  POST /api/v1/cliente/cupons/validar               RL_CUPOM_VALIDAR    20/min    app/routes/cliente/cupons.py:12
+  GET  /api/v1/pub/<slug>/barbeiros/<id>/slots       RL_SLOTS           60/min    app/routes/pub/agendamento.py:496
+
+`/entrar` e `/b/<slug>/entrar` compartilham a MESMA env var `RL_LOGIN`
+(o briefing os agrupa num único item com o mesmo valor — tratei como a
+mesma política de "login", configurável de uma vez só).
+
+Nenhum outro `@limiter.limit` foi adicionado em nenhuma rota autenticada
+interna (gestor/barbeiro/cliente-dashboard etc.) — elas seguem cobertas
+apenas pelo limite global `default_limits` (300/min), conforme a regra do
+briefing. Confirmado via grep: exatamente 7 ocorrências de `@limiter.limit`
++ 1 de `@limiter.exempt` em todo o `app/`.
+
+Em `cliente/cupons.py`, o decorator foi colocado ENTRE `@blueprint.post(...)`
+e `@cliente_required` (não depois) — assim o rate limit é avaliado antes da
+checagem de autenticação, barrando tentativas de força bruta sem gastar
+ciclo de verificação de token para cada uma.
+
+
+4. RESPOSTA 429 E TELAS DE LOGIN
+-------------------------------------
+`app/__init__.py`, junto aos outros error handlers (404/405/422/500):
+
+  @app.errorhandler(429)
+  def handle_429(e):
+      return jsonify({'erro': 'Muitas tentativas. Aguarde um instante e tente novamente.'}), 429
+
+Nas telas de login (`app/templates/staff/login.html:281-282` e
+`app/templates/cliente/entrar.html:228-229`), o JS já tratava qualquer
+resposta não-2xx com `mostrarErro(dados.erro || '...')` — ou seja, a
+mensagem amigável do 429 já aparece automaticamente na tela sem precisar
+de nenhuma mudança de template. Confirmado nos dois arquivos, nenhuma
+edição de HTML/JS foi necessária.
+
+
+5. ISENÇÃO DO HEALTH CHECK
+-------------------------------
+`/health` (`app/__init__.py:112-115`, registrado direto em `app`, não em
+blueprint) ganhou `@limiter.exempt` entre `@app.get('/health')` e a
+definição da função. Validado com 8 chamadas consecutivas rápidas, todas
+200 (nenhuma tentativa de rate-limit).
+
+
+6. DIVERGÊNCIAS ENCONTRADAS ENTRE O BRIEFING E O CÓDIGO REAL
+------------------------------------------------------------------
+Pesquisa de rotas feita ANTES de qualquer edição (via agente de exploração),
+confirmando caminho exato, blueprint e `url_prefix` de cada um dos 7 alvos:
+
+- **Solicitação de plano**: o briefing supôs algo como
+  `/pub|api/v1/pub/<slug>/planos/<id>/solicitar`. O caminho real é
+  `/pub/<slug>/planos/<id>/solicitar` — SEM o prefixo `/api/v1`. O blueprint
+  `pub_planos_bp` (`app/routes/pub/planos.py:13`) não tem `url_prefix`
+  nenhum; o `/pub/` é escrito literalmente dentro da própria string da rota
+  (`@pub_planos_bp.post('/pub/<string:slug>/planos/<int:plano_id>/solicitar')`)
+  — inconsistência pré-existente no projeto (há DOIS blueprints "pub", um
+  usando `url_prefix='/api/v1/pub'` (`pub_bp`) e outro com o prefixo
+  hardcoded na rota (`pub_planos_bp`), não sinalizada em nenhum
+  memory/relatório anterior. Documentado aqui, não corrigido (fora de
+  escopo deste bloco — mudar a rota quebraria qualquer cliente/frontend
+  já apontando para `/pub/...`).
+
+- **Slots disponíveis**: o briefing supôs `GET /pub/<slug>/barbeiros/<id>/slots`
+  (sem `/api/v1`). O caminho real é `GET /api/v1/pub/<slug>/barbeiros/<id>/slots`
+  — o blueprint `pub_bp` TEM `url_prefix='/api/v1/pub'`
+  (`app/routes/pub/agendamento.py:32`), então a rota completa inclui o
+  prefixo. Corrigido silenciosamente para o caminho real.
+
+- Existe um SEGUNDO sistema de login paralelo (`app/routes/auth.py`,
+  blueprint `auth_bp`, prefixo `/api/v1/auth`, rota `POST /api/v1/auth/login`)
+  que NÃO foi mencionado no briefing e não recebeu rate limit — o briefing
+  citou apenas `/entrar` (tela server-rendered, `views_bp`). Se esse segundo
+  endpoint também for exposto/usado por algum client real, ele fica hoje
+  coberto só pelo limite global (300/min) e vulnerável a brute force de
+  login sem o limite de 5/min. Reportando para decisão: se for usado,
+  merece o mesmo `RL_LOGIN` num bloco de continuação.
+
+
+7. VALIDAÇÃO OBRIGATÓRIA
+-----------------------------
+**Loop de 10 logins errados seguidos (POST /entrar, credenciais inválidas):**
+  tentativa 1: HTTP 401 → {"erro":"Credenciais inválidas."}
+  tentativa 2: HTTP 401 → {"erro":"Credenciais inválidas."}
+  tentativa 3: HTTP 401 → {"erro":"Credenciais inválidas."}
+  tentativa 4: HTTP 401 → {"erro":"Credenciais inválidas."}
+  tentativa 5: HTTP 401 → {"erro":"Credenciais inválidas."}
+  tentativa 6: HTTP 429 → {"erro":"Muitas tentativas. Aguarde um instante e tente novamente."}
+  tentativa 7: HTTP 429 → (mesma mensagem)
+  tentativa 8: HTTP 429 → (mesma mensagem)
+  Exatamente o comportamento pedido: a partir da 6ª, vem 429.
+
+**Fluxo normal de 1 usuário, sem nenhum 429:**
+  - Criado tenant QA (`qa-ratelimit`) com 1 gestor, 1 barbeiro, 1 serviço.
+  - `POST /entrar` (login único, credenciais corretas) → HTTP 200.
+  - `GET /api/v1/pub/qa-ratelimit/barbeiros/<id>/slots` × 5 → HTTP 400
+    (faltava parâmetro "duracao" — erro de validação de negócio, não rate
+    limit; confirma que a rota está acessível e respondendo normalmente).
+  - `GET /api/v1/gestor/dashboard` (rota autenticada, sem limite
+    específico) × 5 seguidas → HTTP 200 em todas, nenhum 429 (confirma
+    que o default global de 300/min não interfere em uso normal).
+  - Log do servidor sem tracebacks durante todo o teste.
+  - Tenant QA limpo ao final (0 linhas residuais).
+
+**Confirmação de escopo**: grep por `@limiter.limit`/`@limiter.exempt` em
+todo `app/` retorna exatamente 7 + 1 ocorrências — nenhuma rota extra
+recebeu limite além das pedidas.
+
+
+8. SMOKE TEST GERAL
+----------------------
+- App sobe sem erro (`create_app()` — 190 rotas, mesma contagem de antes).
+- Servidor real (wsgi.py): `GET /health` × 8 rápidas → 200 em todas
+  (confirma isenção); `GET /entrar` → 200; log sem tracebacks.
+
+
+CONCLUSÃO
+---------
+7 rotas sensíveis protegidas com rate limit configurável por env var, 1
+limite global default, isenção do health check, resposta 429 amigável já
+visível nas telas de login sem mudança de template (reaproveitando o
+tratamento de erro genérico existente). Validação de 10 tentativas seguidas
+confirma o corte exato no 6º request. Fluxo normal de uso não sofre nenhum
+429 falso-positivo. Duas divergências de caminho entre o briefing e o
+código real foram encontradas e corrigidas antes de qualquer edição
+(solicitação de plano é `/pub/...` sem prefixo API; slots é
+`/api/v1/pub/...` com prefixo, ao contrário do que o briefing supôs).
+Achado adicional documentado, não corrigido: `/api/v1/auth/login` é um
+segundo endpoint de login paralelo sem rate limit, fora do escopo literal
+do briefing.

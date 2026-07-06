@@ -11,7 +11,7 @@ from datetime import datetime, date, time as time_t
 from flask import Blueprint, request, jsonify, current_app
 from sqlalchemy.exc import IntegrityError
 from app.utils.tz import hoje_brasilia, naive_brasilia
-from app.extensions import db
+from app.extensions import db, limiter
 from app.models import (
     Barbearia, Barbeiro, Usuario, Cliente, Servico, BarbeiroServico,
     Agendamento, AgendamentoServico, AgendamentoSolicitacaoPix,
@@ -493,6 +493,7 @@ def listar_servicos_barbeiro_publico(slug, barbeiro_id):
 # ── GET /pub/<slug>/barbeiros/<id>/slots ──────────────────────────────────────
 
 @pub_bp.get('/<slug>/barbeiros/<int:barbeiro_id>/slots')
+@limiter.limit(os.environ.get('RL_SLOTS', '60 per minute'))
 def slots_disponiveis(slug, barbeiro_id):
     b = _get_barbearia_ou_404(slug)
     br = Barbeiro.query.filter_by(id=barbeiro_id, barbearia_id=b.id, ativo=True).first()
@@ -562,6 +563,7 @@ def slots_disponiveis(slug, barbeiro_id):
 # ── POST /pub/<slug>/agendar ──────────────────────────────────────────────────
 
 @pub_bp.post('/<slug>/agendar')
+@limiter.limit(os.environ.get('RL_AGENDAR', '10 per minute'))
 def quick_booking(slug):
     barbearia = _get_barbearia_ou_404(slug)
     config = _get_config(barbearia.id)
@@ -675,6 +677,7 @@ def _cfg_cloudinary_pub():
 
 
 @pub_bp.post('/<slug>/agendamentos/<int:agendamento_id>/comprovante')
+@limiter.limit(os.environ.get('RL_COMPROVANTE', '3 per minute'))
 def upload_comprovante(slug, agendamento_id):
     barbearia = _get_barbearia_ou_404(slug)
 
