@@ -12,13 +12,11 @@ from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.labels import L
 from app.utils.db import commit_ou_falhar
+from app.constants import StatusSolicitacaoPlano
 
 logger = logging.getLogger(__name__)
 
 planos_bp = Blueprint('gestor_planos', __name__, url_prefix='/api/v1/gestor')
-
-# Mesma lista aceita por ClientePlanoSolicitacao.status. Migra para app/constants.py no Script 14.
-_STATUS_SOLICITACAO_VALIDOS = {'pendente', 'aprovado', 'rejeitado'}
 
 
 def _fmt_plano(p, com_servicos=False):
@@ -257,9 +255,9 @@ def listar_assinaturas(plano_id):
 @gestor_required
 def listar_solicitacoes():
     q = ClientePlanoSolicitacao.query.filter_by(barbearia_id=g.barbearia_id)
-    status_f = request.args.get('status', 'pendente')
+    status_f = request.args.get('status', StatusSolicitacaoPlano.PENDENTE)
     if status_f:
-        if status_f not in _STATUS_SOLICITACAO_VALIDOS:
+        if status_f not in StatusSolicitacaoPlano.TODOS:
             raise APIError(f'Status inválido: "{status_f}".', 422)
         q = q.filter_by(status=status_f)
 
@@ -312,7 +310,7 @@ def aprovar_solicitacao(sol_id):
     )
     if not sol:
         raise APIError('Solicitação não encontrada.', 404)
-    if sol.status != 'pendente':
+    if sol.status != StatusSolicitacaoPlano.PENDENTE:
         raise APIError(f'Solicitação já foi {sol.status}.', 409)
 
     p = db.session.get(Plano, sol.plano_id)
@@ -351,7 +349,7 @@ def aprovar_solicitacao(sol_id):
     )
     db.session.add(cp)
 
-    sol.status = 'aprovado'
+    sol.status = StatusSolicitacaoPlano.APROVADO
     sol.aprovado_em = naive_brasilia()
     try:
         db.session.commit()
@@ -384,11 +382,11 @@ def rejeitar_solicitacao(sol_id):
     )
     if not sol:
         raise APIError('Solicitação não encontrada.', 404)
-    if sol.status != 'pendente':
+    if sol.status != StatusSolicitacaoPlano.PENDENTE:
         raise APIError(f'Solicitação já foi {sol.status}.', 409)
 
     dados = request.get_json(silent=True) or {}
-    sol.status = 'rejeitado'
+    sol.status = StatusSolicitacaoPlano.REJEITADO
     sol.motivo_rejeicao = (dados.get('motivo') or '').strip() or 'Rejeitado pelo gestor.'
     commit_ou_falhar('gestor.planos.rejeitar_solicitacao', 'Erro ao rejeitar solicitação. Tente novamente.')
 

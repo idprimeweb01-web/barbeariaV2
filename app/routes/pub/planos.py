@@ -10,6 +10,7 @@ from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
 from app.utils.telefone import normalizar_telefone
 from app.labels import L
 from app.utils.db import commit_ou_falhar
+from app.constants import StatusSolicitacaoPlano
 
 pub_planos_bp = Blueprint('pub_planos', __name__)
 
@@ -129,7 +130,7 @@ def solicitar_assinatura(slug, plano_id):
     # ── Verificar solicitação duplicada pendente ───────────────────────────────
     pendente = ClientePlanoSolicitacao.query.filter_by(
         barbearia_id=b.id, cliente_id=cliente_id,
-        plano_id=plano_id, status='pendente',
+        plano_id=plano_id, status=StatusSolicitacaoPlano.PENDENTE,
     ).first()
     if pendente:
         raise APIError(
@@ -149,7 +150,7 @@ def solicitar_assinatura(slug, plano_id):
         barbeiro_id=barbeiro_id,
         valor=plano.preco_mensal,
         metodo_pagamento=metodo,
-        status='pendente',
+        status=StatusSolicitacaoPlano.PENDENTE,
     )
     db.session.add(sol)
     commit_ou_falhar('pub.planos.solicitar_assinatura')
@@ -160,7 +161,7 @@ def solicitar_assinatura(slug, plano_id):
         'plano': plano.nome,
         'valor': float(sol.valor),
         'metodo_pagamento': sol.metodo_pagamento,
-        'status': 'pendente',
+        'status': StatusSolicitacaoPlano.PENDENTE,
     }
 
     # Gerar código PIX se método for pix e barbearia tiver chave configurada

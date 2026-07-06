@@ -7,6 +7,7 @@ futuramente pode ser Sala, Equipamento etc. — sem mudar esta função.
 from datetime import datetime, timedelta, time as time_t, date as date_t
 from typing import Optional
 from app.utils.tz import naive_brasilia, hoje_brasilia
+from app.constants import StatusAgendamento
 
 
 def fim_agendamento(data_hora: datetime, duracao_minutos: int) -> datetime:
@@ -29,7 +30,7 @@ def verificar_conflito(resource_id: int, data_hora: datetime, duracao_minutos: i
         db.session.query(Agendamento)
         .filter(
             Agendamento.barbeiro_id == resource_id,
-            Agendamento.status != 'cancelado',
+            Agendamento.status != StatusAgendamento.CANCELADO,
             db.func.date(Agendamento.data_hora) == dia,
         )
         # Lock dos agendamentos do dia p/ este recurso — outra transação que
@@ -74,7 +75,7 @@ def gerar_slots(resource_id: int, data, duracao_necessaria: int) -> list[str]:
             Agendamento.barbeiro_id == resource_id,
             Agendamento.data_hora >= dia_inicio,
             Agendamento.data_hora <= dia_fim,
-            Agendamento.status != 'cancelado',
+            Agendamento.status != StatusAgendamento.CANCELADO,
         )
         .all()
     )

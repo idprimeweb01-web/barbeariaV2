@@ -5,6 +5,7 @@ from app.models import Barbearia, Agendamento, Cliente, Usuario
 from app.decorators.auth import super_required
 from app.utils.tz import hoje_brasilia
 from app.labels import L
+from app.constants import StatusAgendamento
 
 super_dash_bp = Blueprint('super_dashboard', __name__, url_prefix='/api/v1/super')
 
@@ -42,10 +43,10 @@ def dashboard_super():
     receita_mes = sum(
         float(ag.valor_total)
         for ag in ags_mes
-        if ag.status in ('agendado', 'concluido')
+        if ag.status in (StatusAgendamento.AGENDADO, StatusAgendamento.CONCLUIDO)
     )
-    concluidos_mes = sum(1 for ag in ags_mes if ag.status == 'concluido')
-    cancelados_mes = sum(1 for ag in ags_mes if ag.status == 'cancelado')
+    concluidos_mes = sum(1 for ag in ags_mes if ag.status == StatusAgendamento.CONCLUIDO)
+    cancelados_mes = sum(1 for ag in ags_mes if ag.status == StatusAgendamento.CANCELADO)
 
     # ── Por barbearia — receita e contagem do mês ─────────────────────────────
     por_barbearia_raw = (
@@ -57,7 +58,7 @@ def dashboard_super():
         .filter(
             db.extract('year',  Agendamento.data_hora) == ano,
             db.extract('month', Agendamento.data_hora) == mes,
-            Agendamento.status.in_(['agendado', 'concluido']),
+            Agendamento.status.in_([StatusAgendamento.AGENDADO, StatusAgendamento.CONCLUIDO]),
         )
         .group_by(Agendamento.barbearia_id)
         .order_by(func.sum(Agendamento.valor_total).desc())

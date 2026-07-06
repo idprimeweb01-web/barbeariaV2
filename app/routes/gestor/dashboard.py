@@ -10,6 +10,7 @@ from app.decorators.auth import gestor_required
 from app.utils.features import feature_ativa
 from app.utils.tz import hoje_brasilia
 from app.labels import L
+from app.constants import StatusAgendamento
 
 gestor_dash_bp = Blueprint('gestor_dashboard', __name__, url_prefix='/api/v1/gestor')
 
@@ -25,17 +26,17 @@ def dashboard_gestor():
     ags_hoje_concluidos = Agendamento.query.filter(
         Agendamento.barbearia_id == bid,
         db.func.date(Agendamento.data_hora) == hoje,
-        Agendamento.status == 'concluido',
+        Agendamento.status == StatusAgendamento.CONCLUIDO,
     ).all()
     ags_hoje_agendados = Agendamento.query.filter(
         Agendamento.barbearia_id == bid,
         db.func.date(Agendamento.data_hora) == hoje,
-        Agendamento.status == 'agendado',
+        Agendamento.status == StatusAgendamento.AGENDADO,
     ).count()
     ags_hoje_cancelados = Agendamento.query.filter(
         Agendamento.barbearia_id == bid,
         db.func.date(Agendamento.data_hora) == hoje,
-        Agendamento.status == 'cancelado',
+        Agendamento.status == StatusAgendamento.CANCELADO,
     ).count()
 
     receita_hoje = sum(float(ag.valor_total) for ag in ags_hoje_concluidos)
@@ -45,7 +46,7 @@ def dashboard_gestor():
         Agendamento.barbearia_id == bid,
         db.extract('year',  Agendamento.data_hora) == ano,
         db.extract('month', Agendamento.data_hora) == mes,
-        Agendamento.status == 'concluido',
+        Agendamento.status == StatusAgendamento.CONCLUIDO,
     ).all()
 
     receita_mes = sum(float(ag.valor_total) for ag in ags_mes_concluidos)
@@ -62,7 +63,10 @@ def dashboard_gestor():
     # ── PIX pendentes ─────────────────────────────────────────────────────────
     pendentes_pix = Agendamento.query.filter(
         Agendamento.barbearia_id == bid,
-        Agendamento.status.in_(['aguardando_comprovante', 'aguardando_aprovacao', 'aguardando_pagamento']),
+        Agendamento.status.in_([
+            StatusAgendamento.AGUARDANDO_COMPROVANTE, StatusAgendamento.AGUARDANDO_APROVACAO,
+            StatusAgendamento.AGUARDANDO_PAGAMENTO,
+        ]),
     ).count()
 
     # ── Top serviços do mês ───────────────────────────────────────────────────
@@ -77,7 +81,7 @@ def dashboard_gestor():
             Agendamento.barbearia_id == bid,
             db.extract('year',  Agendamento.data_hora) == ano,
             db.extract('month', Agendamento.data_hora) == mes,
-            Agendamento.status.in_(['agendado', 'concluido']),
+            Agendamento.status.in_([StatusAgendamento.AGENDADO, StatusAgendamento.CONCLUIDO]),
         )
         .group_by(AgendamentoServico.servico_id)
         .order_by(func.count(AgendamentoServico.id).desc())

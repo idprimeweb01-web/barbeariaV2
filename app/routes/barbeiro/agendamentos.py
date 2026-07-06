@@ -8,6 +8,7 @@ from app.decorators.auth import barbeiro_required
 from app.utils.cupons import incrementar_uso_cupom, decrementar_uso_cupom
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.utils.db import commit_ou_falhar
+from app.constants import StatusAgendamento
 
 barbeiro_ag_bp = Blueprint('barbeiro_agendamentos', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -30,7 +31,7 @@ def _batch_historico(barbearia_id, cliente_ids):
         .filter(
             Agendamento.barbearia_id == barbearia_id,
             Agendamento.cliente_id.in_(cliente_ids),
-            Agendamento.status == 'concluido',
+            Agendamento.status == StatusAgendamento.CONCLUIDO,
         )
         .order_by(Agendamento.data_hora.desc())
         .all()
@@ -148,9 +149,9 @@ def iniciar_agendamento(ag_id):
     ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id, barbeiro_id=b.id).first()
     if not ag:
         raise APIError('Agendamento não encontrado.', 404)
-    if ag.status != 'agendado':
+    if ag.status != StatusAgendamento.AGENDADO:
         raise APIError(f'Não é possível iniciar agendamento com status "{ag.status}".', 422)
-    ag.status = 'em_atendimento'
+    ag.status = StatusAgendamento.EM_ATENDIMENTO
     commit_ou_falhar('barbeiro.agendamentos.iniciar_agendamento')
     return jsonify({'id': ag.id, 'status': ag.status}), 200
 
@@ -164,12 +165,12 @@ def concluir_agendamento(ag_id):
     ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id, barbeiro_id=b.id).first()
     if not ag:
         raise APIError('Agendamento não encontrado.', 404)
-    if ag.status not in ('agendado', 'em_atendimento'):
+    if ag.status not in (StatusAgendamento.AGENDADO, StatusAgendamento.EM_ATENDIMENTO):
         raise APIError(f'Não é possível concluir agendamento com status "{ag.status}".', 422)
     dados = request.get_json(silent=True) or {}
     if dados.get('notas_internas'):
         ag.observacao = str(dados['notas_internas'])[:300]
-    ag.status = 'concluido'
+    ag.status = StatusAgendamento.CONCLUIDO
     commit_ou_falhar('barbeiro.agendamentos.concluir_agendamento')
     return jsonify({'id': ag.id, 'status': ag.status}), 200
 
@@ -183,15 +184,15 @@ def cancelar_agendamento(ag_id):
     ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id, barbeiro_id=b.id).first()
     if not ag:
         raise APIError('Agendamento não encontrado.', 404)
-    if ag.status in ('concluido', 'cancelado'):
+    if ag.status in (StatusAgendamento.CONCLUIDO, StatusAgendamento.CANCELADO):
         raise APIError(f'Agendamento já está "{ag.status}".', 422)
     dados = request.get_json(silent=True) or {}
     motivo = (dados.get('motivo') or '').strip()
     if motivo:
         ag.observacao = motivo[:300]
-    if ag.cupom_id and ag.status == 'agendado':
+    if ag.cupom_id and ag.status == StatusAgendamento.AGENDADO:
         decrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
-    ag.status = 'cancelado'
+    ag.status = StatusAgendamento.CANCELADO
     commit_ou_falhar('barbeiro.agendamentos.cancelar_agendamento')
     return jsonify({'id': ag.id, 'status': ag.status}), 200
 
@@ -210,7 +211,10 @@ def aprovar_comprovante(ag_id):
     )
     if not ag:
         raise APIError('Agendamento não encontrado.', 404)
-    _aprovavel = {'aguardando_aprovacao', 'aguardando_comprovante', 'aguardando_pagamento'}
+    _aprovavel = {
+        StatusAgendamento.AGUARDANDO_APROVACAO, StatusAgendamento.AGUARDANDO_COMPROVANTE,
+        StatusAgendamento.AGUARDANDO_PAGAMENTO,
+    }
     if ag.status not in _aprovavel:
         raise APIError('Este agendamento já foi processado.', 409)
     pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=ag.barbearia_id).first()
@@ -219,9 +223,9 @@ def aprovar_comprovante(ag_id):
         pix.respondido_em = naive_brasilia()
     if ag.cupom_id:
         incrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
-    ag.status = 'agendado'
+    ag.status = StatusAgendamento.AGENDADO
     commit_ou_falhar('barbeiro.agendamentos.aprovar_comprovante')
-    return jsonify({'id': ag.id, 'status': 'agendado'}), 200
+    return jsonify({'id': ag.id, 'status': StatusAgendamento.AGENDADO}), 200
 
 
 # ── POST notas (salva como ClienteNota) ───────────────────────────────────────

@@ -15,6 +15,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from app.utils.tz import naive_brasilia, hoje_brasilia, BRASILIA
 from app.utils.db import commit_ou_falhar
+from app.constants import StatusAgendamento
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ def _executar_lembretes() -> None:
     ags_futuros = (
         Agendamento.query
         .filter(
-            Agendamento.status == 'agendado',
+            Agendamento.status == StatusAgendamento.AGENDADO,
             Agendamento.data_hora > agora,
             Agendamento.data_hora <= janela_fim,
         )

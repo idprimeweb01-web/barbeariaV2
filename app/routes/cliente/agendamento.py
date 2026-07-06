@@ -11,6 +11,7 @@ from app.utils.tz import naive_brasilia
 from app.labels import L
 from app.routes.pub.agendamento import _get_config, _criar_agendamento_core, _fmt_agendamento
 from app.utils.db import commit_ou_falhar
+from app.constants import StatusAgendamento, MetodoPagamento
 
 cliente_bp = Blueprint('cliente', __name__, url_prefix='/api/v1/cliente')
 
@@ -95,7 +96,7 @@ def criar_agendamento():
     barbeiro_id   = dados.get('barbeiro_id')
     data_hora_str = dados.get('data_hora')
     itens         = dados.get('servicos') or []
-    metodo        = (dados.get('metodo_pagamento') or 'local').strip().lower()
+    metodo        = (dados.get('metodo_pagamento') or MetodoPagamento.LOCAL).strip().lower()
     observacao    = (dados.get('observacao') or '').strip() or None
     cupom_codigo  = (dados.get('cupom_codigo') or '').strip() or None
 
@@ -142,11 +143,11 @@ def cancelar_agendamento(ag_id):
     if not ag:
         raise APIError(f'{L("agendamento")} não encontrado.', 404)
 
-    if ag.status == 'cancelado':
+    if ag.status == StatusAgendamento.CANCELADO:
         raise APIError(f'{L("agendamento")} já está cancelado.')
-    if ag.status == 'concluido':
+    if ag.status == StatusAgendamento.CONCLUIDO:
         raise APIError(f'Não é possível cancelar um {L("agendamento").lower()} já concluído.')
-    if ag.status == 'em_atendimento':
+    if ag.status == StatusAgendamento.EM_ATENDIMENTO:
         raise APIError(f'Não é possível cancelar um {L("agendamento").lower()} em atendimento.', 422)
 
     # Lê regra de cancelamento da configuração do tenant (A3)
@@ -169,10 +170,10 @@ def cancelar_agendamento(ag_id):
             422,
         )
 
-    if ag.cupom_id and ag.status == 'agendado':
+    if ag.cupom_id and ag.status == StatusAgendamento.AGENDADO:
         decrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
 
-    ag.status = 'cancelado'
+    ag.status = StatusAgendamento.CANCELADO
     commit_ou_falhar(
         'cliente.agendamento.cancelar_agendamento',
         f'Erro ao cancelar {L("agendamento").lower()}. Tente novamente.',

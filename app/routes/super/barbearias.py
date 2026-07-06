@@ -13,6 +13,7 @@ from app.exceptions import APIError
 from app.decorators.auth import super_required
 from app.utils import normalizar_telefone
 from app.utils.db import commit_ou_falhar
+from app.constants import StatusAgendamento
 
 _TIPOS_IMAGEM = {'image/jpeg', 'image/jpg', 'image/png', 'image/webp'}
 _MAX_BYTES     = 5 * 1024 * 1024  # 5 MB
@@ -578,10 +579,13 @@ def relatorios_global():
     total_barbeiros = Barbeiro.query.count()
     total_clientes  = Cliente.query.count()
     total_ags       = Agendamento.query.count()
-    ags_concluidos  = Agendamento.query.filter_by(status='concluido').count()
-    ags_cancelados  = Agendamento.query.filter_by(status='cancelado').count()
+    ags_concluidos  = Agendamento.query.filter_by(status=StatusAgendamento.CONCLUIDO).count()
+    ags_cancelados  = Agendamento.query.filter_by(status=StatusAgendamento.CANCELADO).count()
     ags_pendentes   = Agendamento.query.filter(
-        Agendamento.status.in_(['aguardando_comprovante', 'aguardando_aprovacao', 'aguardando_pagamento'])
+        Agendamento.status.in_([
+            StatusAgendamento.AGUARDANDO_COMPROVANTE, StatusAgendamento.AGUARDANDO_APROVACAO,
+            StatusAgendamento.AGUARDANDO_PAGAMENTO,
+        ])
     ).count()
 
     return jsonify({

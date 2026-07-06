@@ -9,6 +9,7 @@ from app.models import (
 from app.utils import get_barbearia_atual
 from app.routes.auth import barbeiro_required
 from app.utils.db import commit_ou_falhar
+from app.constants import StatusAgendamento
 
 caixa = Blueprint('caixa', __name__)
 
@@ -88,7 +89,7 @@ def abrir_atendimento():
         return _erro('Agendamento não encontrado.', 404)
     if not _pode_acessar(usuario, barbeiro, ag.barbeiro_id):
         return _erro('Você não tem permissão para este agendamento.', 403)
-    if ag.status != 'agendado':
+    if ag.status != StatusAgendamento.AGENDADO:
         return _erro(f'Não é possível abrir atendimento para agendamento com status "{ag.status}".')
     if Atendimento.query.filter_by(agendamento_id=agendamento_id).first():
         return _erro('Já existe um atendimento para este agendamento.', 409)
@@ -273,7 +274,7 @@ def efetuar_atendimento(atendimento_id):
 
     ag = db.session.get(Agendamento, at.agendamento_id)
     if ag:
-        ag.status = 'concluido'
+        ag.status = StatusAgendamento.CONCLUIDO
         # Confirma reservas e abate estoque dos produtos reservados
         reservas = ReservaProduto.query.filter_by(
             agendamento_id=ag.id, status='reservado'
@@ -367,7 +368,7 @@ def iniciar_atendimento(agendamento_id):
         return _erro('Agendamento não encontrado.', 404)
     if not _pode_acessar(usuario, barbeiro, ag.barbeiro_id):
         return _erro('Sem permissão para este agendamento.', 403)
-    if ag.status not in ('agendado',):
+    if ag.status not in (StatusAgendamento.AGENDADO,):
         return _erro(f'Agendamento com status "{ag.status}" não pode ser iniciado.')
 
     # Idempotente: se já existe atendimento, retorna

@@ -8,6 +8,7 @@ from app.decorators.auth import gestor_required
 from app.labels import L
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.utils.db import commit_ou_falhar
+from app.constants import StatusAgendamento
 
 gestor_clientes_bp = Blueprint('gestor_clientes', __name__, url_prefix='/api/v1/gestor')
 
@@ -31,7 +32,7 @@ def _stats_map(bid):
             func.sum(Agendamento.valor_total).label('gasto'),
             func.max(Agendamento.data_hora).label('ultima'),
         )
-        .filter(Agendamento.barbearia_id == bid, Agendamento.status == 'concluido')
+        .filter(Agendamento.barbearia_id == bid, Agendamento.status == StatusAgendamento.CONCLUIDO)
         .group_by(Agendamento.cliente_id)
         .all()
     )
@@ -246,7 +247,7 @@ def perfil_cliente(cliente_id):
         .filter(
             Agendamento.barbearia_id == bid,
             Agendamento.cliente_id == c.id,
-            Agendamento.status == 'concluido',
+            Agendamento.status == StatusAgendamento.CONCLUIDO,
         )
         .group_by(AgendamentoServico.servico_id)
         .order_by(func.count(AgendamentoServico.id).desc())
@@ -259,7 +260,7 @@ def perfil_cliente(cliente_id):
 
     hist_ags = (
         Agendamento.query
-        .filter_by(barbearia_id=bid, cliente_id=c.id, status='concluido')
+        .filter_by(barbearia_id=bid, cliente_id=c.id, status=StatusAgendamento.CONCLUIDO)
         .order_by(Agendamento.data_hora.desc())
         .limit(5)
         .all()

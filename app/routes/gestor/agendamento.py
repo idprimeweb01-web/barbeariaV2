@@ -16,16 +16,9 @@ from app.utils.tz import naive_brasilia
 from app.labels import L
 from app.utils import normalizar_telefone
 from app.utils.db import commit_ou_falhar
+from app.constants import StatusAgendamento
 
 gestor_agenda_bp = Blueprint('gestor_agenda', __name__, url_prefix='/api/v1/gestor')
-
-# Mesma lista aceita pelo CHECK constraint ck_agendamentos_status_valido (Bloco 2.1).
-# Migra para app/constants.py no Script 14.
-_STATUS_AGENDAMENTO_VALIDOS = {
-    'agendado', 'concluido', 'cancelado', 'em_atendimento',
-    'aguardando_comprovante', 'aguardando_aprovacao', 'aguardando_pagamento',
-    'nao_realizado', 'aguardando_transferencia',
-}
 
 
 def _fmt_ag_gestor(ag, clientes=None, barbeiros=None, pixes=None):
@@ -116,7 +109,7 @@ def listar_agendamentos():
 
     status_f = request.args.get('status')
     if status_f:
-        if status_f not in _STATUS_AGENDAMENTO_VALIDOS:
+        if status_f not in StatusAgendamento.TODOS:
             raise APIError(f'Status inválido: "{status_f}".', 422)
         q = q.filter_by(status=status_f)
 
@@ -170,7 +163,10 @@ def aprovar_agendamento(ag_id):
     )
     if not ag:
         raise APIError(f'{L("agendamento")} não encontrado.', 404)
-    _aprovavel = {'aguardando_aprovacao', 'aguardando_comprovante', 'aguardando_pagamento'}
+    _aprovavel = {
+        StatusAgendamento.AGUARDANDO_APROVACAO, StatusAgendamento.AGUARDANDO_COMPROVANTE,
+        StatusAgendamento.AGUARDANDO_PAGAMENTO,
+    }
     if ag.status not in _aprovavel:
         raise APIError('Este agendamento já foi processado.', 409)
 
@@ -182,9 +178,9 @@ def aprovar_agendamento(ag_id):
     if ag.cupom_id:
         incrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
 
-    ag.status = 'agendado'
+    ag.status = StatusAgendamento.AGENDADO
     commit_ou_falhar('gestor.agendamento.aprovar_agendamento')
-    return jsonify({'mensagem': f'{L("agendamento")} aprovado.', 'id': ag_id, 'status': 'agendado'}), 200
+    return jsonify({'mensagem': f'{L("agendamento")} aprovado.', 'id': ag_id, 'status': StatusAgendamento.AGENDADO}), 200
 
 
 # ── PUT /api/v1/gestor/agendamentos/<id>/cancelar ────────────────────────────
@@ -195,17 +191,17 @@ def cancelar_agendamento_gestor(ag_id):
     ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id).first()
     if not ag:
         raise APIError(f'{L("agendamento")} não encontrado.', 404)
-    if ag.status in ('cancelado', 'concluido'):
+    if ag.status in (StatusAgendamento.CANCELADO, StatusAgendamento.CONCLUIDO):
         raise APIError(f'Não é possível cancelar. Status atual: "{ag.status}".')
 
     pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=ag.barbearia_id).first()
     if pix and pix.status == 'pendente':
         pix.status = 'rejeitado'
 
-    if ag.cupom_id and ag.status == 'agendado':
+    if ag.cupom_id and ag.status == StatusAgendamento.AGENDADO:
         decrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
 
-    ag.status = 'cancelado'
+    ag.status = StatusAgendamento.CANCELADO
     commit_ou_falhar('gestor.agendamento.cancelar_agendamento_gestor')
     return jsonify({'mensagem': f'{L("agendamento")} cancelado pelo gestor.', 'id': ag_id}), 200
 
@@ -372,7 +368,7 @@ def agendamento_manual():
         data_hora=data_hora,
         duracao_minutos=sv.duracao_minutos,
         valor_total=sv.preco,
-        status='agendado',
+        status=StatusAgendamento.AGENDADO,
         metodo_pagamento='presencial',
     )
     db.session.add(ag)

@@ -8,6 +8,7 @@ from app.decorators.auth import cliente_required
 from app.utils.features import feature_ativa
 from app.utils.tz import naive_brasilia
 from app.labels import L
+from app.constants import StatusAgendamento
 
 cliente_dash_bp = Blueprint('cliente_dashboard', __name__, url_prefix='/api/v1/cliente')
 
@@ -42,7 +43,7 @@ def dashboard_cliente():
             Agendamento.barbearia_id == g.barbearia_id,
             Agendamento.cliente_id == cli.id,
             Agendamento.data_hora >= agora,
-            Agendamento.status == 'agendado',
+            Agendamento.status == StatusAgendamento.AGENDADO,
         )
         .order_by(Agendamento.data_hora)
         .limit(5)
@@ -71,10 +72,10 @@ def dashboard_cliente():
 
     # Histórico resumido
     total_concluidos = Agendamento.query.filter_by(
-        barbearia_id=g.barbearia_id, cliente_id=cli.id, status='concluido'
+        barbearia_id=g.barbearia_id, cliente_id=cli.id, status=StatusAgendamento.CONCLUIDO
     ).count()
     total_cancelados = Agendamento.query.filter_by(
-        barbearia_id=g.barbearia_id, cliente_id=cli.id, status='cancelado'
+        barbearia_id=g.barbearia_id, cliente_id=cli.id, status=StatusAgendamento.CANCELADO
     ).count()
 
     # Planos ativos (só se feature 'planos' estiver ligada)

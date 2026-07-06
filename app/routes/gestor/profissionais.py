@@ -11,9 +11,10 @@ from app.utils.auditoria import registrar_auditoria
 from app.utils.auth import revogar_todos_tokens
 from app.utils.db import commit_ou_falhar
 from app.utils.tz import naive_brasilia
+from app.constants import StatusAgendamento
 
 # Status considerados "compromisso futuro" — mesma lista usada no guard de desativação.
-_STATUS_AGENDAMENTO_FUTURO = ('agendado', 'aguardando_comprovante', 'aguardando_aprovacao')
+_STATUS_AGENDAMENTO_FUTURO = StatusAgendamento.ATIVOS
 
 profissionais_bp = Blueprint('gestor_profissionais', __name__, url_prefix='/api/v1/gestor')
 

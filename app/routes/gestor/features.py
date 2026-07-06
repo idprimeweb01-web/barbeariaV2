@@ -5,6 +5,7 @@ from app.decorators.auth import gestor_required
 from app.utils.features import feature_ativa, feature_required
 from app.exceptions import APIError
 from app.labels import L
+from app.constants import StatusAgendamento
 
 gestor_features_bp = Blueprint('gestor_features', __name__, url_prefix='/api/v1/gestor')
 
@@ -46,7 +47,7 @@ def historico_cliente_resumo():
         )
         .filter(
             Agendamento.barbearia_id == g.barbearia_id,
-            Agendamento.status.in_(['agendado', 'concluido']),
+            Agendamento.status.in_([StatusAgendamento.AGENDADO, StatusAgendamento.CONCLUIDO]),
         )
         .group_by(Agendamento.cliente_id)
         .order_by(func.count(Agendamento.id).desc())

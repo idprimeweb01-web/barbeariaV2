@@ -8,6 +8,7 @@ from app.decorators.auth import barbeiro_required
 from app.utils.features import feature_ativa
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.labels import L
+from app.constants import StatusAgendamento
 
 barbeiro_dash_bp = Blueprint('barbeiro_dashboard', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -47,7 +48,7 @@ def dashboard_barbeiro():
             Agendamento.barbearia_id == g.barbearia_id,
             Agendamento.barbeiro_id == barbeiro.id,
             db.func.date(Agendamento.data_hora) == hoje,
-            Agendamento.status.in_(['agendado', 'concluido']),
+            Agendamento.status.in_([StatusAgendamento.AGENDADO, StatusAgendamento.CONCLUIDO]),
         )
         .all()
     )
@@ -61,7 +62,7 @@ def dashboard_barbeiro():
             Agendamento.barbeiro_id == barbeiro.id,
             db.extract('year',  Agendamento.data_hora) == mes_ano[0],
             db.extract('month', Agendamento.data_hora) == mes_ano[1],
-            Agendamento.status.in_(['agendado', 'concluido']),
+            Agendamento.status.in_([StatusAgendamento.AGENDADO, StatusAgendamento.CONCLUIDO]),
         )
         .all()
     )
@@ -87,7 +88,7 @@ def dashboard_barbeiro():
             Agendamento.barbearia_id == g.barbearia_id,
             Agendamento.barbeiro_id == barbeiro.id,
             Agendamento.data_hora >= agora,
-            Agendamento.status == 'agendado',
+            Agendamento.status == StatusAgendamento.AGENDADO,
         )
         .order_by(Agendamento.data_hora)
         .limit(5)

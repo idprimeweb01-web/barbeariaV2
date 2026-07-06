@@ -4,6 +4,7 @@ from app.models import Agendamento, AgendamentoServico, Servico, Barbeiro, Clien
 from app.exceptions import APIError
 from app.decorators.auth import barbeiro_required
 from app.utils.db import commit_ou_falhar
+from app.constants import StatusAgendamento
 
 barbeiro_cli_bp = Blueprint('barbeiro_clientes', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -53,7 +54,7 @@ def listar_clientes():
 
         total_visitas = Agendamento.query.filter_by(
             barbearia_id=g.barbearia_id, cliente_id=cli.id,
-            barbeiro_id=b.id, status='concluido',
+            barbeiro_id=b.id, status=StatusAgendamento.CONCLUIDO,
         ).count()
 
         # Última nota (preferências)

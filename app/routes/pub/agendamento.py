@@ -28,6 +28,7 @@ from app.utils.cupons import validar_cupom, incrementar_uso_cupom
 from app.utils.auditoria import registrar_auditoria
 from app.labels import L
 from app.utils.db import commit_ou_falhar
+from app.constants import StatusAgendamento, MetodoPagamento
 
 pub_bp = Blueprint('pub', __name__, url_prefix='/api/v1/pub')
 
@@ -273,7 +274,11 @@ def _criar_agendamento_core(
     valor_total = round(subtotal - valor_desconto, 2)
 
     # Status inicial
-    status = 'aguardando_comprovante' if valor_total > 0 and metodo == 'pix' else 'agendado'
+    status = (
+        StatusAgendamento.AGUARDANDO_COMPROVANTE
+        if valor_total > 0 and metodo == MetodoPagamento.PIX
+        else StatusAgendamento.AGENDADO
+    )
 
     ag = Agendamento(
         barbearia_id=barbearia_id,
@@ -299,7 +304,7 @@ def _criar_agendamento_core(
         raise APIError('Este horário acabou de ser reservado. Escolha outro.', 409)
 
     # Cupom só conta uso quando o agendamento nasce confirmado (sem PIX pendente)
-    if cupom and status == 'agendado':
+    if cupom and status == StatusAgendamento.AGENDADO:
         try:
             incrementar_uso_cupom(cupom.id, barbearia_id)
         except APIError:
@@ -340,7 +345,7 @@ def _criar_agendamento_core(
 
     # Gera PIX se necessário
     pix_info = None
-    if status == 'aguardando_comprovante':
+    if status == StatusAgendamento.AGUARDANDO_COMPROVANTE:
         pix_solicitacao = AgendamentoSolicitacaoPix(
             barbearia_id=barbearia_id,
             agendamento_id=ag.id,
@@ -607,7 +612,7 @@ def quick_booking(slug):
     barbeiro_id = dados.get('barbeiro_id')
     data_hora_str = dados.get('data_hora')
     itens = dados.get('servicos') or []
-    metodo = (dados.get('metodo_pagamento') or 'local').strip().lower()
+    metodo = (dados.get('metodo_pagamento') or MetodoPagamento.LOCAL).strip().lower()
     observacao = (dados.get('observacao') or '').strip() or None
 
     if not isinstance(barbeiro_id, int):
@@ -687,12 +692,14 @@ def upload_comprovante(slug, agendamento_id):
     if not ag:
         raise APIError('Agendamento não encontrado.', 404)
 
-    if ag.metodo_pagamento != 'pix':
+    if ag.metodo_pagamento != MetodoPagamento.PIX:
         raise APIError('Este agendamento não é via PIX.', 400)
 
     # EC10: antes, comprovante era aceito em qualquer status (inclusive
     # agendamento já aprovado, cancelado ou concluído).
-    _STATUS_ACEITA_COMPROVANTE = {'aguardando_comprovante', 'aguardando_aprovacao'}
+    _STATUS_ACEITA_COMPROVANTE = {
+        StatusAgendamento.AGUARDANDO_COMPROVANTE, StatusAgendamento.AGUARDANDO_APROVACAO,
+    }
     if ag.status not in _STATUS_ACEITA_COMPROVANTE:
         raise APIError('Não é possível enviar comprovante para este agendamento.', 422)
 
@@ -743,8 +750,8 @@ def upload_comprovante(slug, agendamento_id):
     if pix:
         pix.comprovante_url = url
 
-    if ag.status == 'aguardando_comprovante':
-        ag.status = 'aguardando_aprovacao'
+    if ag.status == StatusAgendamento.AGUARDANDO_COMPROVANTE:
+        ag.status = StatusAgendamento.AGUARDANDO_APROVACAO
 
     commit_ou_falhar('pub.agendamento.upload_comprovante')
 
