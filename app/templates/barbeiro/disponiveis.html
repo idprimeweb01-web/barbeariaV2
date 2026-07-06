@@ -1,0 +1,88 @@
+{% extends "barbeiro/base.html" %}
+{% block title %}Disponíveis para pegar{% endblock %}
+{% block breadcrumb %}
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Disponíveis para pegar</span>
+{% endblock %}
+
+{% block styles %}
+<style>
+.disp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.disp-card {
+  background: #161616; border: 1px solid #2a2a2a; border-radius: 10px;
+  padding: 16px; display: flex; flex-direction: column; gap: 8px;
+}
+.disp-data { font-size: 13px; font-weight: 700; color: var(--cor-primaria); }
+.disp-cliente { font-size: 15px; font-weight: 600; color: #eee; }
+.disp-servicos { font-size: 13px; color: #999; }
+.disp-valor { font-size: 13px; color: #ccc; }
+.disp-btn {
+  margin-top: 6px; width: 100%; padding: 9px; border-radius: 8px; border: none;
+  background: var(--cor-primaria); color: #1a1a1a; font-weight: 700; font-size: 13px;
+  cursor: pointer; font-family: inherit; transition: opacity .15s;
+}
+.disp-btn:hover { opacity: .85; }
+.disp-btn:disabled { opacity: .5; cursor: default; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div class="section-title">Disponíveis para pegar</div>
+</div>
+<p style="color:#888;font-size:13px;margin-bottom:16px">
+  Agendamentos que ficaram sem profissional (transferência/desativação) e que
+  você pode atender — já filtrados pelos serviços que você oferece e pela sua
+  agenda livre nesse horário.
+</p>
+
+<div id="lista" class="disp-grid">
+  <p style="color:#555;grid-column:1/-1">Carregando…</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function carregar() {
+  const el = document.getElementById('lista');
+  try {
+    const lista = await Bos.get('/barbeiro/agendamentos-disponiveis');
+    if (!lista.length) {
+      el.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><p>Nenhum atendimento disponível no momento.</p></div>';
+      return;
+    }
+    el.innerHTML = lista.map(ag => {
+      const dt = new Date(ag.data_hora);
+      const dataFmt = dt.toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+      return `
+        <div class="disp-card" data-ag-id="${ag.id}">
+          <div class="disp-data">${dataFmt}</div>
+          <div class="disp-cliente">${esc(ag.cliente_primeiro_nome || 'Cliente')}</div>
+          <div class="disp-servicos">${esc((ag.servicos || []).join(', ') || '—')}</div>
+          <div class="disp-valor">R$ ${Number(ag.valor_total || 0).toFixed(2)}</div>
+          <button class="disp-btn" onclick="pegar(${ag.id}, this)">Pegar este atendimento</button>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<p style="color:#f87171;grid-column:1/-1">Erro: ${e.message}</p>`;
+  }
+}
+
+async function pegar(id, btn) {
+  btn.disabled = true;
+  btn.textContent = 'Assumindo…';
+  try {
+    await Bos.post(`/barbeiro/agendamentos/${id}/pegar`, {});
+    toast('Atendimento assumido com sucesso!');
+    await carregar();
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Pegar este atendimento';
+  }
+}
+
+carregar();
+</script>
+{% endblock %}

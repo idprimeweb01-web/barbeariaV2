@@ -2,13 +2,21 @@ from datetime import date
 from flask import Blueprint, request, g, jsonify
 from sqlalchemy.orm import selectinload
 from app.extensions import db
-from app.models import Agendamento, AgendamentoServico, AgendamentoSolicitacaoPix, Servico, Barbeiro, Cliente, ClienteNota
+from app.models import (
+    Agendamento, AgendamentoServico, AgendamentoSolicitacaoPix, Servico, Barbeiro, Cliente, ClienteNota,
+    TransferenciaAgendamento, Usuario,
+)
 from app.exceptions import APIError
 from app.decorators.auth import barbeiro_required
+from app.utils.agenda import (
+    fim_agendamento, verificar_conflito, gerar_slots,
+    servicos_do_agendamento, barbeiro_atende_todos_servicos, barbeiro_elegivel_para_transferencia,
+)
 from app.utils.cupons import incrementar_uso_cupom, decrementar_uso_cupom
+from app.utils.notificacoes import criar_notificacao
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.utils.db import commit_ou_falhar
-from app.constants import StatusAgendamento
+from app.constants import StatusAgendamento, StatusTransferencia
 
 barbeiro_ag_bp = Blueprint('barbeiro_agendamentos', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -256,3 +264,125 @@ def adicionar_nota_agendamento(ag_id):
         'tipo':      nota.tipo,
         'criado_em': nota.criado_em.strftime('%d/%m/%Y %H:%M'),
     }), 201
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Mural de transferência — barbeiro "pega" um agendamento órfão (Script 17)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── GET /api/v1/barbeiro/agendamentos-disponiveis ────────────────────────────
+
+@barbeiro_ag_bp.get('/agendamentos-disponiveis')
+@barbeiro_required
+def listar_agendamentos_disponiveis():
+    b = _get_barbeiro(g.user_id, g.barbearia_id)
+
+    ags = (
+        Agendamento.query
+        .filter_by(barbearia_id=g.barbearia_id, status=StatusAgendamento.AGUARDANDO_TRANSFERENCIA)
+        .order_by(Agendamento.data_hora)
+        .all()
+    )
+
+    resultado = []
+    for ag in ags:
+        if ag.barbeiro_id == b.id:
+            continue
+        if not barbeiro_elegivel_para_transferencia(b.id, ag):
+            continue
+        cli = db.session.get(Cliente, ag.cliente_id)
+        itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
+        servicos_nomes = [s.nome for s in (db.session.get(Servico, it.servico_id) for it in itens) if s]
+        primeiro_nome = cli.nome.split()[0] if cli and cli.nome else None
+        resultado.append({
+            'id':                    ag.id,
+            'cliente_primeiro_nome': primeiro_nome,
+            'data_hora':             ag.data_hora.isoformat(),
+            'duracao_minutos':       ag.duracao_minutos,
+            'servicos':              servicos_nomes,
+            'valor_total':           float(ag.valor_total),
+        })
+
+    return jsonify(resultado), 200
+
+
+# ── POST /api/v1/barbeiro/agendamentos/<id>/pegar ────────────────────────────
+
+@barbeiro_ag_bp.post('/agendamentos/<int:ag_id>/pegar')
+@barbeiro_required
+def pegar_agendamento(ag_id):
+    b = _get_barbeiro(g.user_id, g.barbearia_id)
+
+    ag = (
+        Agendamento.query
+        .filter_by(id=ag_id, barbearia_id=g.barbearia_id)
+        .with_for_update()
+        .first()
+    )
+    if not ag:
+        raise APIError('Agendamento não encontrado.', 404)
+    # Re-checagem PÓS-lock: se outro barbeiro já pegou (e commitou) enquanto
+    # esta transação esperava o lock, o status já não é mais
+    # aguardando_transferencia — 409 em vez de processar duas vezes.
+    if ag.status != StatusAgendamento.AGUARDANDO_TRANSFERENCIA:
+        raise APIError('Este agendamento não está mais disponível para ser assumido.', 409)
+    if ag.barbeiro_id == b.id:
+        raise APIError('Este agendamento já é seu.', 422)
+
+    servico_ids = servicos_do_agendamento(ag.id)
+    if not barbeiro_atende_todos_servicos(b.id, servico_ids):
+        raise APIError('Você não oferece todos os serviços deste agendamento.', 422)
+
+    conflito = verificar_conflito(b.id, ag.data_hora, ag.duracao_minutos, excluir_id=ag.id)
+    if conflito:
+        fim_conf = fim_agendamento(conflito.data_hora, conflito.duracao_minutos)
+        raise APIError(
+            f'Você já tem outro agendamento das {conflito.data_hora.strftime("%H:%M")} '
+            f'às {fim_conf.strftime("%H:%M")}.',
+            409,
+        )
+    slots_validos = gerar_slots(b.id, ag.data_hora.date(), ag.duracao_minutos)
+    if ag.data_hora.strftime('%H:%M') not in slots_validos:
+        raise APIError('Você não está disponível nesse horário.', 422)
+
+    origem_id = ag.barbeiro_id
+    ag.barbeiro_id = b.id
+    ag.status = StatusAgendamento.AGENDADO
+
+    transf = TransferenciaAgendamento.query.filter_by(
+        barbearia_id=g.barbearia_id, agendamento_id=ag.id, status=StatusTransferencia.PENDENTE,
+    ).first()
+    if transf:
+        transf.status = StatusTransferencia.CONCLUIDA
+        transf.barbeiro_destino_id = b.id
+        transf.concluido_em = naive_brasilia()
+    else:
+        db.session.add(TransferenciaAgendamento(
+            barbearia_id=g.barbearia_id,
+            agendamento_id=ag.id,
+            barbeiro_origem_id=origem_id,
+            barbeiro_destino_id=b.id,
+            motivo='pego_pelo_mural',
+            status=StatusTransferencia.CONCLUIDA,
+            concluido_em=naive_brasilia(),
+        ))
+
+    cli = db.session.get(Cliente, ag.cliente_id)
+    usr = db.session.get(Usuario, b.usuario_id)
+    if cli and cli.usuario_id:
+        criar_notificacao(
+            barbearia_id=g.barbearia_id,
+            usuario_id=cli.usuario_id,
+            tipo='agendamento_transferido',
+            titulo='Seu atendimento mudou de profissional',
+            corpo=f'Seu atendimento agora será com {usr.nome if usr else "outro profissional"}.',
+            canal='in_app',
+            agendamento_id=ag.id,
+        )
+
+    commit_ou_falhar('barbeiro.agendamentos.pegar_agendamento')
+    return jsonify({
+        'mensagem': 'Atendimento assumido com sucesso.',
+        'id': ag.id,
+        'status': ag.status,
+    }), 200

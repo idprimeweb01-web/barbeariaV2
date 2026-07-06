@@ -1,0 +1,100 @@
+{% extends "gestor/base.html" %}
+{% block title %}Aguardando Transferência{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Aguardando Transferência</span>
+{% endblock %}
+
+{% block styles %}
+<style>
+.tr-card {
+  background: #161616; border: 1px solid #2a2a2a; border-radius: 10px;
+  padding: 16px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;
+}
+.tr-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.tr-data { font-size: 13px; font-weight: 700; color: var(--cor-primaria); }
+.tr-cliente { font-size: 15px; font-weight: 600; color: #eee; }
+.tr-servicos { font-size: 13px; color: #999; }
+.tr-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tr-select { font-size: 13px; padding: 7px 10px; border-radius: 6px; background: #1a1a1a; border: 1px solid #333; color: #ddd; }
+.tr-btn {
+  padding: 7px 14px; border-radius: 6px; border: none; background: var(--cor-primaria);
+  color: #1a1a1a; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit;
+}
+.tr-btn:disabled { opacity: .5; cursor: default; }
+.tr-vazio { color: #666; font-size: 11px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div class="section-title">Aguardando Transferência</div>
+</div>
+<p style="color:#888;font-size:13px;margin-bottom:16px">
+  Agendamentos sem profissional definido (barbeiro desativado ou transferência
+  em aberto). Transfira para um dos profissionais elegíveis abaixo — a lista já
+  vem filtrada por serviço e disponibilidade de horário.
+</p>
+
+<div id="lista">
+  <p style="color:#555">Carregando…</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function carregar() {
+  const el = document.getElementById('lista');
+  try {
+    const lista = await Bos.get('/gestor/agendamentos-sem-barbeiro');
+    if (!lista.length) {
+      el.innerHTML = '<div class="empty-state"><p>Nenhum agendamento aguardando transferência.</p></div>';
+      return;
+    }
+    el.innerHTML = lista.map(ag => {
+      const dt = new Date(ag.data_hora);
+      const dataFmt = dt.toLocaleString('pt-BR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+      const opcoes = ag.barbeiros_elegiveis.map(b => `<option value="${b.id}">${esc(b.nome)}</option>`).join('');
+      return `
+        <div class="tr-card" data-ag-id="${ag.id}">
+          <div class="tr-top">
+            <div>
+              <div class="tr-data">${dataFmt}</div>
+              <div class="tr-cliente">${esc(ag.cliente_nome || '—')}</div>
+              <div class="tr-servicos">${esc((ag.servicos || []).join(', ') || '—')}</div>
+            </div>
+            <div class="tr-actions">
+              ${ag.barbeiros_elegiveis.length
+                ? `<select class="tr-select">${opcoes}</select>
+                   <button class="tr-btn" onclick="transferir(${ag.id}, this)">Transferir</button>`
+                : '<span class="tr-vazio">Nenhum profissional elegível para este horário.</span>'}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<p style="color:#f87171">Erro: ${e.message}</p>`;
+  }
+}
+
+async function transferir(agId, btn) {
+  const card = btn.closest('[data-ag-id]');
+  const select = card.querySelector('.tr-select');
+  const destinoId = parseInt(select.value);
+  if (!destinoId) { toast('Escolha um profissional.', 'error'); return; }
+  btn.disabled = true;
+  try {
+    await Bos.post(`/gestor/agendamentos/${agId}/transferir`, {barbeiro_id: destinoId});
+    toast('Agendamento transferido.');
+    await carregar();
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false;
+  }
+}
+
+carregar();
+</script>
+{% endblock %}

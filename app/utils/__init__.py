@@ -1,5 +1,8 @@
 from .telefone import normalizar_telefone
-from .agenda import verificar_conflito, gerar_slots, fim_agendamento
+from .agenda import (
+    verificar_conflito, gerar_slots, fim_agendamento,
+    servicos_do_agendamento, barbeiro_atende_todos_servicos, barbeiro_elegivel_para_transferencia,
+)
 from .pix import gerar_pix_copia_cola
 from .planos import limite_para_fora, limite_para_dentro, PLANO_LIMITE_ILIMITADO
 from .auditoria import registrar_auditoria
@@ -16,4 +19,7 @@ __all__ = [
     'incrementar_nivel_vip',
     'resetar_nivel_vip',
     'revogar_todos_tokens',
+    'servicos_do_agendamento',
+    'barbeiro_atende_todos_servicos',
+    'barbeiro_elegivel_para_transferencia',
 ]

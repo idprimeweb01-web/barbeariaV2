@@ -2,16 +2,20 @@ from datetime import time
 from flask import Blueprint, request, g, jsonify
 from werkzeug.security import generate_password_hash
 from app.extensions import db
-from app.models import Barbeiro, Usuario, Servico, BarbeiroServico, ConfiguracaoAgenda, PausaBarbeiro, Agendamento
+from app.models import (
+    Barbeiro, Usuario, Servico, BarbeiroServico, ConfiguracaoAgenda, PausaBarbeiro,
+    Agendamento, AgendamentoServico, Cliente, TransferenciaAgendamento,
+)
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.labels import L
 from app.utils import normalizar_telefone
 from app.utils.auditoria import registrar_auditoria
 from app.utils.auth import revogar_todos_tokens
+from app.utils.notificacoes import criar_notificacao
 from app.utils.db import commit_ou_falhar
 from app.utils.tz import naive_brasilia
-from app.constants import StatusAgendamento
+from app.constants import StatusAgendamento, StatusTransferencia
 
 # Status considerados "compromisso futuro" — mesma lista usada no guard de desativação.
 _STATUS_AGENDAMENTO_FUTURO = StatusAgendamento.ATIVOS
@@ -61,6 +65,20 @@ def _get_barbeiro(barbeiro_id, barbearia_id):
     if not b:
         raise APIError(f'{L("profissional")} não encontrado.', 404)
     return b
+
+
+def _fmt_agendamento_futuro(ag):
+    cli = db.session.get(Cliente, ag.cliente_id)
+    itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
+    servicos_nomes = [
+        s.nome for s in (db.session.get(Servico, it.servico_id) for it in itens) if s
+    ]
+    return {
+        'id':            ag.id,
+        'cliente_nome':  cli.nome if cli else None,
+        'data_hora':     ag.data_hora.isoformat(),
+        'servicos':      servicos_nomes,
+    }
 
 
 # ── GET /api/v1/gestor/barbeiros ──────────────────────────────────────────────
@@ -201,22 +219,54 @@ def editar_barbeiro(barbeiro_id):
     if 'ativo' in dados:
         ativo = bool(dados['ativo'])
         if not ativo:
-            # EC07: antes, o barbeiro era desativado mesmo com agendamentos
-            # futuros — clientes ficavam órfãos sem nenhum aviso. A
-            # ferramenta de transferência (Script 17) resolve isso de forma
-            # elegante; por ora, só bloqueia.
-            futuros = Agendamento.query.filter(
+            # EC07 (Script 10): bloqueia desativação se houver agendamento
+            # futuro. Script 17 evolui isso: se o gestor pedir explicitamente
+            # acao='transferir_mural', cada futuro vira 'aguardando_transferencia'
+            # (mural pros outros barbeiros pegarem) em vez de só bloquear.
+            acao = (dados.get('acao') or '').strip()
+
+            futuros_q = Agendamento.query.filter(
                 Agendamento.barbeiro_id == b.id,
                 Agendamento.barbearia_id == barbearia_id,
                 Agendamento.status.in_(_STATUS_AGENDAMENTO_FUTURO),
                 Agendamento.data_hora > naive_brasilia(),
-            ).count()
-            if futuros > 0:
-                raise APIError(
-                    f'Este {L("profissional").lower()} tem {futuros} agendamento(s) futuro(s). '
-                    'Transfira ou cancele antes de desativar.',
-                    409,
-                )
+            )
+
+            if acao == 'transferir_mural':
+                futuros = futuros_q.order_by(Agendamento.id).with_for_update().all()
+                for ag in futuros:
+                    ag.status = StatusAgendamento.AGUARDANDO_TRANSFERENCIA
+                    db.session.add(TransferenciaAgendamento(
+                        barbearia_id=barbearia_id,
+                        agendamento_id=ag.id,
+                        barbeiro_origem_id=b.id,
+                        motivo='barbeiro_desativado',
+                        status=StatusTransferencia.PENDENTE,
+                    ))
+                    cli = db.session.get(Cliente, ag.cliente_id)
+                    if cli and cli.usuario_id:
+                        criar_notificacao(
+                            barbearia_id=barbearia_id,
+                            usuario_id=cli.usuario_id,
+                            tipo='transferencia_pendente',
+                            titulo='Seu profissional não estará mais disponível',
+                            corpo=(
+                                f'O horário de {ag.data_hora.strftime("%d/%m às %H:%M")} está sendo '
+                                'transferido para outro profissional. Você será avisado assim que '
+                                'alguém assumir, ou pode reagendar quando quiser.'
+                            ),
+                            canal='in_app',
+                            agendamento_id=ag.id,
+                        )
+            else:
+                futuros = futuros_q.all()
+                if futuros:
+                    raise APIError(
+                        f'Este {L("profissional").lower()} tem {len(futuros)} agendamento(s) futuro(s). '
+                        'Transfira ou cancele antes de desativar.',
+                        409,
+                        payload={'agendamentos_futuros': [_fmt_agendamento_futuro(ag) for ag in futuros]},
+                    )
         b.ativo = ativo
         u.ativo = ativo
         if not ativo:

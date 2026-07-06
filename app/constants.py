@@ -39,3 +39,13 @@ class StatusSolicitacaoPlano:
     REJEITADO = 'rejeitado'
 
     TODOS = frozenset({PENDENTE, APROVADO, REJEITADO})
+
+
+class StatusTransferencia:
+    """Status de TransferenciaAgendamento (Script 17)."""
+    PENDENTE = 'pendente'
+    CONCLUIDA = 'concluida'
+    REAGENDADA = 'reagendada'
+    CANCELADA = 'cancelada'
+
+    TODOS = frozenset({PENDENTE, CONCLUIDA, REAGENDADA, CANCELADA})

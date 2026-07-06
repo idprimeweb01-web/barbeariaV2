@@ -117,6 +117,26 @@
     </div>
   </div>
 </div>
+
+<!-- ── Modal transferência (desativação com agendamentos futuros) ── -->
+<div class="modal-overlay" id="modalTransferencia" onclick="if(event.target===this)fecharModal('modalTransferencia')">
+  <div class="modal-box" style="max-width:560px">
+    <div class="modal-header">
+      <h3>Agendamentos futuros de <span id="tfNome"></span></h3>
+      <button class="modal-close" onclick="fecharModal('modalTransferencia')">×</button>
+    </div>
+    <p style="color:#999;font-size:13px;margin-bottom:14px">
+      Este profissional tem agendamentos futuros. Transfira cada um diretamente
+      para outro profissional, ou mande o restante para o mural — outros
+      barbeiros poderão assumir esses horários.
+    </p>
+    <div id="tfLista" style="display:flex;flex-direction:column;gap:10px;max-height:320px;overflow-y:auto;margin-bottom:16px"></div>
+    <div class="modal-footer" style="flex-direction:column;align-items:stretch;gap:10px;border-top:1px solid #2a2a2a;padding-top:14px">
+      <button class="btn btn-primary" onclick="transferirRestantesParaMural()" id="btnMural">Transferir restantes p/ mural e desativar</button>
+      <button style="align-self:center;color:#666;font-size:12px;border:none;background:none;cursor:pointer;text-decoration:underline" onclick="cancelarTodosEDesativar()">Cancelar todos os agendamentos e desativar</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -254,6 +274,91 @@ async function deletar(id) {
   try {
     await Bos.patch('/gestor/barbeiros/' + id, {ativo: false});
     toast('Funcionário desativado.');
+    await carregar();
+  } catch(e) {
+    if (e.status === 409 && e.data && e.data.agendamentos_futuros) {
+      abrirModalTransferencia(id, b?.nome, e.data.agendamentos_futuros);
+    } else {
+      toast(e.message, 'error');
+    }
+  }
+}
+
+// ── Modal transferência (desativação com agendamentos futuros) ───────────
+let _tfBarbeiroId = null;
+let _tfFuturos    = [];
+
+function abrirModalTransferencia(barbeiroId, nome, futuros) {
+  _tfBarbeiroId = barbeiroId;
+  _tfFuturos    = futuros;
+  document.getElementById('tfNome').textContent = nome || '';
+  renderTfLista();
+  abrirModal('modalTransferencia');
+}
+
+function renderTfLista() {
+  const el = document.getElementById('tfLista');
+  if (!_tfFuturos.length) {
+    el.innerHTML = '<p style="color:#555;font-size:13px">Nenhum agendamento restante — pode desativar.</p>';
+    return;
+  }
+  const outrosBarbeiros = _todos.filter(x => x.ativo && x.id !== _tfBarbeiroId);
+  el.innerHTML = _tfFuturos.map(ag => `
+    <div style="border:1px solid #2a2a2a;border-radius:8px;padding:10px 12px" data-ag-id="${ag.id}">
+      <div style="font-weight:600;font-size:13px">${esc(ag.cliente_nome || '—')}</div>
+      <div style="color:#888;font-size:12px;margin-bottom:8px">
+        ${new Date(ag.data_hora).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
+        — ${esc((ag.servicos || []).join(', ') || '—')}
+      </div>
+      <div style="display:flex;gap:6px">
+        <select class="tf-select" style="flex:1;font-size:12px">
+          <option value="">Transferir para…</option>
+          ${outrosBarbeiros.map(x => `<option value="${x.id}">${esc(x.nome)}</option>`).join('')}
+        </select>
+        <button class="btn-icon" style="flex-shrink:0" onclick="transferirDireto(${ag.id}, this)">Transferir</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function transferirDireto(agId, btn) {
+  const row = btn.closest('[data-ag-id]');
+  const select = row.querySelector('.tf-select');
+  const destinoId = parseInt(select.value);
+  if (!destinoId) { toast('Escolha um profissional.', 'error'); return; }
+  btn.disabled = true;
+  try {
+    await Bos.post(`/gestor/agendamentos/${agId}/transferir`, {barbeiro_id: destinoId});
+    _tfFuturos = _tfFuturos.filter(a => a.id !== agId);
+    renderTfLista();
+    toast('Agendamento transferido.');
+  } catch(e) {
+    toast(e.message, 'error');
+    btn.disabled = false;
+  }
+}
+
+async function transferirRestantesParaMural() {
+  const btn = document.getElementById('btnMural');
+  btn.disabled = true;
+  try {
+    await Bos.patch('/gestor/barbeiros/' + _tfBarbeiroId, {ativo: false, acao: 'transferir_mural'});
+    fecharModal('modalTransferencia');
+    toast('Restantes enviados ao mural. Funcionário desativado.');
+    await carregar();
+  } catch(e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+
+async function cancelarTodosEDesativar() {
+  if (!confirm('Cancelar TODOS os agendamentos futuros restantes deste profissional?')) return;
+  try {
+    for (const ag of _tfFuturos) {
+      await Bos.put(`/gestor/agendamentos/${ag.id}/cancelar`, {}).catch(() => {});
+    }
+    await Bos.patch('/gestor/barbeiros/' + _tfBarbeiroId, {ativo: false});
+    fecharModal('modalTransferencia');
+    toast('Agendamentos cancelados. Funcionário desativado.');
     await carregar();
   } catch(e) { toast(e.message, 'error'); }
 }

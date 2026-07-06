@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from app.extensions import db
 from app.models.mixins import TenantMixin
+from app.utils.tz import naive_brasilia
 
 def _utcnow():
     """Substitui datetime.utcnow() — retorna UTC timezone-aware."""
@@ -322,6 +323,27 @@ class AgendamentoSolicitacaoPix(db.Model):
     motivo_rejeicao = db.Column(db.String(500))
     criado_em       = db.Column(db.DateTime, default=_utcnow)
     respondido_em   = db.Column(db.DateTime)
+
+
+class TransferenciaAgendamento(TenantMixin, db.Model):
+    """Fila/auditoria de transferência de agendamento entre barbeiros (Script 17).
+    barbeiro_origem_id preserva o histórico mesmo depois do barbeiro ser
+    desativado; barbeiro_destino_id só é preenchido quando alguém assume
+    (mural) ou o gestor transfere diretamente."""
+    __tablename__ = 'transferencia_agendamento'
+
+    id                 = db.Column(db.Integer, primary_key=True)
+    agendamento_id     = db.Column(db.Integer, db.ForeignKey('agendamentos.id'), nullable=False, index=True)
+    barbeiro_origem_id  = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=False)
+    barbeiro_destino_id = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=True)
+    motivo             = db.Column(db.String(200), nullable=False)
+    # pendente, concluida, reagendada, cancelada — ver app.constants.StatusTransferencia
+    status             = db.Column(db.String(20), nullable=False, default='pendente')
+    # Diferente do padrão UTC de criado_em/atualizado_em: aqui os timestamps
+    # aparecem direto nas telas de "aguardando transferência" (gestor/mural
+    # do barbeiro), então usam Brasília como qualquer outra lógica de negócio.
+    criado_em          = db.Column(db.DateTime, default=naive_brasilia)
+    concluido_em       = db.Column(db.DateTime)
 
 
 class HorarioBloqueado(TenantMixin, db.Model):

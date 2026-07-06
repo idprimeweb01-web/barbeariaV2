@@ -7,16 +7,21 @@ from app.models import (
     Agendamento, AgendamentoServico, AgendamentoSolicitacaoPix,
     Cliente, Servico, Barbeiro, Usuario,
     HorarioBloqueado, ConfiguracaoAgenda, SolicitacaoLiberacao, BarbeiroServico,
+    TransferenciaAgendamento,
 )
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
-from app.utils.agenda import fim_agendamento, verificar_conflito
+from app.utils.agenda import (
+    fim_agendamento, verificar_conflito, gerar_slots,
+    servicos_do_agendamento, barbeiro_atende_todos_servicos, barbeiro_elegivel_para_transferencia,
+)
 from app.utils.cupons import incrementar_uso_cupom, decrementar_uso_cupom
+from app.utils.notificacoes import criar_notificacao
 from app.utils.tz import naive_brasilia
 from app.labels import L
 from app.utils import normalizar_telefone
 from app.utils.db import commit_ou_falhar
-from app.constants import StatusAgendamento
+from app.constants import StatusAgendamento, StatusTransferencia
 
 gestor_agenda_bp = Blueprint('gestor_agenda', __name__, url_prefix='/api/v1/gestor')
 
@@ -680,3 +685,154 @@ def responder_solicitacao(solic_id):
     msg = ('Solicitação aprovada. Bloqueios removidos.' if novo_status == 'aprovado'
            else 'Solicitação rejeitada.')
     return jsonify({'mensagem': msg}), 200
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Transferência de agendamento entre barbeiros (Script 17 / Bloco 3.4)
+# ══════════════════════════════════════════════════════════════════════════════
+
+_STATUS_TRANSFERIVEL = StatusAgendamento.ATIVOS | {StatusAgendamento.AGUARDANDO_TRANSFERENCIA}
+
+
+@gestor_agenda_bp.post('/agendamentos/<int:ag_id>/transferir')
+@gestor_required
+def transferir_agendamento(ag_id):
+    bid = g.barbearia_id
+    dados = request.get_json(silent=True) or {}
+    destino_id = dados.get('barbeiro_id')
+    if not isinstance(destino_id, int):
+        raise APIError('"barbeiro_id" é obrigatório e deve ser um inteiro.')
+
+    ag = (
+        Agendamento.query
+        .filter_by(id=ag_id, barbearia_id=bid)
+        .with_for_update()
+        .first()
+    )
+    if not ag:
+        raise APIError(f'{L("agendamento")} não encontrado.', 404)
+    if ag.status not in _STATUS_TRANSFERIVEL:
+        raise APIError(f'Não é possível transferir um {L("agendamento").lower()} com status "{ag.status}".', 409)
+
+    destino = Barbeiro.query.filter_by(id=destino_id, barbearia_id=bid, ativo=True).first()
+    if not destino:
+        raise APIError(f'{L("profissional")} destino não encontrado ou inativo.', 404)
+    if destino.id == ag.barbeiro_id:
+        raise APIError(f'Este {L("agendamento").lower()} já é deste {L("profissional").lower()}.', 422)
+
+    servico_ids = servicos_do_agendamento(ag.id)
+    if not barbeiro_atende_todos_servicos(destino.id, servico_ids):
+        raise APIError(f'{L("profissional")} não oferece todos os serviços deste {L("agendamento").lower()}.', 422)
+
+    # Revalidação de horário: verificar_conflito (trava a linha, olha outros
+    # agendamentos) + gerar_slots (agenda real: ConfiguracaoAgenda,
+    # HorarioBloqueado, PausaBarbeiro) — mesmo padrão do Script 08.
+    conflito = verificar_conflito(destino.id, ag.data_hora, ag.duracao_minutos, excluir_id=ag.id)
+    if conflito:
+        fim_conf = fim_agendamento(conflito.data_hora, conflito.duracao_minutos)
+        raise APIError(
+            f'{L("profissional")} tem outro agendamento das {conflito.data_hora.strftime("%H:%M")} '
+            f'às {fim_conf.strftime("%H:%M")}.',
+            409,
+        )
+    slots_validos = gerar_slots(destino.id, ag.data_hora.date(), ag.duracao_minutos)
+    if ag.data_hora.strftime('%H:%M') not in slots_validos:
+        raise APIError(f'{L("profissional")} não está disponível nesse horário.', 422)
+
+    origem_id = ag.barbeiro_id
+    era_aguardando_transferencia = ag.status == StatusAgendamento.AGUARDANDO_TRANSFERENCIA
+    ag.barbeiro_id = destino.id
+    if era_aguardando_transferencia:
+        # Só força 'agendado' quem estava órfão no mural — um agendamento
+        # PIX transferido continua no mesmo status até o fluxo de aprovação
+        # normal resolver (a transferência não pula essa etapa).
+        ag.status = StatusAgendamento.AGENDADO
+
+    transf = TransferenciaAgendamento.query.filter_by(
+        barbearia_id=bid, agendamento_id=ag.id, status=StatusTransferencia.PENDENTE,
+    ).first()
+    if transf:
+        transf.status = StatusTransferencia.CONCLUIDA
+        transf.barbeiro_destino_id = destino.id
+        transf.concluido_em = naive_brasilia()
+    else:
+        db.session.add(TransferenciaAgendamento(
+            barbearia_id=bid,
+            agendamento_id=ag.id,
+            barbeiro_origem_id=origem_id,
+            barbeiro_destino_id=destino.id,
+            motivo='solicitado_gestor',
+            status=StatusTransferencia.CONCLUIDA,
+            concluido_em=naive_brasilia(),
+        ))
+
+    cli = db.session.get(Cliente, ag.cliente_id)
+    destino_usr = db.session.get(Usuario, destino.usuario_id)
+    destino_nome = destino_usr.nome if destino_usr else L("profissional")
+    if cli and cli.usuario_id:
+        criar_notificacao(
+            barbearia_id=bid,
+            usuario_id=cli.usuario_id,
+            tipo='agendamento_transferido',
+            titulo='Seu atendimento mudou de profissional',
+            corpo=f'Seu atendimento agora será com {destino_nome}.',
+            canal='in_app',
+            agendamento_id=ag.id,
+        )
+
+    commit_ou_falhar('gestor.agendamento.transferir_agendamento')
+    return jsonify({
+        'mensagem': f'{L("agendamento")} transferido para {destino_nome}.',
+        'id': ag.id,
+        'barbeiro_id': destino.id,
+        'status': ag.status,
+    }), 200
+
+
+# ── GET /api/v1/gestor/agendamentos-sem-barbeiro ─────────────────────────────
+
+@gestor_agenda_bp.get('/agendamentos-sem-barbeiro')
+@gestor_required
+def listar_agendamentos_sem_barbeiro():
+    bid = g.barbearia_id
+    ags = (
+        Agendamento.query
+        .filter_by(barbearia_id=bid, status=StatusAgendamento.AGUARDANDO_TRANSFERENCIA)
+        .order_by(Agendamento.data_hora)
+        .all()
+    )
+    if not ags:
+        return jsonify([]), 200
+
+    barbeiros_ativos = Barbeiro.query.filter_by(barbearia_id=bid, ativo=True).all()
+    usuarios_map = {
+        u.id: u for u in Usuario.query.filter(
+            Usuario.id.in_({b.usuario_id for b in barbeiros_ativos})
+        ).all()
+    } if barbeiros_ativos else {}
+
+    resultado = []
+    for ag in ags:
+        cli = db.session.get(Cliente, ag.cliente_id)
+        itens = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
+        servicos_nomes = [s.nome for s in (db.session.get(Servico, it.servico_id) for it in itens) if s]
+
+        elegiveis = []
+        for b in barbeiros_ativos:
+            if b.id == ag.barbeiro_id:
+                continue
+            if barbeiro_elegivel_para_transferencia(b.id, ag):
+                usr = usuarios_map.get(b.usuario_id)
+                elegiveis.append({'id': b.id, 'nome': usr.nome if usr else None})
+
+        resultado.append({
+            'id':                  ag.id,
+            'cliente_nome':        cli.nome if cli else None,
+            'data_hora':           ag.data_hora.isoformat(),
+            'duracao_minutos':     ag.duracao_minutos,
+            'servicos':            servicos_nomes,
+            'barbeiro_origem_id':  ag.barbeiro_id,
+            'barbeiros_elegiveis': elegiveis,
+        })
+
+    return jsonify(resultado), 200

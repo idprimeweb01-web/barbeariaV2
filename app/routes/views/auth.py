@@ -251,6 +251,12 @@ def gestor_agenda():
     return render_template('gestor/agenda.html', **_gestor_ctx())
 
 
+@views_bp.get('/gestor/transferencias')
+@session_required('gestor', 'super_admin')
+def gestor_transferencias():
+    return render_template('gestor/transferencias.html', **_gestor_ctx())
+
+
 @views_bp.get('/gestor/clientes')
 @session_required('gestor', 'super_admin')
 def gestor_clientes():
@@ -345,6 +351,12 @@ def barbeiro_horario():
 @session_required('barbeiro', 'super_admin')
 def barbeiro_clientes():
     return render_template('barbeiro/clientes.html', **_barbeiro_ctx())
+
+
+@views_bp.get('/barbeiro/disponiveis')
+@session_required('barbeiro', 'super_admin')
+def barbeiro_disponiveis():
+    return render_template('barbeiro/disponiveis.html', **_barbeiro_ctx())
 
 
 @views_bp.get('/barbeiro/agenda')

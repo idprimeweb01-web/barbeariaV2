@@ -133,3 +133,40 @@ def gerar_slots(resource_id: int, data, duracao_necessaria: int) -> list[str]:
         slot += intervalo
 
     return slots
+
+
+def servicos_do_agendamento(agendamento_id: int) -> list[int]:
+    """IDs distintos de Servico incluídos no agendamento (Script 17)."""
+    from app.models import AgendamentoServico
+    itens = AgendamentoServico.query.filter_by(agendamento_id=agendamento_id).all()
+    return list({it.servico_id for it in itens})
+
+
+def barbeiro_atende_todos_servicos(barbeiro_id: int, servico_ids: list[int]) -> bool:
+    """True se o barbeiro oferece TODOS os serviços da lista (Script 17)."""
+    from app.models import BarbeiroServico
+    if not servico_ids:
+        return True
+    oferecidos = {
+        bs.servico_id for bs in BarbeiroServico.query.filter(
+            BarbeiroServico.barbeiro_id == barbeiro_id,
+            BarbeiroServico.servico_id.in_(servico_ids),
+        ).all()
+    }
+    return set(servico_ids).issubset(oferecidos)
+
+
+def barbeiro_elegivel_para_transferencia(barbeiro_id: int, agendamento) -> bool:
+    """
+    True se o barbeiro pode assumir este agendamento: oferece todos os
+    serviços e tem o slot livre. Somente leitura (usa gerar_slots, que não
+    trava linhas) — para checagens de listagem/elegibilidade (GET). O POST
+    que efetivamente executa a transferência deve, ALÉM disso, chamar
+    verificar_conflito() com excluir_id=agendamento.id logo antes de
+    commitar, para travar a linha e fechar a corrida (padrão do Script 08).
+    """
+    servico_ids = servicos_do_agendamento(agendamento.id)
+    if not barbeiro_atende_todos_servicos(barbeiro_id, servico_ids):
+        return False
+    slots_validos = gerar_slots(barbeiro_id, agendamento.data_hora.date(), agendamento.duracao_minutos)
+    return agendamento.data_hora.strftime('%H:%M') in slots_validos

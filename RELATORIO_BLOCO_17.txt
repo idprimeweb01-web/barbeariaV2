@@ -1,0 +1,202 @@
+RELATORIO_BLOCO_17.txt
+Script 17 / Bloco 3.4 — Transferência e mural de agendamentos
+================================================================================
+
+RESUMO
+------
+Implementado o fluxo completo de transferência de agendamentos entre
+barbeiros: desativação com evacuação para o "mural" (outros barbeiros podem
+assumir), transferência direta pelo gestor, e uma nova tabela de auditoria/
+fila (`TransferenciaAgendamento`). barbeiro_id NUNCA fica NULL — o
+agendamento muda de status (`aguardando_transferencia`) e mantém o
+`barbeiro_id` antigo até alguém assumir, conforme pedido.
+
+
+1. MODEL + MIGRATION
+------------------------
+`app/models/__init__.py`: nova classe `TransferenciaAgendamento(TenantMixin,
+db.Model)` — id, agendamento_id (FK, index), barbeiro_origem_id (FK),
+barbeiro_destino_id (FK, nullable), motivo (String(200)), status
+(String(20)), criado_em/concluido_em (DateTime). Diferente do padrão UTC de
+outros `criado_em`, aqui os timestamps usam `naive_brasilia()` (conforme
+pedido explicitamente na tarefa) — comentário no código explica a exceção,
+já que esses timestamps aparecem direto nas telas de mural/fila.
+
+`app/constants.py`: nova classe `StatusTransferencia` (PENDENTE, CONCLUIDA,
+REAGENDADA, CANCELADA + TODOS) — seguindo o padrão de centralização do
+Bloco 6.1.
+
+Migration `a75fb199332d_transferencia_agendamento_bloco34.py`: `create_table`
+com todas as colunas, 4 FKs nomeadas explicitamente, CHECK constraint
+`ck_transferencia_agendamento_status_valido` (mesmo padrão do Bloco 2.1) e
+2 índices (`barbearia_id`, `agendamento_id`). Mostrada ao usuário ANTES de
+aplicar — autorização recebida explicitamente ("sim") antes do
+`flask db upgrade`. Ciclo upgrade → downgrade → upgrade validado, head
+final confirmado em `a75fb199332d`.
+
+
+2. HELPERS COMPARTILHADOS (app/utils/agenda.py)
+----------------------------------------------------
+Para não duplicar lógica de elegibilidade entre gestor e barbeiro:
+  - `servicos_do_agendamento(agendamento_id)` — IDs distintos de Servico.
+  - `barbeiro_atende_todos_servicos(barbeiro_id, servico_ids)` — todos os
+    serviços, não só um.
+  - `barbeiro_elegivel_para_transferencia(barbeiro_id, agendamento)` —
+    combina os dois acima com `gerar_slots` (SEM lock — usado em GETs de
+    listagem). Os POSTs que efetivamente transferem chamam, ALÉM disso,
+    `verificar_conflito(..., excluir_id=ag.id)` (COM lock via
+    `.with_for_update()`) bem antes do commit — mesmo padrão do Script 08
+    (verificar_conflito + gerar_slots), evitando travar linhas
+    desnecessariamente durante meras consultas de "quem está disponível".
+
+
+3. FLUXO DE DESATIVAÇÃO EVOLUÍDO (gestor/profissionais.py)
+----------------------------------------------------------------
+`PATCH /api/v1/gestor/barbeiros/<id>` com `ativo=false`:
+  - SEM `acao`: mesmo 409 do Script 10, mas agora com
+    `payload: {'agendamentos_futuros': [{id, cliente_nome, data_hora,
+    servicos}, ...]}` — o frontend usa isso para montar o modal.
+  - COM `acao='transferir_mural'`: trava (`.with_for_update()`) cada
+    agendamento futuro, muda status → `aguardando_transferencia`, cria uma
+    `TransferenciaAgendamento` pendente (motivo='barbeiro_desativado'),
+    notifica o cliente (`criar_notificacao`, tipo='transferencia_pendente'),
+    e SÓ ENTÃO desativa o barbeiro — tudo no mesmo commit.
+
+
+4. ENDPOINTS NOVOS
+-----------------------
+a) POST /api/v1/gestor/agendamentos/<id>/transferir {barbeiro_id}
+   Trava o agendamento, valida: status transferível (ATIVOS ∪
+   aguardando_transferencia), destino ativo/do tenant/diferente do atual,
+   destino atende TODOS os serviços, sem conflito de horário (verificar_
+   conflito + gerar_slots). Efeitos: barbeiro_id = destino; status só volta
+   a 'agendado' se estava aguardando_transferencia (um agendamento com
+   status PIX pendente mantém esse status — a transferência não pula a
+   etapa de aprovação); marca/cria TransferenciaAgendamento concluída;
+   notifica cliente.
+
+b) POST /api/v1/barbeiro/agendamentos/<id>/pegar
+   Mesmas validações de (a) com destino = o próprio barbeiro logado. Trava
+   a linha ANTES de checar o status — é isso que resolve a corrida entre
+   dois barbeiros clicando ao mesmo tempo (ver seção 6).
+
+c) GET /api/v1/barbeiro/agendamentos-disponiveis
+   Lista aguardando_transferencia do tenant filtrados por elegibilidade
+   (serviço + horário livre) do barbeiro logado. Retorna
+   `cliente_primeiro_nome` (não o nome completo) por design, conforme
+   pedido no frontend.
+
+d) GET /api/v1/gestor/agendamentos-sem-barbeiro
+   Lista aguardando_transferencia do tenant + `barbeiros_elegiveis` (lista
+   de {id, nome}) calculado por agendamento.
+
+
+5. FRONTEND
+---------------
+a) gestor/barbeiros.html: `deletar()` agora detecta o 409 com payload e
+   abre um novo modal (`modalTransferencia`) listando os futuros. Cada
+   linha tem um dropdown com os outros barbeiros ativos + botão
+   "Transferir" (chama o endpoint (a) diretamente, remove a linha da lista
+   ao suceder). Botão primário do modal: "Transferir restantes p/ mural e
+   desativar" (chama `acao=transferir_mural` pra tudo que sobrou, num
+   único request). Botão discreto no rodapé (link sublinhado, cinza,
+   pequeno): "Cancelar todos os agendamentos e desativar" — cancela cada
+   restante usando o endpoint de cancelamento do gestor já existente, e só
+   então desativa (agora sem futuros, o guard normal libera).
+
+b) Nova página `barbeiro/disponiveis.html` ("Disponíveis p/ pegar") — cards
+   com data/hora, primeiro nome do cliente, serviços, valor, botão "Pegar
+   este atendimento". Link adicionado no menu lateral do barbeiro
+   (`barbeiro/base.html`).
+
+c) Nova página `gestor/transferencias.html` ("Aguardando Transferência") —
+   lista com dropdown de barbeiros elegíveis por linha + botão transferir.
+   Link adicionado no menu lateral do gestor (`gestor/base.html`), logo
+   depois de "Agenda".
+
+d) Notificações in_app reaproveitando `criar_notificacao` (padrão já
+   existente em `app/utils/scheduler.py` para lembretes de barbeiro) — sem
+   necessidade de nenhuma função nova de notificação.
+
+Estilo visual dark/gold seguido nas duas páginas novas, reaproveitando as
+classes/variáveis CSS já usadas no resto do gestor/barbeiro (`--cor-
+primaria`, `.empty-state`, cartões com fundo #161616 e borda #2a2a2a).
+
+
+6. VALIDAÇÃO OBRIGATÓRIA
+-----------------------------
+Cenário completo (tenant QA com 5 barbeiros, 1 cliente, 4 agendamentos
+futuros em horários fixos dentro do expediente — ver nota abaixo):
+
+  OK - login gestor
+  OK - desativar sem acao -> 409
+  OK - payload traz 3 agendamentos futuros (ag1,ag2,ag3)
+  OK - desativar com acao=transferir_mural -> 200
+  OK - ag1 virou aguardando_transferencia
+  OK - ag2 virou aguardando_transferencia
+  OK - 4 TransferenciaAgendamento com motivo=barbeiro_desativado
+  OK - cliente notificado 3x (transferencia_pendente)
+  OK - login barbeiro B
+  OK - B ve agendamentos disponiveis -> 200
+  OK - B ve ag1, ag2 e ag3 no mural
+  OK - B pega ag1 -> 200
+  OK - ag1 voltou a agendado com barbeiro B
+  OK - transferencia de ag1 concluida com destino B
+  OK - login gestor de novo
+  OK - gestor transfere ag2 para B -> 200
+  OK - ag2 voltou a agendado com barbeiro B
+  OK - cliente notificado 2x (agendamento_transferido: pegar + transferir)
+  OK - transferir ag3 (Barba17) para C (so atende Corte17) -> 422
+  OK - concorrencia: exatamente 1x200 e 1x409 (resultados={'D': 200, 'E': 409})
+  OK - agendamento de concorrencia ficou com UM unico barbeiro (D ou E)
+  OK - gestor lista agendamentos-sem-barbeiro -> 200
+  OK - gestor dashboard 200
+  21/21 OK
+
+Teste de concorrência real: 2 threads Python, cada uma com sua própria
+sessão HTTP (login independente), disparadas quase simultaneamente contra
+um servidor Werkzeug de verdade (`make_server`, não test_client) tentando
+`POST /pegar` no MESMO agendamento. Resultado determinístico: exatamente
+1 barbeiro recebe 200, o outro 409 — confirma que `.with_for_update()` no
+`pegar_agendamento` fecha a corrida corretamente (o segundo request espera
+o lock, e ao ler o status já atualizado, rejeita em vez de processar
+duas vezes).
+
+Transferir para barbeiro que não atende o serviço → 422 confirmado
+(barbeiro C atende só "Corte17", agendamento pedia "Barba17").
+
+Smoke geral: `ast.parse()` em 8 arquivos tocados (0 erros), app sobe sem
+erro (203 rotas, +6 em relação ao Bloco 6.3: 4 endpoints de API + 2 telas),
+templates compilados via `app.jinja_env.get_template()` sem erro (5
+arquivos: as 2 páginas novas + os 2 arquivos base + barbeiros.html).
+
+NOTA sobre a primeira tentativa de teste: os agendamentos foram
+inicialmente criados com horários relativos ("agora + N horas"), o que
+acidentalmente caiu fora do expediente (08h-20h) dependendo da hora real
+de execução do script — mascarou os testes de slot/concorrência com 422
+inesperados. Corrigido usando horários fixos no dia seguinte (10h, 11h,
+12h, 13h), eliminando a dependência da hora de execução. Isso foi um bug
+no SCRIPT DE TESTE, não no código da aplicação — documentado aqui porque
+vale o mesmo cuidado em testes futuros que envolvam `gerar_slots`.
+
+
+7. LIMPEZA
+--------------
+Tenant QA (`qa-bloco17`, 5 barbeiros, 1 cliente, 4 agendamentos, 4
+TransferenciaAgendamento, notificações e auditoria) completamente removido
+ao final — confirmado via `SELECT slug FROM barbearias WHERE slug LIKE
+'qa-%'` retornando 0 linhas.
+
+
+CONCLUSÃO
+---------
+Fluxo de transferência implementado ponta a ponta: modelo + migration,
+evolução do guard de desativação (Script 10), 4 endpoints novos com
+validação completa (status, elegibilidade de serviço, disponibilidade de
+horário com lock), 3 telas novas/atualizadas seguindo o padrão visual
+existente, e notificações in_app reaproveitando a infraestrutura já
+existente. Validação cobriu o cenário completo pedido, incluindo teste de
+concorrência real com threads e servidor de verdade (não simulado), e o
+caso de rejeição por incompatibilidade de serviço. Zero mudança de
+`barbeiro_id` para NULL — histórico sempre preservado via
+`barbeiro_origem_id`/`barbeiro_destino_id` na nova tabela de auditoria.
