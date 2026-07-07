@@ -216,26 +216,106 @@ class BarbeiroServico(db.Model):
     servico_id  = db.Column(db.Integer, db.ForeignKey('servicos.id'), nullable=False, index=True)
 
 
+class CategoriaProduto(TenantMixin, db.Model):
+    """Categorias de produto do catálogo (Script 18/Bloco 6.4)."""
+    __tablename__ = 'categoria_produto'
+    __table_args__ = (
+        db.UniqueConstraint('barbearia_id', 'nome', name='uq_categoria_produto_barbearia_nome'),
+    )
+
+    id    = db.Column(db.Integer, primary_key=True)
+    nome  = db.Column(db.String(80), nullable=False)
+    ativo = db.Column(db.Boolean, default=True, nullable=False)
+
+
 class Produto(TenantMixin, db.Model):
     __tablename__ = 'produtos'
     __table_args__ = (
         db.CheckConstraint('quantidade_estoque >= 0', name='ck_produtos_quantidade_estoque_positivo'),
         db.CheckConstraint('quantidade_reservada >= 0', name='ck_produtos_quantidade_reservada_positivo'),
+        db.CheckConstraint('custo_unitario >= 0', name='ck_produtos_custo_unitario_positivo'),
+        db.CheckConstraint('estoque_minimo >= 0', name='ck_produtos_estoque_minimo_positivo'),
     )
 
     id                   = db.Column(db.Integer, primary_key=True)
     nome                 = db.Column(db.String(100), nullable=False)
-    categoria            = db.Column(db.String(50))
+    categoria            = db.Column(db.String(50))  # legado (texto livre) — mantido por compatibilidade, ver categoria_id
+    categoria_id         = db.Column(db.Integer, db.ForeignKey('categoria_produto.id'), nullable=True, index=True)
+    marca                = db.Column(db.String(80))
     preco                = db.Column(db.Numeric(10, 2), nullable=False)
+    custo_unitario       = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    codigo_barras        = db.Column(db.String(50))
     quantidade_estoque   = db.Column(db.Integer, nullable=False, default=0)
     quantidade_reservada = db.Column(db.Integer, nullable=False, default=0)
-    foto                 = db.Column(db.String(255))
+    estoque_minimo       = db.Column(db.Integer, nullable=False, default=0)
+    foto                 = db.Column(db.String(255))  # legado — ver foto_url (Cloudinary, Script 18)
+    foto_url             = db.Column(db.String(300))
     ativo                = db.Column(db.Boolean, default=True, nullable=False)
     criado_em            = db.Column(db.DateTime, default=_utcnow)
 
     @property
     def quantidade_disponivel(self):
         return max(0, self.quantidade_estoque - (self.quantidade_reservada or 0))
+
+
+class MovimentacaoEstoque(TenantMixin, db.Model):
+    """Auditoria de toda entrada/saída de estoque (Script 18). quantidade
+    sempre positiva (magnitude) — tipo + a função do serviço que gravou
+    decidem a direção. Ver app.constants.TipoMovimentacaoEstoque."""
+    __tablename__ = 'movimentacao_estoque'
+    __table_args__ = (
+        db.CheckConstraint('quantidade > 0', name='ck_movimentacao_estoque_quantidade_positiva'),
+        db.CheckConstraint(
+            "tipo IN ('entrada','saida_venda','saida_uso','ajuste')",
+            name='ck_movimentacao_estoque_tipo_valido',
+        ),
+    )
+
+    id                          = db.Column(db.Integer, primary_key=True)
+    produto_id                  = db.Column(db.Integer, db.ForeignKey('produtos.id'), nullable=False, index=True)
+    tipo                        = db.Column(db.String(20), nullable=False)  # entrada, saida_venda, saida_uso, ajuste
+    quantidade                  = db.Column(db.Integer, nullable=False)
+    quantidade_apos             = db.Column(db.Integer, nullable=False)  # snapshot do estoque após a movimentação
+    motivo                      = db.Column(db.String(200))
+    usuario_id                  = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    referencia_venda_id         = db.Column(db.Integer, db.ForeignKey('venda.id'), nullable=True)
+    referencia_atendimento_id   = db.Column(db.Integer, db.ForeignKey('atendimentos.id'), nullable=True)
+    criado_em                   = db.Column(db.DateTime, default=naive_brasilia)
+
+
+class Venda(TenantMixin, db.Model):
+    """Venda avulsa de produto (sem agendamento) — Script 18."""
+    __tablename__ = 'venda'
+    __table_args__ = (
+        db.CheckConstraint('valor_total >= 0', name='ck_venda_valor_total_positivo'),
+        db.CheckConstraint("status IN ('concluida','cancelada')", name='ck_venda_status_valido'),
+        db.CheckConstraint("metodo_pagamento IN ('pix','dinheiro','cartao')", name='ck_venda_metodo_pagamento_valido'),
+    )
+
+    id                    = db.Column(db.Integer, primary_key=True)
+    cliente_id            = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=True)
+    cliente_nome_livre     = db.Column(db.String(100), nullable=True)  # venda pra quem não é cliente cadastrado
+    barbeiro_id           = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=True)  # quem vendeu → comissão
+    usuario_registro_id   = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    metodo_pagamento      = db.Column(db.String(20), nullable=False)  # pix, dinheiro, cartao
+    status                = db.Column(db.String(20), nullable=False, default='concluida')  # concluida, cancelada
+    valor_total           = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    criado_em             = db.Column(db.DateTime, default=naive_brasilia)
+
+
+class VendaItem(db.Model):
+    __tablename__ = 'venda_item'
+    __table_args__ = (
+        db.CheckConstraint('quantidade > 0', name='ck_venda_item_quantidade_positiva'),
+    )
+
+    id                       = db.Column(db.Integer, primary_key=True)
+    venda_id                 = db.Column(db.Integer, db.ForeignKey('venda.id'), nullable=False, index=True)
+    produto_id               = db.Column(db.Integer, db.ForeignKey('produtos.id'), nullable=False)
+    quantidade               = db.Column(db.Integer, nullable=False)
+    preco_unitario           = db.Column(db.Numeric(10, 2), nullable=False)
+    custo_unitario_snapshot  = db.Column(db.Numeric(10, 2), nullable=False, default=0)  # margem histórica
+    comissao_valor           = db.Column(db.Numeric(10, 2), nullable=False, default=0)
 
 
 # ── Agenda ─────────────────────────────────────────────────────────────────────
@@ -622,9 +702,15 @@ class FeatureMetadata(db.Model):
     """Catálogo de features disponíveis na plataforma. Populado por seed — não alterar via API."""
     __tablename__ = 'feature_metadata'
 
-    id        = db.Column(db.Integer, primary_key=True)
-    nome      = db.Column(db.String(50), unique=True, nullable=False)
-    descricao = db.Column(db.String(200))
+    id               = db.Column(db.Integer, primary_key=True)
+    nome             = db.Column(db.String(50), unique=True, nullable=False)
+    descricao        = db.Column(db.String(200))
+    # Script 18: quando uma feature NOVA é inserida pelo seed com isto True,
+    # todas as barbearias JÁ EXISTENTES ganham FeatureBarbearia(ativo=True)
+    # automaticamente (só na criação da feature — nunca reativa algo que o
+    # gestor tenha desligado manualmente depois). Não afeta features
+    # antigas, que continuam nascendo desligadas por padrão como sempre.
+    ativo_por_padrao = db.Column(db.Boolean, nullable=False, default=False)
 
     flags = db.relationship('FeatureBarbearia', backref='feature')
 

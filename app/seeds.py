@@ -5,30 +5,50 @@ from werkzeug.security import generate_password_hash
 from app.extensions import db
 from app.utils.db import commit_ou_falhar
 
-# Features disponíveis na plataforma — ordem é só para legibilidade
+# Features disponíveis na plataforma — ordem é só para legibilidade.
+# 3º elemento (ativo_por_padrao): quando True e a feature é NOVA (inserida
+# agora pela 1ª vez), todas as barbearias JÁ EXISTENTES ganham
+# FeatureBarbearia(ativo=True) automaticamente — ver seed_feature_metadata().
 FEATURES = [
-    ('planos',               'Planos de assinatura mensal para clientes'),
-    ('relatorios_avancados', 'Relatórios customizáveis e exportação Excel/PDF'),
-    ('vip_brindes',          'Programa VIP com níveis e brindes por fidelidade'),
-    ('agendamento_login',    'Exige login do cliente para agendar online'),
-    ('historico_cliente',    'Histórico completo de atendimentos por cliente'),
-    ('cupons',               'Cupons de desconto para clientes'),
-    ('fila_espera',          'Lista de espera para horários lotados'),
-    ('comissao',             'Cálculo de comissão por barbeiro (avulso e plano)'),
-    ('notificacoes',         'Notificações por SMS/WhatsApp/e-mail'),
-    ('pix_integrado',        'Pagamento PIX com comprovante e aprovação manual'),
+    ('planos',               'Planos de assinatura mensal para clientes', False),
+    ('relatorios_avancados', 'Relatórios customizáveis e exportação Excel/PDF', False),
+    ('vip_brindes',          'Programa VIP com níveis e brindes por fidelidade', False),
+    ('agendamento_login',    'Exige login do cliente para agendar online', False),
+    ('historico_cliente',    'Histórico completo de atendimentos por cliente', False),
+    ('cupons',               'Cupons de desconto para clientes', False),
+    ('fila_espera',          'Lista de espera para horários lotados', False),
+    ('comissao',             'Cálculo de comissão por barbeiro (avulso e plano)', False),
+    ('notificacoes',         'Notificações por SMS/WhatsApp/e-mail', False),
+    ('pix_integrado',        'Pagamento PIX com comprovante e aprovação manual', False),
+    ('produtos_venda',       'Venda avulsa de produtos com controle de estoque', True),
 ]
 
 
 def seed_feature_metadata():
-    """Insere ou atualiza o catálogo de features. Seguro para rodar múltiplas vezes."""
-    from app.models import FeatureMetadata
-    for nome, descricao in FEATURES:
+    """Insere ou atualiza o catálogo de features. Seguro para rodar múltiplas vezes.
+    Features NOVAS com ativo_por_padrao=True ativam automaticamente para
+    todas as barbearias já existentes (só na criação — nunca reativa algo
+    que o gestor tenha desligado manualmente depois)."""
+    from app.models import FeatureMetadata, FeatureBarbearia, Barbearia
+    novas_ativas_por_padrao = []
+    for nome, descricao, ativo_por_padrao in FEATURES:
         existente = FeatureMetadata.query.filter_by(nome=nome).first()
         if not existente:
-            db.session.add(FeatureMetadata(nome=nome, descricao=descricao))
+            meta = FeatureMetadata(nome=nome, descricao=descricao, ativo_por_padrao=ativo_por_padrao)
+            db.session.add(meta)
+            db.session.flush()
+            if ativo_por_padrao:
+                novas_ativas_por_padrao.append(meta)
         elif existente.descricao != descricao:
             existente.descricao = descricao
+
+    if novas_ativas_por_padrao:
+        barbearia_ids = [b.id for b in Barbearia.query.all()]
+        for meta in novas_ativas_por_padrao:
+            for bid in barbearia_ids:
+                db.session.add(FeatureBarbearia(barbearia_id=bid, feature_id=meta.id, ativo=True))
+            print(f'[seed] Feature "{meta.nome}" ativada por padrão para {len(barbearia_ids)} barbearia(s) existente(s).')
+
     commit_ou_falhar('seeds.seed_feature_metadata')
     print(f'[seed] FeatureMetadata: {len(FEATURES)} features sincronizadas.')
 

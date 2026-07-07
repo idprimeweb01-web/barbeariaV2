@@ -210,6 +210,18 @@ def create_app(config=None):
     from .routes.vip import vip_bp
     app.register_blueprint(vip_bp)
 
+    from .routes.gestor.estoque import gestor_estoque_bp
+    app.register_blueprint(gestor_estoque_bp)
+
+    from .routes.gestor.vendas import gestor_vendas_bp
+    app.register_blueprint(gestor_vendas_bp)
+
+    from .routes.barbeiro.vendas import barbeiro_vendas_bp
+    app.register_blueprint(barbeiro_vendas_bp)
+
+    from .routes.barbeiro.produtos import barbeiro_produtos_bp
+    app.register_blueprint(barbeiro_produtos_bp)
+
     # ── Scheduler de lembretes ────────────────────────────────────────────────
     # Iniciado após todos os blueprints para garantir que os modelos estejam prontos.
     # Em testes unitários, passar DISABLE_SCHEDULER=1 no ambiente para não iniciar.

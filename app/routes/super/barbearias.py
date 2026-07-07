@@ -186,7 +186,7 @@ def criar_barbearia():
         db.session.add(FeatureBarbearia(
             barbearia_id=barbearia.id,
             feature_id=fm.id,
-            ativo=False,
+            ativo=fm.ativo_por_padrao,
         ))
 
     commit_ou_falhar('super.barbearias.criar_barbearia')

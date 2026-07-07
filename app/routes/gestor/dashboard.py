@@ -98,19 +98,25 @@ def dashboard_gestor():
             'total':       float(row.total or 0),
         })
 
-    # ── Estoque crítico (só se feature 'produto' não existe — produtos sempre disponíveis)
+    # ── Estoque baixo (Script 18: usa estoque_minimo por produto, não mais threshold fixo) ──
     estoque_critico = []
     produtos_criticos = Produto.query.filter(
         Produto.barbearia_id == bid,
         Produto.ativo == True,
-        Produto.quantidade_estoque <= 5,
+        Produto.quantidade_estoque <= Produto.estoque_minimo,
     ).order_by(Produto.quantidade_estoque).limit(10).all()
     for p in produtos_criticos:
         estoque_critico.append({
             'id':         p.id,
             'nome':       p.nome,
             'estoque':    p.quantidade_estoque,
+            'estoque_minimo': p.estoque_minimo,
         })
+    estoque_baixo_count = Produto.query.filter(
+        Produto.barbearia_id == bid,
+        Produto.ativo == True,
+        Produto.quantidade_estoque <= Produto.estoque_minimo,
+    ).count()
 
     # ── Planos — assinantes ativos (só se feature ativa) ─────────────────────
     assinantes_ativos = None
@@ -135,6 +141,7 @@ def dashboard_gestor():
         'pendentes_pix':     pendentes_pix,
         'top_' + L('servicos').lower(): top_servicos,
         'estoque_critico':   estoque_critico,
+        'estoque_baixo_count': estoque_baixo_count,
         'assinantes_ativos': assinantes_ativos,
         'rotulos': {
             'agendamento': L('agendamento'),

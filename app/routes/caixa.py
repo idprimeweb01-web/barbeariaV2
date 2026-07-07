@@ -1,15 +1,14 @@
 from datetime import datetime, timedelta, time as Time
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import get_jwt_identity
+from flask import Blueprint, request, jsonify, g
 from app import db
 from app.models import (
     Usuario, Barbeiro, Agendamento, AgendamentoServico, Atendimento, AtendimentoItem,
     Servico, Produto, Pagamento, Cliente, ReservaProduto,
 )
-from app.utils import get_barbearia_atual
-from app.routes.auth import barbeiro_required
+from app.decorators.auth import barbeiro_required
 from app.utils.db import commit_ou_falhar
-from app.constants import StatusAgendamento
+from app.utils import estoque as estoque_service
+from app.constants import StatusAgendamento, TipoMovimentacaoEstoque
 
 caixa = Blueprint('caixa', __name__)
 
@@ -71,8 +70,8 @@ def _fmt_atendimento(at, itens):
 @caixa.post('/atendimentos')
 @barbeiro_required
 def abrir_atendimento():
-    uid          = int(get_jwt_identity())
-    barbearia_id = get_barbearia_atual()
+    uid          = g.user_id
+    barbearia_id = g.barbearia_id
     usuario      = db.session.get(Usuario, uid)
     barbeiro     = _barbeiro_do_usuario(uid, barbearia_id)
 
@@ -104,12 +103,18 @@ def abrir_atendimento():
     db.session.add(at)
     db.session.flush()
 
-    servico = db.session.get(Servico, ag.servico_id)
-    if servico:
-        db.session.add(AtendimentoItem(
-            atendimento_id=at.id, tipo='servico',
-            servico_id=servico.id, preco_unitario=servico.preco, quantidade=1,
-        ))
+    # Bug pré-existente corrigido (Script 18): Agendamento não tem mais
+    # `servico_id` desde a v2 — os serviços agora vêm de AgendamentoServico
+    # (pode ser mais de um por agendamento). Código morto nunca atualizado
+    # pra esse schema; sem esta correção, abrir_atendimento nunca funcionaria.
+    itens_ag = AgendamentoServico.query.filter_by(agendamento_id=ag.id).all()
+    for item_ag in itens_ag:
+        servico = db.session.get(Servico, item_ag.servico_id)
+        if servico:
+            db.session.add(AtendimentoItem(
+                atendimento_id=at.id, tipo='servico',
+                servico_id=servico.id, preco_unitario=item_ag.preco_unitario, quantidade=item_ag.quantidade,
+            ))
 
     commit_ou_falhar('caixa.abrir_atendimento')
     itens = AtendimentoItem.query.filter_by(atendimento_id=at.id).all()
@@ -121,8 +126,8 @@ def abrir_atendimento():
 @caixa.post('/atendimentos/<int:atendimento_id>/itens')
 @barbeiro_required
 def adicionar_item(atendimento_id):
-    uid          = int(get_jwt_identity())
-    barbearia_id = get_barbearia_atual()
+    uid          = g.user_id
+    barbearia_id = g.barbearia_id
     usuario      = db.session.get(Usuario, uid)
     barbeiro     = _barbeiro_do_usuario(uid, barbearia_id)
 
@@ -181,8 +186,8 @@ def adicionar_item(atendimento_id):
 @caixa.delete('/atendimentos/<int:atendimento_id>/itens/<int:item_id>')
 @barbeiro_required
 def remover_item(atendimento_id, item_id):
-    uid          = int(get_jwt_identity())
-    barbearia_id = get_barbearia_atual()
+    uid          = g.user_id
+    barbearia_id = g.barbearia_id
     usuario      = db.session.get(Usuario, uid)
     barbeiro     = _barbeiro_do_usuario(uid, barbearia_id)
 
@@ -208,8 +213,8 @@ def remover_item(atendimento_id, item_id):
 @caixa.get('/atendimentos/<int:atendimento_id>')
 @barbeiro_required
 def ver_atendimento(atendimento_id):
-    uid          = int(get_jwt_identity())
-    barbearia_id = get_barbearia_atual()
+    uid          = g.user_id
+    barbearia_id = g.barbearia_id
     usuario      = db.session.get(Usuario, uid)
     barbeiro     = _barbeiro_do_usuario(uid, barbearia_id)
 
@@ -228,8 +233,8 @@ def ver_atendimento(atendimento_id):
 @caixa.put('/atendimentos/<int:atendimento_id>/efetuar')
 @barbeiro_required
 def efetuar_atendimento(atendimento_id):
-    uid          = int(get_jwt_identity())
-    barbearia_id = get_barbearia_atual()
+    uid          = g.user_id
+    barbearia_id = g.barbearia_id
     usuario      = db.session.get(Usuario, uid)
     barbeiro     = _barbeiro_do_usuario(uid, barbearia_id)
 
@@ -259,15 +264,23 @@ def efetuar_atendimento(atendimento_id):
     total  = round(sum(float(i.preco_unitario) * i.quantidade for i in itens), 2)
     avisos = []
 
-    # Abate estoque dos itens vendidos
+    # Abate estoque dos itens vendidos — via serviço central (Script 18):
+    # UPDATE atômico com guard (mesmo padrão de incrementar_uso_cupom), grava
+    # MovimentacaoEstoque pra auditoria. Diferença de comportamento
+    # INTENCIONAL vs. antes: se o estoque não for suficiente, agora levanta
+    # 422 em vez de silenciosamente zerar (produto.quantidade_estoque =
+    # max(0, ...)) — evita estoque negativo mascarado.
     for item in itens:
         if item.tipo == 'produto' and item.produto_id:
-            produto = db.session.get(Produto, item.produto_id)
-            if produto:
-                produto.quantidade_estoque = max(0, produto.quantidade_estoque - item.quantidade)
-                if produto.quantidade_estoque == 0:
-                    produto.ativo = False
-                    avisos.append(f'Produto "{produto.nome}" zerou o estoque e foi desativado.')
+            produto = estoque_service.registrar_saida(
+                item.produto_id, barbearia_id, item.quantidade, uid,
+                motivo=f'Atendimento #{atendimento_id}',
+                tipo=TipoMovimentacaoEstoque.SAIDA_USO,
+                referencia_atendimento_id=atendimento_id,
+            )
+            if produto.quantidade_estoque == 0:
+                produto.ativo = False
+                avisos.append(f'Produto "{produto.nome}" zerou o estoque e foi desativado.')
 
     at.status_operacao = 'efetuado'
     at.total = total
@@ -284,7 +297,12 @@ def efetuar_atendimento(atendimento_id):
             produto_res = db.session.get(Produto, reserva.produto_id)
             if produto_res:
                 produto_res.quantidade_reservada = max(0, (produto_res.quantidade_reservada or 0) - reserva.quantidade)
-                produto_res.quantidade_estoque = max(0, produto_res.quantidade_estoque - reserva.quantidade)
+                produto_res = estoque_service.registrar_saida(
+                    produto_res.id, barbearia_id, reserva.quantidade, uid,
+                    motivo=f'Reserva confirmada — atendimento #{atendimento_id}',
+                    tipo=TipoMovimentacaoEstoque.SAIDA_USO,
+                    referencia_atendimento_id=atendimento_id,
+                )
                 if produto_res.quantidade_estoque == 0:
                     produto_res.ativo = False
                     avisos.append(f'Produto "{produto_res.nome}" zerou o estoque e foi desativado.')
@@ -313,8 +331,8 @@ def efetuar_atendimento(atendimento_id):
 @caixa.get('/atendimentos')
 @barbeiro_required
 def listar_atendimentos():
-    uid          = int(get_jwt_identity())
-    barbearia_id = get_barbearia_atual()
+    uid          = g.user_id
+    barbearia_id = g.barbearia_id
     usuario      = db.session.get(Usuario, uid)
     barbeiro     = _barbeiro_do_usuario(uid, barbearia_id)
 
@@ -358,8 +376,8 @@ def listar_atendimentos():
 @caixa.post('/agendamentos/<int:agendamento_id>/iniciar')
 @barbeiro_required
 def iniciar_atendimento(agendamento_id):
-    uid          = int(get_jwt_identity())
-    barbearia_id = get_barbearia_atual()
+    uid          = g.user_id
+    barbearia_id = g.barbearia_id
     usuario      = db.session.get(Usuario, uid)
     barbeiro     = _barbeiro_do_usuario(uid, barbearia_id)
 
@@ -416,8 +434,8 @@ def iniciar_atendimento(agendamento_id):
 @caixa.get('/caixa/agendamento/<int:agendamento_id>')
 @barbeiro_required
 def dados_caixa(agendamento_id):
-    uid          = int(get_jwt_identity())
-    barbearia_id = get_barbearia_atual()
+    uid          = g.user_id
+    barbearia_id = g.barbearia_id
     usuario      = db.session.get(Usuario, uid)
     barbeiro     = _barbeiro_do_usuario(uid, barbearia_id)
 

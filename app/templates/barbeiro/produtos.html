@@ -24,10 +24,18 @@
 .badge-ok   { background:rgba(34,197,94,.1);  color:#4ade80; border-radius:999px; padding:2px 8px; font-size:11px; font-weight:700; }
 .badge-zero { background:rgba(255,255,255,.06); color:var(--bz-t5); border-radius:999px; padding:2px 8px; font-size:11px; font-weight:700; }
 .badge-off  { background:rgba(255,255,255,.06); color:var(--bz-t5); border-radius:999px; padding:2px 7px; font-size:10px; font-weight:700; }
+.p-vender-btn { background:none; border:1px solid var(--bz-bd2); color:var(--cor-primaria); border-radius:6px; padding:4px 10px; font-size:11px; font-weight:700; cursor:pointer; font-family:inherit; }
+.p-vender-btn:hover { background:rgba(243,156,18,.08); }
+.item-venda-row { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--bz-bd); font-size: 13px; }
+.item-venda-row:last-child { border-bottom: none; }
+.item-venda-remove { background: none; border: none; color: var(--bz-t5); cursor: pointer; font-size: 16px; padding: 0 4px; }
 {% endblock %}
 
 {% block content %}
-<input class="p-search" id="busca" placeholder="Buscar produto…" oninput="filtrar()">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px">
+  <input class="p-search" id="busca" placeholder="Buscar produto…" oninput="filtrar()" style="margin-bottom:0">
+  <button class="p-vender-btn" id="btnVenderTopo" style="white-space:nowrap;padding:10px 16px;display:none" onclick="abrirVendaAvulsa()">+ Vender produto</button>
+</div>
 
 <div class="p-wrap">
   <table class="p-table">
@@ -38,20 +46,47 @@
         <th style="text-align:right">Preço</th>
         <th style="text-align:center">Estoque</th>
         <th style="text-align:center">Status</th>
+        <th></th>
       </tr>
     </thead>
     <tbody id="pBody">
-      <tr><td colspan="5" class="p-empty">Carregando…</td></tr>
+      <tr><td colspan="6" class="p-empty">Carregando…</td></tr>
     </tbody>
   </table>
+</div>
+
+<!-- Modal venda -->
+<div class="modal-overlay" id="modalVenda" onclick="if(event.target===this)fecharModal('modalVenda')">
+  <div class="modal-box" style="max-width:460px">
+    <div class="modal-header">
+      <h3>Vender Produto</h3>
+      <button class="modal-close" onclick="fecharModal('modalVenda')">×</button>
+    </div>
+    <div id="vItensLista" style="margin-bottom:10px"></div>
+    <div style="text-align:right;font-weight:700;color:var(--cor-primaria);font-size:18px;margin-bottom:14px" id="vTotalDisplay">Total: R$ 0,00</div>
+    <div class="field"><label>Cliente (opcional)</label>
+      <input type="text" id="vClienteNomeLivre" placeholder="Nome do cliente">
+    </div>
+    <div class="field"><label>Método de pagamento *</label>
+      <select id="vMetodoPagamento">
+        <option value="pix">PIX</option>
+        <option value="dinheiro">Dinheiro</option>
+        <option value="cartao">Cartão</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modalVenda')">Cancelar</button>
+      <button class="btn btn-primary" style="width:auto;padding:9px 24px" onclick="finalizarVenda()" id="btnFinalizarVenda">Finalizar venda</button>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
   let _todos = [];
-
-  function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  let _itensVenda = [];
+  let _vendaAtiva = false;
 
   function estoqueBadge(p) {
     if (!p.ativo)                   return `<span class="badge-off">Inativo</span>`;
@@ -63,7 +98,7 @@
   function render(lista) {
     const tb = document.getElementById('pBody');
     if (!lista.length) {
-      tb.innerHTML = `<tr><td colspan="5" class="p-empty">Nenhum produto encontrado.</td></tr>`;
+      tb.innerHTML = `<tr><td colspan="6" class="p-empty">Nenhum produto encontrado.</td></tr>`;
       return;
     }
     tb.innerHTML = lista.map(p => `<tr style="${!p.ativo ? 'opacity:.6' : ''}">
@@ -75,6 +110,7 @@
         ? '<span style="color:#4ade80;font-size:11px;font-weight:700">Ativo</span>'
         : '<span style="color:var(--bz-t5);font-size:11px;font-weight:700">Inativo</span>'}
       </td>
+      <td style="text-align:center">${_vendaAtiva && p.ativo && p.quantidade_estoque > 0 ? `<button class="p-vender-btn" onclick="adicionarItemVenda(${p.id})">Vender</button>` : ''}</td>
     </tr>`).join('');
   }
 
@@ -85,12 +121,83 @@
 
   async function carregar() {
     try {
-      _todos = await api.produtos.listar();
+      const [produtos, features] = await Promise.all([
+        Bos.get('/barbeiro/produtos'),
+        Bos.get('/barbeiro/features'),
+      ]);
+      _todos = produtos;
+      _vendaAtiva = (features || []).some(f => f.nome === 'produtos_venda' && f.ativo);
+      document.getElementById('btnVenderTopo').style.display = _vendaAtiva ? '' : 'none';
       filtrar();
     } catch(e) {
       document.getElementById('pBody').innerHTML =
-        `<tr><td colspan="5" class="p-empty">Erro: ${esc(e.message)}</td></tr>`;
+        `<tr><td colspan="6" class="p-empty">Erro: ${esc(e.message)}</td></tr>`;
     }
+  }
+
+  // ── Venda avulsa (vendedor = o próprio barbeiro logado) ────
+  function abrirVendaAvulsa() {
+    _itensVenda = [];
+    document.getElementById('vClienteNomeLivre').value = '';
+    renderItensVenda();
+    abrirModal('modalVenda');
+  }
+
+  function adicionarItemVenda(produtoId) {
+    const p = _todos.find(x => x.id === produtoId);
+    if (!p) return;
+    const existente = _itensVenda.find(i => i.produto_id === produtoId);
+    if (existente) existente.quantidade += 1;
+    else _itensVenda.push({ produto_id: p.id, nome: p.nome, preco: p.preco, quantidade: 1 });
+    renderItensVenda();
+    abrirModal('modalVenda');
+  }
+
+  function alterarQuantidadeItem(produtoId, delta) {
+    const item = _itensVenda.find(i => i.produto_id === produtoId);
+    if (!item) return;
+    item.quantidade += delta;
+    if (item.quantidade <= 0) _itensVenda = _itensVenda.filter(i => i.produto_id !== produtoId);
+    renderItensVenda();
+  }
+
+  function renderItensVenda() {
+    const el = document.getElementById('vItensLista');
+    if (!_itensVenda.length) {
+      el.innerHTML = '<p style="color:var(--bz-t5);font-size:13px">Nenhum item adicionado. Feche e clique em "Vender" na tabela.</p>';
+    } else {
+      el.innerHTML = _itensVenda.map(i => `
+        <div class="item-venda-row">
+          <span style="flex:1">${esc(i.nome)}</span>
+          <button class="item-venda-remove" onclick="alterarQuantidadeItem(${i.produto_id}, -1)">−</button>
+          <span>${i.quantidade}</span>
+          <button class="item-venda-remove" onclick="alterarQuantidadeItem(${i.produto_id}, 1)">+</button>
+          <span style="width:80px;text-align:right;color:var(--bz-t4)">R$ ${(i.preco * i.quantidade).toFixed(2)}</span>
+        </div>
+      `).join('');
+    }
+    const total = _itensVenda.reduce((s, i) => s + i.preco * i.quantidade, 0);
+    document.getElementById('vTotalDisplay').textContent = 'Total: R$ ' + total.toFixed(2);
+  }
+
+  async function finalizarVenda() {
+    if (!_itensVenda.length) { toast('Adicione ao menos um item.', 'error'); return; }
+    const btn = document.getElementById('btnFinalizarVenda');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      const payload = {
+        itens: _itensVenda.map(i => ({ produto_id: i.produto_id, quantidade: i.quantidade })),
+        metodo_pagamento: document.getElementById('vMetodoPagamento').value,
+      };
+      const clienteNome = document.getElementById('vClienteNomeLivre').value.trim();
+      if (clienteNome) payload.cliente_nome_livre = clienteNome;
+
+      await Bos.post('/barbeiro/vendas', payload);
+      fecharModal('modalVenda');
+      toast('Venda registrada com sucesso!');
+      await carregar();
+    } catch(e) { toast(e.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Finalizar venda'; }
   }
 
   carregar();

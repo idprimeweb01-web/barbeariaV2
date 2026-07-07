@@ -1,0 +1,251 @@
+{% extends "gestor/base.html" %}
+{% block title %}Vendas{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Vendas</span>
+{% endblock %}
+
+{% block styles %}
+<style>
+.item-venda-row { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid #1e1e1e; font-size: 13px; }
+.item-venda-row:last-child { border-bottom: none; }
+.item-venda-nome { flex: 1; color: #ddd; }
+.item-venda-remove { background: none; border: none; color: #666; cursor: pointer; font-size: 16px; padding: 0 4px; }
+.item-venda-remove:hover { color: #f87171; }
+.venda-total { font-size: 20px; font-weight: 700; color: var(--cor-primaria); text-align: right; margin: 14px 0; }
+.busca-produto-lista { position: relative; }
+.busca-resultados { position: absolute; top: 100%; left: 0; right: 0; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; max-height: 200px; overflow-y: auto; z-index: 10; }
+.busca-resultado-item { padding: 8px 12px; cursor: pointer; font-size: 13px; color: #ccc; }
+.busca-resultado-item:hover { background: rgba(243,156,18,.08); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <span class="section-title">Vendas</span>
+  <button class="btn btn-primary" style="width:auto;padding:9px 18px;font-size:14px" onclick="novaVendaModal()">+ Nova venda</button>
+</div>
+
+<div class="toolbar">
+  <input type="date" id="filtroData" onchange="carregarVendas(1)" style="max-width:180px">
+  <button class="btn-icon" onclick="document.getElementById('filtroData').value='';carregarVendas(1)">Ver todas</button>
+</div>
+
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr><th>Data</th><th>Cliente</th><th>Profissional</th><th>Itens</th><th>Método</th><th>Total</th><th>Status</th><th>Ações</th></tr>
+    </thead>
+    <tbody id="tbody">
+      <tr><td colspan="8" style="text-align:center;color:#555;padding:32px">Carregando…</td></tr>
+    </tbody>
+  </table>
+</div>
+<div id="vendasPaginacao" style="display:flex;justify-content:center;gap:8px;margin-top:14px"></div>
+
+<!-- Modal nova venda -->
+<div class="modal-overlay" id="modalVenda" onclick="if(event.target===this)fecharModal('modalVenda')">
+  <div class="modal-box" style="max-width:520px">
+    <div class="modal-header">
+      <h3>Nova Venda</h3>
+      <button class="modal-close" onclick="fecharModal('modalVenda')">×</button>
+    </div>
+
+    <div class="field busca-produto-lista">
+      <label>Buscar produto (nome ou código de barras)</label>
+      <input type="text" id="vBuscaProduto" placeholder="Digite para buscar…" oninput="buscarProduto()" autocomplete="off">
+      <div class="busca-resultados" id="vResultados" style="display:none"></div>
+    </div>
+
+    <div id="vItensLista" style="margin:14px 0"></div>
+    <div class="venda-total" id="vTotalDisplay">Total: R$ 0,00</div>
+
+    <div class="field-row">
+      <div class="field"><label>Cliente (opcional)</label>
+        <input type="text" id="vClienteNomeLivre" placeholder="Nome do cliente (se não cadastrado)">
+      </div>
+      <div class="field"><label>Profissional vendedor (opcional)</label>
+        <select id="vBarbeiroId"><option value="">— Nenhum —</option></select>
+      </div>
+    </div>
+    <div class="field"><label>Método de pagamento *</label>
+      <select id="vMetodoPagamento">
+        <option value="pix">PIX</option>
+        <option value="dinheiro">Dinheiro</option>
+        <option value="cartao">Cartão</option>
+      </select>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" style="width:auto;padding:9px 18px" onclick="fecharModal('modalVenda')">Cancelar</button>
+      <button class="btn btn-primary" style="width:auto;padding:9px 24px" onclick="finalizarVenda()" id="btnFinalizarVenda">Finalizar venda</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let _produtos = [];
+  let _barbeiros = [];
+  let _itensVenda = []; // [{produto_id, nome, preco, quantidade}]
+
+  async function carregarVendas(page) {
+    const tb = document.getElementById('tbody');
+    const data = document.getElementById('filtroData').value;
+    try {
+      const qs = new URLSearchParams({ page, per_page: 20 });
+      if (data) qs.set('data', data);
+      const r = await Bos.get('/gestor/vendas?' + qs.toString());
+      if (!r.dados.length) {
+        tb.innerHTML = '<tr><td colspan="8"><div class="empty-state"><p>Nenhuma venda encontrada.</p></div></td></tr>';
+      } else {
+        tb.innerHTML = r.dados.map(v => `
+          <tr>
+            <td style="color:#888">${new Date(v.criado_em).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
+            <td>${esc(v.cliente_nome || '—')}</td>
+            <td style="color:#888">${esc(v.barbeiro_nome || '—')}</td>
+            <td style="color:#888">${v.itens.map(i => esc(i.produto_nome) + ' x' + i.quantidade).join(', ')}</td>
+            <td>${metodoLabel(v.metodo_pagamento)}</td>
+            <td style="font-weight:600">R$ ${v.valor_total.toFixed(2)}</td>
+            <td>${v.status === 'concluida' ? '<span class="badge-green">Concluída</span>' : '<span class="badge-gray">Cancelada</span>'}</td>
+            <td>${v.status === 'concluida' ? `<button class="btn-icon danger" style="font-size:11px" onclick="cancelarVenda(${v.id})">Cancelar</button>` : ''}</td>
+          </tr>
+        `).join('');
+      }
+      renderPaginacaoVendas(r.page, r.pages);
+    } catch(e) { toast(e.message, 'error'); }
+  }
+
+  function metodoLabel(m) {
+    const mapa = { pix: 'PIX', dinheiro: 'Dinheiro', cartao: 'Cartão' };
+    return mapa[m] || m;
+  }
+
+  function renderPaginacaoVendas(page, pages) {
+    const el = document.getElementById('vendasPaginacao');
+    if (pages <= 1) { el.innerHTML = ''; return; }
+    let html = '';
+    if (page > 1) html += `<button class="btn-icon" onclick="carregarVendas(${page - 1})">‹ Anterior</button>`;
+    html += `<span style="color:#888;font-size:13px;align-self:center">Página ${page} de ${pages}</span>`;
+    if (page < pages) html += `<button class="btn-icon" onclick="carregarVendas(${page + 1})">Próxima ›</button>`;
+    el.innerHTML = html;
+  }
+
+  async function cancelarVenda(id) {
+    if (!confirm('Cancelar esta venda? O estoque será devolvido.')) return;
+    try {
+      await Bos.post('/gestor/vendas/' + id + '/cancelar', {});
+      toast('Venda cancelada. Estoque devolvido.');
+      await carregarVendas(1);
+    } catch(e) { toast(e.message, 'error'); }
+  }
+
+  // ── Modal nova venda ──────────────────────────────────────
+  async function novaVendaModal() {
+    _itensVenda = [];
+    document.getElementById('vBuscaProduto').value = '';
+    document.getElementById('vClienteNomeLivre').value = '';
+    document.getElementById('vResultados').style.display = 'none';
+    renderItensVenda();
+    try {
+      [_produtos, _barbeiros] = await Promise.all([
+        Bos.get('/gestor/produtos?ativo=true'),
+        Bos.get('/gestor/barbeiros'),
+      ]);
+      const selBarb = document.getElementById('vBarbeiroId');
+      selBarb.innerHTML = '<option value="">— Nenhum —</option>' +
+        _barbeiros.filter(b => b.ativo).map(b => `<option value="${b.id}">${esc(b.nome)}</option>`).join('');
+    } catch(e) { toast(e.message, 'error'); }
+    abrirModal('modalVenda');
+  }
+
+  function buscarProduto() {
+    const termo = document.getElementById('vBuscaProduto').value.trim().toLowerCase();
+    const el = document.getElementById('vResultados');
+    if (!termo) { el.style.display = 'none'; return; }
+    const encontrados = _produtos.filter(p =>
+      p.nome.toLowerCase().includes(termo) || (p.codigo_barras || '').toLowerCase().includes(termo)
+    ).slice(0, 8);
+    if (!encontrados.length) {
+      el.innerHTML = '<div class="busca-resultado-item" style="color:#666">Nenhum produto encontrado.</div>';
+    } else {
+      el.innerHTML = encontrados.map(p => `
+        <div class="busca-resultado-item" onclick="adicionarItemVenda(${p.id})">
+          ${esc(p.nome)} — R$ ${p.preco.toFixed(2)} (estoque: ${p.quantidade_estoque})
+        </div>
+      `).join('');
+    }
+    el.style.display = '';
+  }
+
+  function adicionarItemVenda(produtoId) {
+    const p = _produtos.find(x => x.id === produtoId);
+    if (!p) return;
+    const existente = _itensVenda.find(i => i.produto_id === produtoId);
+    if (existente) existente.quantidade += 1;
+    else _itensVenda.push({ produto_id: p.id, nome: p.nome, preco: p.preco, quantidade: 1 });
+    document.getElementById('vBuscaProduto').value = '';
+    document.getElementById('vResultados').style.display = 'none';
+    renderItensVenda();
+  }
+
+  function alterarQuantidadeItem(produtoId, delta) {
+    const item = _itensVenda.find(i => i.produto_id === produtoId);
+    if (!item) return;
+    item.quantidade += delta;
+    if (item.quantidade <= 0) _itensVenda = _itensVenda.filter(i => i.produto_id !== produtoId);
+    renderItensVenda();
+  }
+
+  function removerItemVenda(produtoId) {
+    _itensVenda = _itensVenda.filter(i => i.produto_id !== produtoId);
+    renderItensVenda();
+  }
+
+  function renderItensVenda() {
+    const el = document.getElementById('vItensLista');
+    if (!_itensVenda.length) {
+      el.innerHTML = '<p style="color:#555;font-size:13px">Nenhum item adicionado ainda.</p>';
+    } else {
+      el.innerHTML = _itensVenda.map(i => `
+        <div class="item-venda-row">
+          <span class="item-venda-nome">${esc(i.nome)}</span>
+          <button class="item-venda-remove" onclick="alterarQuantidadeItem(${i.produto_id}, -1)">−</button>
+          <span>${i.quantidade}</span>
+          <button class="item-venda-remove" onclick="alterarQuantidadeItem(${i.produto_id}, 1)">+</button>
+          <span style="width:80px;text-align:right;color:#888">R$ ${(i.preco * i.quantidade).toFixed(2)}</span>
+          <button class="item-venda-remove" onclick="removerItemVenda(${i.produto_id})" title="Remover">×</button>
+        </div>
+      `).join('');
+    }
+    const total = _itensVenda.reduce((s, i) => s + i.preco * i.quantidade, 0);
+    document.getElementById('vTotalDisplay').textContent = 'Total: R$ ' + total.toFixed(2);
+  }
+
+  async function finalizarVenda() {
+    if (!_itensVenda.length) { toast('Adicione ao menos um item.', 'error'); return; }
+    const btn = document.getElementById('btnFinalizarVenda');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      const payload = {
+        itens: _itensVenda.map(i => ({ produto_id: i.produto_id, quantidade: i.quantidade })),
+        metodo_pagamento: document.getElementById('vMetodoPagamento').value,
+      };
+      const clienteNome = document.getElementById('vClienteNomeLivre').value.trim();
+      if (clienteNome) payload.cliente_nome_livre = clienteNome;
+      const barbeiroId = document.getElementById('vBarbeiroId').value;
+      if (barbeiroId) payload.barbeiro_id = parseInt(barbeiroId);
+
+      await Bos.post('/gestor/vendas', payload);
+      fecharModal('modalVenda');
+      toast('Venda registrada com sucesso!');
+      await carregarVendas(1);
+    } catch(e) { toast(e.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Finalizar venda'; }
+  }
+
+  carregarVendas(1);
+</script>
+{% endblock %}

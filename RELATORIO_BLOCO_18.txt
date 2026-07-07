@@ -1,0 +1,247 @@
+RELATORIO_BLOCO_18.txt
+Script 18 / Bloco 6.4 — Módulo de Produtos, Vendas e Estoque
+================================================================================
+
+RESUMO
+------
+Módulo completo de venda avulsa de produto com controle de estoque
+auditável: 4 tabelas novas, serviço central de movimentação de estoque com
+lock atômico (mesmo padrão do Script 07), 5 endpoints novos + evolução dos
+existentes, 3 telas novas/atualizadas, e uma feature flag nova com um
+mecanismo de "ativação por padrão" que não existia no sistema. Executado
+em 2 fases (backend/banco, depois frontend) como pedido.
+
+Antes de escrever o model `Venda`, perguntei ao usuário os métodos de
+pagamento aceitos (pedido explícito da tarefa) — confirmado: pix, dinheiro,
+cartão (mesmo conjunto já usado, sem constante própria, em
+ClientePlanoSolicitacao.metodo_pagamento).
+
+
+1. DECISÕES DE SEMÂNTICA TOMADAS E DOCUMENTADAS (a tarefa deixou em aberto)
+--------------------------------------------------------------------------------
+
+a) **`quantidade` em MovimentacaoEstoque**: sempre positiva (magnitude). O
+   TIPO decide a direção — `entrada` sempre soma, `saida_venda`/`saida_uso`
+   sempre subtraem. O único caso bidirecional é `ajuste` (correção manual de
+   inventário): a rota HTTP aceita um sinal explícito no payload
+   (`quantidade: -5` por exemplo), mas internamente `app/utils/estoque.py:
+   ajustar_estoque()` decide se chama `registrar_entrada` ou
+   `registrar_saida` com base nesse sinal, e SEMPRE grava a magnitude (abs)
+   na coluna. Documentado extensamente no docstring de
+   `TipoMovimentacaoEstoque` (app/constants.py).
+
+b) **`ativo_por_padrao` não existia no sistema de features** (confirmado:
+   toda feature nasce desligada por padrão pra toda barbearia, sem exceção,
+   até hoje). Criado do zero: nova coluna `FeatureMetadata.ativo_por_padrao`
+   (Boolean, default False); `seed_feature_metadata()` (app/seeds.py) agora
+   ativa automaticamente `FeatureBarbearia(ativo=True)` pra TODAS as
+   barbearias já existentes quando uma feature NOVA nasce com
+   `ativo_por_padrao=True` — só na criação, nunca reativa algo que o gestor
+   tenha desligado manualmente depois. `super/barbearias.py` (criação de
+   barbearia nova) também foi ajustado para usar `fm.ativo_por_padrao` em
+   vez do `False` hardcoded. Testado: rodei o seed 2x — só a 1ª vez ativou
+   retroativamente (3 barbearias existentes), a 2ª foi idempotente.
+
+c) **`GET /produtos` continua SEM paginação** — decisão consciente: a
+   tarefa não pediu paginação nesse endpoint especificamente (só em
+   movimentações e vendas), e paginar quebraria o contrato de resposta
+   (array puro) que 2 telas diferentes já consomem (`gestor/produtos.html`
+   e `barbeiro/produtos.html`).
+
+
+2. MODELS + MIGRATION
+--------------------------
+`app/models/__init__.py`: `CategoriaProduto(TenantMixin)`, novas colunas em
+`Produto` (categoria_id FK, marca, custo_unitario, codigo_barras, foto_url,
+estoque_minimo — mantive `categoria`/`foto` legados intactos, não removi
+nada), `MovimentacaoEstoque(TenantMixin)`, `Venda(TenantMixin)`, `VendaItem`.
+`FeatureMetadata.ativo_por_padrao` (ver seção 1b).
+
+Migration `df41b77230dd_modulo_produtos_vendas_estoque_bloco64.py`: 4
+`create_table` + `ALTER TABLE produtos` (6 colunas novas, todas nullable ou
+com `server_default` seguro) + `ALTER TABLE feature_metadata` (1 coluna).
+Todas as FKs/CHECKs/índices nomeados explicitamente (padrão do Bloco 2.1).
+Mostrada ao usuário ANTES de aplicar — autorização recebida explicitamente
+("sim"). Ciclo upgrade → downgrade → upgrade validado, estrutura das 4
+tabelas + colunas novas confirmadas via `\d` no psql.
+
+
+3. SERVIÇO CENTRAL DE ESTOQUE (app/utils/estoque.py)
+---------------------------------------------------------
+`registrar_entrada`/`registrar_saida`/`ajustar_estoque` — `registrar_saida`
+usa o MESMO padrão de UPDATE atômico com guard de `incrementar_uso_cupom`
+(Script 07):
+  UPDATE produtos SET quantidade_estoque = quantidade_estoque - :q
+  WHERE id = :id AND barbearia_id = :bk AND quantidade_estoque >= :q
+`rowcount == 0` → `APIError('Estoque insuficiente de "<nome>".', 422)`.
+Toda movimentação grava uma `MovimentacaoEstoque` com `quantidade_apos`
+(snapshot pós-movimentação) para auditoria completa.
+
+`calcular_comissao_venda(barbeiro, valor_item)` isolada em função própria
+(pedido explícito da tarefa) — hoje só usa `Barbeiro.comissao_percentual`
+(mesmo campo já usado na comissão de atendimento/agendamento), preparada
+pra suportar comissão por produto no futuro sem tocar nos endpoints de
+venda.
+
+`app/utils/vendas.py`: `criar_venda_core`/`cancelar_venda_core`
+compartilhados entre gestor e barbeiro — 1 única implementação, sem
+duplicação de lógica de negócio entre os dois blueprints.
+
+
+4. ENDPOINTS NOVOS/EVOLUÍDOS
+----------------------------------
+  CRUD /api/v1/gestor/produtos/categorias (GET/POST/PATCH/DELETE)
+  PATCH /api/v1/gestor/produtos/<id> — aceita os 6 campos novos
+  GET  /api/v1/gestor/produtos — inclui categoria_nome, margem, estoque_baixo
+  POST /api/v1/gestor/produtos/<id>/foto — upload Cloudinary (ver seção 5)
+  POST /api/v1/gestor/estoque/movimentar {produto_id, tipo, quantidade, motivo}
+  GET  /api/v1/gestor/estoque/movimentacoes?produto_id=&page= (paginado)
+  POST /api/v1/gestor/vendas {itens, barbeiro_id?, cliente_id?|cliente_nome_livre?, metodo_pagamento}
+  GET  /api/v1/gestor/vendas?data=&page= (paginado)
+  POST /api/v1/gestor/vendas/<id>/cancelar (com lock — devolve estoque)
+  POST /api/v1/barbeiro/vendas (mesmo payload, barbeiro_id = ele mesmo, não aceito do request)
+  GET  /api/v1/barbeiro/produtos (novo — ver achado na seção 6)
+  GET  /api/v1/barbeiro/features (novo — ver achado na seção 6)
+
+Todos os endpoints de ESCRITA de produtos/vendas/estoque usam
+`@feature_required('produtos_venda')`. Leitura (`GET /produtos`,
+`GET /produtos/categorias`) fica sempre livre, conforme já era o padrão
+pré-existente (cadastro básico de produto já existia antes desta feature).
+
+
+5. UPLOAD DE FOTO (Cloudinary)
+------------------------------------
+Extraído o padrão de validação de magic bytes (duplicado entre
+`pub/agendamento.py` e `super/barbearias.py`) para `app/utils/imagem.py` —
+reaproveitado no novo endpoint de foto de produto, SEM tocar nos 2 usos
+antigos (fora do escopo, evita regressão). Mesmo padrão de upload
+(`folder='barberos/produtos/<barbearia_id>'`, `public_id='produto_<id>'`,
+`overwrite=True`).
+
+
+6. ACHADOS DURANTE A IMPLEMENTAÇÃO (bugs pré-existentes corrigidos "de graça")
+------------------------------------------------------------------------------------
+A tarefa pedia "consumo pelo caixa/atendimento continua funcionando" como
+validação obrigatória — ao tentar provar isso, encontrei 3 bugs
+pré-existentes em código que nunca tinha sido exercitado de verdade:
+
+a) **`app/routes/caixa.py` tinha os MESMOS 2 bugs de import já encontrados
+   em `vip.py` no Script 15**: `from app.utils import get_barbearia_atual`
+   (função que não existe) e `from app.routes.auth import barbeiro_required`
+   (módulo errado). Corrigidos (mesmo fix do Script 15): `g.barbearia_id`/
+   `g.user_id` no lugar de `get_barbearia_atual()`/`get_jwt_identity()`, e
+   `from app.decorators.auth import barbeiro_required`.
+
+b) **`caixa.py:abrir_atendimento` usava `ag.servico_id`** — campo que NÃO
+   EXISTE MAIS em `Agendamento` desde a v2 (comentário no próprio model:
+   "v2: sem servico_id — todos os serviços estão em AgendamentoServico").
+   Sem corrigir, `abrir_atendimento` derrubava com 500 em QUALQUER chamada
+   — ou seja, o fluxo "continua funcionando" nunca funcionou de fato desde
+   a migração pra v2. Corrigido para buscar todos os itens via
+   `AgendamentoServico.query.filter_by(agendamento_id=ag.id)` (agora
+   suporta múltiplos serviços por agendamento, não só um).
+
+c) **`app/templates/barbeiro/produtos.html` chamava `api.produtos.listar()`**
+   — objeto JS que nunca existiu em lugar nenhum do projeto (3ª ocorrência
+   dessa categoria de bug nesta refatoração, depois de `vip.html` no Script
+   15). A tela nunca funcionou. Corrigido para `Bos.get('/barbeiro/produtos')`
+   — só que essa rota TAMBÉM não existia (só a de gestor), então criei
+   `app/routes/barbeiro/produtos.py` (GET só-leitura) pra sustentar a
+   correção.
+
+Esses 3 achados não eram pedidos explicitamente pela tarefa, mas eram
+pré-requisito direto pra cumprir a validação obrigatória "consumo pelo
+caixa/atendimento continua funcionando" — sem eles, essa cláusula da
+tarefa seria literalmente impossível de satisfazer, então corrigi.
+
+Nota: `caixa.py` continua sendo código MORTO — o blueprint nunca é
+registrado em `app/__init__.py` (decisão pré-existente, fora do escopo
+deste bloco mudar). Para validar via HTTP real que a refatoração do
+consumo de estoque funciona, registrei o blueprint TEMPORARIAMENTE dentro
+do script de teste (não no app de verdade) — documentado no próprio
+script antes de ser apagado.
+
+
+7. FRONTEND
+---------------
+a) `gestor/produtos.html` — reescrito com 3 abas (Produtos / Categorias /
+   Movimentações). Form de produto com os 6 campos novos + upload de foto.
+   Badge de estoque baixo agora usa `estoque_baixo` (campo do backend,
+   baseado em `estoque_minimo` por produto) em vez do threshold fixo
+   antigo. Corrigido de graça o bug pré-existente onde o modal de ajuste de
+   estoque enviava `quantidade` mas a rota só aceitava `delta` — backend
+   agora aceita ambos.
+
+b) `gestor/vendas.html` (nova) — busca de produto por nome/código, lista de
+   itens com quantidade ajustável, total ao vivo, cliente/barbeiro/método
+   opcional, tabela de vendas do dia com cancelar.
+
+c) `barbeiro/produtos.html` — corrigido (ver achado 6c) + botão "Vender
+   produto" por linha + modal de venda simplificado (vendedor = ele mesmo,
+   sem seleção de barbeiro).
+
+d) Menu do gestor: item "Vendas" novo, gateado por feature (mesmo padrão
+   `id="nav-X" style="display:none"` + JS que consulta `/gestor/features`,
+   igual cupons/pix). Menu do barbeiro NÃO tinha esse padrão antes — criado
+   do zero (`/api/v1/barbeiro/features`, novo) pra esconder o botão "Vender
+   produto" quando a feature estiver desligada.
+
+
+8. VALIDAÇÃO OBRIGATÓRIA
+-----------------------------
+Cenário completo (tenant QA, 27 verificações, todas passando):
+  OK - criar categoria -> 201
+  OK - criar produto completo -> 201 (margem calculada: 50-20=30)
+  OK - entrada de estoque 10 -> 201 (estoque = 10)
+  OK - venda de 3 unidades (com barbeiro) -> 201 (total=150, comissão=15 [10%])
+  OK - estoque após venda = 7 (2 movimentações: entrada + saida_venda)
+  OK - vender 100 com estoque 7 -> 422 Estoque insuficiente (estoque não mudou)
+  OK - cancelar a venda -> estoque volta a 10 (3ª movimentação: entrada/cancelamento)
+  OK - cancelar venda já cancelada -> 422
+  OK - metodo_pagamento inválido ('boleto') -> 422
+
+  Concorrência real (2 threads, servidor Werkzeug de verdade — não
+  test_client — cada thread com sessão HTTP própria, login independente,
+  disputando a última unidade em estoque):
+  OK - exatamente 1x201 e 1x422 (resultados={'X': 201, 'Y': 422})
+  OK - estoque final = 0 (nunca foi pro negativo)
+
+  Consumo pelo caixa/atendimento (após corrigir os achados da seção 6):
+  OK - abrir atendimento -> 201
+  OK - adicionar item produto -> 201
+  OK - efetuar atendimento -> 200
+  OK - estoque abateu corretamente (antes=5, depois=3)
+  OK - MovimentacaoEstoque criada com referencia_atendimento_id preenchido
+
+  Feature OFF:
+  OK - GET /gestor/features mostra produtos_venda com ativo=False
+  OK - criar venda com feature OFF -> 403
+  OK - movimentar estoque com feature OFF -> 403
+  OK - criar categoria com feature OFF -> 403
+  OK - listar produtos (leitura) continua livre -> 200
+
+  Smoke geral:
+  OK - dashboard gestor 200 com estoque_baixo_count
+  OK - listar movimentações (paginado) -> 200
+  OK - listar vendas (paginado) -> 200
+
+`ast.parse()` em 16 arquivos Python tocados — 0 erros. App sobe sem erro
+(217 rotas, +14 em relação ao Bloco 3.4). Templates compilados via
+`app.jinja_env.get_template()` sem erro. Tenant QA completamente removido
+ao final (confirmado: 0 barbearias com slug `qa-%`).
+
+
+CONCLUSÃO
+---------
+Módulo completo implementado nas 2 fases pedidas. 3 decisões de semântica
+não especificadas pela tarefa foram tomadas e documentadas (sinal da
+movimentação de ajuste, mecanismo de ativação-por-padrão de feature nunca
+existente antes, e não-paginação deliberada de `GET /produtos`). Durante a
+validação da cláusula "consumo pelo caixa continua funcionando", encontrei
+e corrigi 3 bugs pré-existentes que impediam esse fluxo de sequer executar
+(2 imports quebrados idênticos aos do Script 15, 1 campo de model
+obsoleto da v1, e uma 3ª tela quebrada por objeto JS inexistente — mesma
+categoria de achado já vista 2x nesta refatoração). Teste de concorrência
+real com threads e servidor de verdade confirma que o lock atômico do
+serviço de estoque fecha a corrida de vendas simultâneas sem deixar o
+estoque ir a negativo.

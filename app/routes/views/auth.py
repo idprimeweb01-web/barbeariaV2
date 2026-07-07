@@ -245,6 +245,12 @@ def gestor_produtos():
     return render_template('gestor/produtos.html', **_gestor_ctx())
 
 
+@views_bp.get('/gestor/vendas')
+@session_required('gestor', 'super_admin')
+def gestor_vendas():
+    return render_template('gestor/vendas.html', **_gestor_ctx())
+
+
 @views_bp.get('/gestor/agenda')
 @session_required('gestor', 'super_admin')
 def gestor_agenda():
