@@ -673,14 +673,6 @@ def _validar_magic_bytes(arq):
         raise APIError('Arquivo não é JPEG ou PNG válido.', 400)
 
 
-def _cfg_cloudinary_pub():
-    cloudinary.config(
-        cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
-        api_key=os.environ.get('CLOUDINARY_API_KEY'),
-        api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
-    )
-
-
 @pub_bp.post('/<slug>/agendamentos/<int:agendamento_id>/comprovante')
 @limiter.limit(os.environ.get('RL_COMPROVANTE', '3 per minute'))
 def upload_comprovante(slug, agendamento_id):
@@ -724,7 +716,6 @@ def upload_comprovante(slug, agendamento_id):
     folder    = f'barbearia/{barbearia.id}/comprovantes/{ano}/{mes}'
     public_id = f'ag_{agendamento_id}'
 
-    _cfg_cloudinary_pub()
     try:
         resultado = cloudinary.uploader.upload(
             arq.stream,

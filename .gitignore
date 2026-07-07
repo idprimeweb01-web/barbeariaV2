@@ -2,6 +2,8 @@
 .env
 .env.*
 *.env
+# Exceção: .env.example é o TEMPLATE (sem valores reais) — deve ser commitado.
+!.env.example
 secrets.py
 create_admin.py
 
@@ -66,6 +68,12 @@ logs/
 # ── Scripts de manutenção ad-hoc (não fazem parte do produto) ────────────────
 check_features.py
 scripts/
+
+# ── Scripts de dev com senha hardcoded (Script 19/Bloco 1.1) ─────────────────
+create_db.py
+check_tables.py
+debug_adm.py
+reset_adm.py
 
 # ── Uploads locais (armazenados no Cloudinary em produção) ───────────────────
 uploads/

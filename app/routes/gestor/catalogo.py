@@ -15,14 +15,6 @@ from app.utils.db import commit_ou_falhar
 catalogo_bp = Blueprint('gestor_catalogo', __name__, url_prefix='/api/v1/gestor')
 
 
-def _cfg_cloudinary():
-    cloudinary.config(
-        cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
-        api_key=os.environ.get('CLOUDINARY_API_KEY'),
-        api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
-    )
-
-
 def _barbearia_id_atual():
     if g.barbearia_id:
         return g.barbearia_id
@@ -463,7 +455,6 @@ def upload_foto_produto(produto_id):
     arq = request.files['arquivo']
     validar_upload_imagem(arq)
 
-    _cfg_cloudinary()
     try:
         resultado = cloudinary.uploader.upload(
             arq.stream,

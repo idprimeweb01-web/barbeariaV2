@@ -13,6 +13,49 @@ from .extensions import db, migrate, jwt, limiter  # noqa: E402 — importado ap
 __all__ = ['db', 'migrate', 'jwt', 'limiter', 'create_app']
 
 
+# Trechos que denunciam uma chave-placeholder esquecida no .env (Script 19/
+# Bloco 1.1). Checagem case-insensitive — cobre os placeholders já vistos
+# neste projeto (SECRET_KEY='your-secret-key-here', JWT_SECRET_KEY continha
+# 'SUBSTITUA-POR-...' — esse último passava no check de 32+ chars mas era
+# claramente um lembrete não preenchido).
+_KNOWN_BAD = (
+    'your-secret-key', 'dev-secret', 'test-secret', 'substitua',
+    'change-me', 'changeme', 'secret-key-here',
+)
+
+
+def _validar_chave_secreta(nome: str, valor: str) -> None:
+    """Levanta RuntimeError se `valor` (SECRET_KEY ou JWT_SECRET_KEY) parecer
+    um placeholder esquecido: curto demais, contém um trecho conhecido de
+    placeholder, ou tem entropia baixa demais (ex: 'aaaaaa...aaaa')."""
+    if len(valor) < 32:
+        raise RuntimeError(
+            f'{nome} deve ter no mínimo 32 bytes. '
+            'Gere com: python -c "import secrets; print(secrets.token_hex(32))"'
+        )
+
+    valor_lower = valor.lower()
+    for trecho in _KNOWN_BAD:
+        if trecho in valor_lower:
+            raise RuntimeError(
+                f'{nome} parece um placeholder esquecido (contém "{trecho}"). '
+                'Gere uma chave real com: '
+                'python -c "import secrets; print(secrets.token_hex(32))"'
+            )
+
+    # Entropia mínima: nenhum caractere pode dominar mais de 50% da string
+    # (pega placeholders tipo 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa').
+    contagens = {}
+    for c in valor:
+        contagens[c] = contagens.get(c, 0) + 1
+    if contagens and max(contagens.values()) / len(valor) > 0.5:
+        raise RuntimeError(
+            f'{nome} tem entropia baixa demais para ser uma chave real (um único '
+            'caractere domina mais de 50% do valor). Gere uma chave real com: '
+            'python -c "import secrets; print(secrets.token_hex(32))"'
+        )
+
+
 def _configurar_logging():
     """Garante que logger.error(...) dos módulos da aplicação (ex: commit_ou_falhar)
     apareça com timestamp em stdout — é o que gunicorn/Railway coletam como log
@@ -40,16 +83,15 @@ def create_app(config=None):
         raise RuntimeError('DATABASE_URL não está definida no ambiente.')
 
     jwt_key = os.environ.get('JWT_SECRET_KEY', '')
-    if len(jwt_key) < 32:
-        raise RuntimeError(
-            'JWT_SECRET_KEY deve ter no mínimo 32 bytes. '
-            'Gere com: python -c "import secrets; print(secrets.token_hex(32))"'
-        )
+    _validar_chave_secreta('JWT_SECRET_KEY', jwt_key)
+
+    secret_key = os.environ.get('SECRET_KEY', '') or jwt_key
+    _validar_chave_secreta('SECRET_KEY', secret_key)
 
     app.config.update(
         SQLALCHEMY_DATABASE_URI=database_url,
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        SECRET_KEY=os.environ.get('SECRET_KEY', jwt_key),
+        SECRET_KEY=secret_key,
         JWT_SECRET_KEY=jwt_key,
         JWT_ACCESS_TOKEN_EXPIRES=timedelta(minutes=15),
         JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=30),
@@ -77,6 +119,19 @@ def create_app(config=None):
     migrate.init_app(app, db)
     jwt.init_app(app)
     limiter.init_app(app)
+
+    # ── Cloudinary (Script 19/Bloco 1.1) ─────────────────────────────────────
+    # Configurado UMA vez aqui no startup — antes, cloudinary.config(...) era
+    # chamado de novo a cada request em 3 arquivos de rota diferentes
+    # (pub/agendamento.py, super/barbearias.py, gestor/catalogo.py), o que é
+    # redundante (a config é global no SDK, não por-request) e espalha a
+    # leitura das env vars por vários lugares.
+    import cloudinary
+    cloudinary.config(
+        cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
+        api_key=os.environ.get('CLOUDINARY_API_KEY'),
+        api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
+    )
 
     # ── Contexto por requisição ───────────────────────────────────────────────
     from .context import load_user_context

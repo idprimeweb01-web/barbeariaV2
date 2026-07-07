@@ -37,13 +37,6 @@ def _validar_magic_bytes_imagem(arq):
         raise APIError('Arquivo não é JPG, PNG ou WebP válido.', 400)
 
 
-def _cfg_cloudinary():
-    cloudinary.config(
-        cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME'),
-        api_key=os.environ.get('CLOUDINARY_API_KEY'),
-        api_secret=os.environ.get('CLOUDINARY_API_SECRET'),
-    )
-
 super_bp = Blueprint('super', __name__, url_prefix='/api/v1/super')
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -427,7 +420,6 @@ def upload_imagem_customizacao(barbearia_id):
     arq.seek(0)
     _validar_magic_bytes_imagem(arq)
 
-    _cfg_cloudinary()
     public_id = f'barbearia_{barbearia_id}_{tipo}'
     try:
         resultado = cloudinary.uploader.upload(
@@ -475,7 +467,6 @@ def remover_imagem_customizacao(barbearia_id):
     if not c or not getattr(c, campo):
         raise APIError('Esta barbearia não possui essa imagem.', 404)
 
-    _cfg_cloudinary()
     try:
         cloudinary.uploader.destroy(f'barberos/customizacao/barbearia_{barbearia_id}_{tipo}', resource_type='image')
     except Exception:

@@ -1,0 +1,176 @@
+RELATORIO_BLOCO_19.txt
+Script 19 / Bloco 1.1 — Secrets validados + Cloudinary no startup + higiene
+================================================================================
+
+⚠️ ACHADO CRÍTICO — LER PRIMEIRO ⚠️
+------------------------------------------------------------------------------
+O `.env` já foi commitado no git (commit `49735eed` "BarberOS v1 - Deploy
+inicial", o commit INICIAL do repositório) com TODAS as chaves reais:
+FLASK_APP, FLASK_ENV, SECRET_KEY, JWT_SECRET_KEY, DATABASE_URL,
+CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.
+
+Foi removido do rastreamento depois (commit `d506fbc` "Remove .env from git
+tracking"), MAS isso só impede commits futuros — o conteúdo continua para
+sempre no histórico do git.
+
+**Pior: confirmei (`git fetch` + `git branch -r --contains 49735eed`) que
+esse commit JÁ FOI PUSHADO para o GitHub** (remote origin:
+`idprimeweb01-web/barbeariaV2`, branch `main`). Ou seja, não é só um risco
+de histórico local — está no repositório remoto.
+
+**As credenciais do Cloudinary (cloud_name=dftntop4j, api_key=366411938841532,
+api_secret=...) devem ser consideradas COMPROMETIDAS**, independente de
+qualquer limpeza feita neste bloco. Ação obrigatória detalhada no
+`DEPLOY_CHECKLIST.txt` (seção "AÇÃO MANUAL OBRIGATÓRIA"): rotacionar o API
+Secret no painel do Cloudinary.
+
+SECRET_KEY/JWT_SECRET_KEY que estavam nesse commit histórico eram
+placeholders (não geravam risco real por si só), mas agora que existem
+valores REAIS (gerados neste bloco), a mesma disciplina vale: nunca
+commitar de novo.
+
+
+1. CHAVES REAIS GERADAS
+----------------------------
+  python -c "import secrets; print(secrets.token_hex(32))"  → nova SECRET_KEY
+  python -c "import secrets; print(secrets.token_hex(32))"  → nova JWT_SECRET_KEY
+
+`.env` local atualizado com as duas (64 caracteres hex cada, substituindo
+`your-secret-key-here` e `SUBSTITUA-POR-UMA-CHAVE-SEGURA-DE-PELO-MENOS-32-
+BYTES-AGORA`). Chaves finais mostradas ao usuário SEM os valores (só
+confirmação de que as 7 chaves esperadas estão presentes) — conforme
+pedido.
+
+**Implicação prática**: qualquer sessão ativa (cookies bos_at/bos_rt,
+sessão Flask) fica invalidada — todo mundo precisa relogar. Esperado e
+aceito pela própria tarefa.
+
+
+2. VALIDAÇÃO ANTI-PLACEHOLDER (app/__init__.py)
+-----------------------------------------------------
+Nova função `_validar_chave_secreta(nome, valor)`, chamada para SECRET_KEY
+E JWT_SECRET_KEY (antes só JWT_SECRET_KEY tinha o check de tamanho):
+  - `len(valor) < 32` → RuntimeError
+  - substring de `_KNOWN_BAD` presente (case-insensitive: 'your-secret-key',
+    'dev-secret', 'test-secret', 'substitua', 'change-me', 'changeme',
+    'secret-key-here') → RuntimeError
+  - entropia: `max(contagem_por_caractere) / len(valor) > 0.5` → RuntimeError
+
+Os 3 caminhos testados manualmente:
+  - `SECRET_KEY='your-secret-key-here'` (22 chars) → recusado no check de
+    tamanho.
+  - `JWT_SECRET_KEY='SUBSTITUA-POR-UMA-CHAVE-SEGURA-DE-PELO-MENOS-32-BYTES-
+    AGORA'` (58 chars, PASSA o check de tamanho) → recusado no check de
+    `_KNOWN_BAD` ("substitua") — exatamente o cenário que a tarefa descreve
+    como motivação pra esse check.
+  - `JWT_SECRET_KEY='a'*40` → recusado no check de entropia.
+  - Chaves reais geradas por `secrets.token_hex(32)` → aceitas normalmente
+    (testado: app sobe OK).
+
+
+3. CLOUDINARY CONFIGURADO NO STARTUP
+------------------------------------------
+`cloudinary.config(...)` movido pra dentro de `create_app()`
+(`app/__init__.py`), chamado 1 vez no boot, lendo as 3 env vars
+CLOUDINARY_*. Removidos os 3 pontos que reconfiguravam a cada request:
+  - `pub/agendamento.py` — função `_cfg_cloudinary_pub()` inteira removida
+    (só era chamada 1 vez, em `upload_comprovante`).
+  - `super/barbearias.py` — função `_cfg_cloudinary()` removida (era
+    chamada 2x: upload de customização e delete de imagem).
+  - `gestor/catalogo.py` — **achado adicional**: uma 3ª ocorrência, que eu
+    mesmo introduzi no Script 18 (Bloco 6.4, upload de foto de produto) —
+    mesmo padrão duplicado, removida também.
+
+`grep -rn "cloudinary.config" app/` confirma: só resta em
+`app/__init__.py` (mais o comentário explicando a mudança).
+
+
+4. HIGIENE DE REPOSITÓRIO
+------------------------------
+a) `.env.example` criado com as 7+ chaves usadas pelo projeto (incluindo
+   as de rate limiting do Bloco 4.2 e admin de produção do
+   `seeds_prod.py`), todos os valores são placeholders explicativos, nenhum
+   valor real.
+
+   **Bug encontrado e corrigido no próprio `.gitignore`**: a regra `.env.*`
+   (destinada a pegar `.env.local`, `.env.production` etc.) também
+   bloqueava acidentalmente `.env.example` — que PRECISA ser commitado.
+   Adicionada a exceção `!.env.example` logo depois da regra. Confirmado
+   com `git check-ignore -v` antes/depois do fix.
+
+b) `.gitignore`: adicionados `create_db.py`, `check_tables.py`,
+   `debug_adm.py`, `reset_adm.py` (todos confirmados com senha hardcoded —
+   `create_db.py`/`check_tables.py` com a senha do Postgres local,
+   `debug_adm.py`/`reset_adm.py` com "senha123" do usuário de teste).
+
+   **Achado importante**: os 4 arquivos JÁ ESTAVAM RASTREADOS pelo git —
+   só adicionar ao `.gitignore` não tem efeito nenhum sobre arquivos já
+   rastreados (a regra só previne adições futuras). Rodei
+   `git rm --cached <arquivo>` nos 4 (remove do índice do git, mantém o
+   arquivo no disco local intacto — confirmado com `ls` depois do
+   comando). Aparecem como "D" (deleted) no `git status` até o commit
+   deste bloco — é o comportamento esperado, os arquivos continuam
+   existindo localmente, só saem do controle de versão dali pra frente.
+   Assim como o `.env`, o conteúdo desses 4 arquivos permanece no
+   histórico do git (severidade bem menor — são só senhas de banco/teste
+   local, não credenciais de serviço externo real).
+
+c) Histórico do `.env` — ver seção "ACHADO CRÍTICO" no topo deste
+   relatório.
+
+
+5. DEPLOY_CHECKLIST.txt
+----------------------------
+Gerado na raiz do repo com: variáveis a configurar no Railway, o passo
+manual de rotacionar o Cloudinary Secret, como rodar `seeds_prod.py`
+corretamente (**achado**: o próprio docstring do script sugere `flask
+seed-prod` como alternativa, mas esse comando não está registrado em
+`wsgi.py` — só `python seeds_prod.py` funciona), confirmação de que
+`adm@barbearia.com/123456` não deve existir em produção, e um alerta sobre
+`RATELIMIT_STORAGE_URI=memory://` ser por-worker (`Procfile` confirmado
+rodando `gunicorn -w 2` — 2 workers, então o limite efetivo em produção
+pode ser até ~2x o configurado sem Redis — ver DT-006 já registrado na
+memória do projeto).
+
+
+6. VALIDAÇÃO OBRIGATÓRIA
+-----------------------------
+  OK - app recusa SECRET_KEY placeholder curto ('your-secret-key-here')
+  OK - app recusa JWT_SECRET_KEY que passa no len>=32 mas contém 'substitua'
+  OK - app recusa chave de baixa entropia ('a'*40)
+  OK - app sobe normalmente com as chaves reais geradas (217 rotas)
+  OK - cloudinary.config() acontece 1x no startup (cloud_name/api_key
+       confirmados presentes via cloudinary.config() sem chamar de novo)
+  OK - upload de comprovante PIX funciona de ponta a ponta: enviei uma
+       imagem JPEG real via multipart pro endpoint
+       POST /api/v1/pub/<slug>/agendamentos/<id>/comprovante, recebi
+       200 com URL real do Cloudinary
+       (https://res.cloudinary.com/dftntop4j/image/upload/.../ag_<id>.jpg),
+       status do agendamento mudou corretamente pra
+       'aguardando_aprovacao'. Asset de teste removido do Cloudinary
+       depois via cloudinary.uploader.destroy.
+  OK - grep 'cloudinary.config' → só em app/__init__.py (confirmado 2x,
+       antes e depois do smoke final)
+  OK - smoke geral: app sobe, GET /entrar e GET /health respondem 200
+
+Tenant QA (`qa-bloco19`) e asset de teste no Cloudinary completamente
+removidos ao final.
+
+
+CONCLUSÃO
+---------
+SECRET_KEY e JWT_SECRET_KEY reais geradas e validadas com guard
+anti-placeholder (tamanho + substring conhecida + entropia). Cloudinary
+centralizado no startup, removendo 3 pontos de configuração duplicada
+(2 pré-existentes + 1 que eu mesmo tinha introduzido no bloco anterior).
+Repositório higienizado: `.env.example` criado (com um bug de
+`.gitignore` corrigido no processo), 4 scripts com senha hardcoded
+desatrelados do controle de versão. `DEPLOY_CHECKLIST.txt` cobre as
+variáveis do Railway, o seed de produção correto, e um alerta sobre rate
+limiting por-worker.
+
+O achado mais sério deste bloco não estava listado na tarefa: o `.env`
+com credenciais reais do Cloudinary já foi pushado ao GitHub no commit
+inicial do projeto. Isso exige rotação do API Secret do Cloudinary como
+ação manual do dono, independente de qualquer coisa feita neste bloco —
+documentado em destaque tanto aqui quanto no `DEPLOY_CHECKLIST.txt`.

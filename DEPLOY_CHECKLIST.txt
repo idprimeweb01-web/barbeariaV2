@@ -1,0 +1,130 @@
+DEPLOY_CHECKLIST.txt
+Checklist de deploy — BarberOS → Railway (Script 19 / Bloco 1.1)
+================================================================================
+
+⚠️ AÇÃO MANUAL OBRIGATÓRIA ANTES DE QUALQUER OUTRA COISA ⚠️
+------------------------------------------------------------------------------
+As credenciais do Cloudinary hoje no .env local (cloud_name=dftntop4j,
+api_key=366411938841532) foram encontradas no histórico do git JÁ PUSHADO
+para o GitHub (repo origin: idprimeweb01-web/barbeariaV2, commit
+49735eedc561846aab20ef296b6110fdecaf76b8 "BarberOS v1 - Deploy inicial",
+confirmado presente em origin/main via `git branch -r --contains`).
+
+O API SECRET deve ser considerado COMPROMETIDO, independente do que for
+feito localmente daqui pra frente (remover do working tree não apaga do
+histórico, e o histórico já está no remoto).
+
+  1. Acessar https://cloudinary.com/console
+  2. Settings → Access Keys → Regenerate (gerar um novo API Secret)
+  3. Atualizar CLOUDINARY_API_SECRET no .env local E nas variáveis do Railway
+  4. (Opcional, mais radical) Se o repositório no GitHub for público ou tiver
+     colaboradores não confiáveis, considerar reescrever o histórico do git
+     (git filter-repo ou BFG Repo-Cleaner) pra remover o commit
+     49735eed...— isso é destrutivo e precisa de force-push, então avaliar
+     com cuidado antes de fazer.
+
+Isso é INDEPENDENTE da troca de SECRET_KEY/JWT_SECRET_KEY feita neste bloco
+(essas eram só placeholders nunca preenchidos com valor real — não vazaram
+nada, mas agora têm valores reais gerados e são a próxima linha de defesa).
+
+
+1. VARIÁVEIS DE AMBIENTE A SETAR NO RAILWAY
+------------------------------------------------
+  DATABASE_URL              → Railway gera automaticamente ao provisionar o
+                               plugin PostgreSQL (não copiar do .env local,
+                               que aponta pro Postgres local de dev).
+  SECRET_KEY                → gerar um valor NOVO e DIFERENTE do usado em
+                               dev local: python -c "import secrets;
+                               print(secrets.token_hex(32))"
+  JWT_SECRET_KEY             → idem, outro valor novo e diferente.
+  FLASK_ENV=production
+  CLOUDINARY_CLOUD_NAME      → mesmo valor (não é secreto)
+  CLOUDINARY_API_KEY         → mesmo valor (não é secreto sozinho)
+  CLOUDINARY_API_SECRET      → o NOVO valor gerado no passo 0 acima (rotacionado)
+  ADMIN_EMAIL                → e-mail real do super_admin de produção
+  ADMIN_SENHA                → deixar SEM DEFINIR na 1ª execução do
+                               seeds_prod.py — o script gera uma senha
+                               aleatória forte e imprime UMA VEZ no log; depois
+                               trocar a senha pelo próprio painel e então, se
+                               quiser, fixar ADMIN_SENHA pra próximos resets.
+  RATELIMIT_STORAGE_URI      → Redis do Railway se disponível (ver alerta na
+                               seção 3) — se não tiver, deixar memory:// e
+                               aceitar a limitação documentada.
+
+  Variáveis com default sensato no código, só sobrescrever se precisar:
+  RATELIMIT_DEFAULT, RL_LOGIN, RL_CADASTRO, RL_AGENDAR, RL_PLANO_SOLICITAR,
+  RL_COMPROVANTE, RL_CUPOM_VALIDAR, RL_SLOTS.
+
+
+2. SEED DE PRODUÇÃO
+------------------------
+  Rodar UMA VEZ, logo após o primeiro deploy:
+    python seeds_prod.py
+
+  ⚠️ ACHADO: o docstring do próprio `seeds_prod.py` sugere `flask seed-prod`
+  como alternativa — esse comando NÃO está registrado em `wsgi.py` (só
+  existem `flask seed-metadata` e `flask seed-admin`). Só
+  `python seeds_prod.py` funciona de fato. Não usar `flask seed-admin`
+  nem os scripts de dev (`app/seeds.py:seed_super_admin`,
+  `create_admin.py`) em produção — todos usam a senha fixa "123456".
+
+  Confirmar ANTES de considerar o deploy pronto:
+    - Login adm@barbearia.com / 123456 NÃO deve existir/funcionar em
+      produção (essa credencial só deve existir em bancos de dev locais,
+      criada por `flask seed-admin` ou `app/seeds.py`).
+    - O e-mail/senha reais do super_admin de produção devem ter sido
+      anotados a partir do output de `seeds_prod.py` (aparece só 1 vez).
+
+
+3. RATE LIMITING — ATENÇÃO AO NÚMERO DE WORKERS (DT-006)
+-------------------------------------------------------------
+  Confirmado no `Procfile` atual: `gunicorn -w 2` (2 workers). Rate limiting
+  (Script 13) usa `RATELIMIT_STORAGE_URI=memory://` por padrão, que é
+  POR-WORKER — com 2 workers, um mesmo IP pode efetivamente conseguir até
+  ~2x o limite configurado (ex: RL_LOGIN=5/min pode, na prática, virar
+  ~10/min, dependendo de qual worker atende cada request).
+  Antes de considerar o rate limiting confiável em produção: provisionar
+  Redis (plugin do Railway) e setar RATELIMIT_STORAGE_URI=redis://...
+  Sem isso, documentar como limitação conhecida (não bloqueia o deploy,
+  mas reduz a eficácia do Bloco 4.2).
+
+
+4. VALIDAÇÃO ANTI-PLACEHOLDER (Script 19)
+----------------------------------------------
+  `app/__init__.py` agora recusa iniciar (`RuntimeError`) se SECRET_KEY ou
+  JWT_SECRET_KEY:
+    - tiverem menos de 32 caracteres, OU
+    - contiverem um trecho de placeholder conhecido (your-secret-key,
+      dev-secret, test-secret, substitua, change-me, changeme,
+      secret-key-here — case-insensitive), OU
+    - tiverem entropia baixa demais (um único caractere repetido > 50% do
+      valor).
+  Isso significa que o deploy vai FALHAR imediatamente (antes de aceitar
+  qualquer request) se alguém esquecer de configurar essas variáveis no
+  Railway — comportamento intencional, prefere falhar rápido a rodar
+  insegura.
+
+
+5. CLOUDINARY CONFIGURADO NO STARTUP
+------------------------------------------
+  `cloudinary.config(...)` agora roda 1 vez em `app/__init__.py` (dentro de
+  `create_app()`), não mais a cada request espalhado em 3 arquivos de rota
+  diferentes. Certificar que as 3 variáveis CLOUDINARY_* estão definidas no
+  Railway antes do deploy — sem elas, os uploads (comprovante PIX, fotos de
+  produto, customização visual) vão falhar com erro do SDK Cloudinary.
+
+
+6. CHECKLIST FINAL ANTES DE MARCAR O DEPLOY COMO PRONTO
+------------------------------------------------------------
+  [ ] API Secret do Cloudinary rotacionado (ação manual, seção 0)
+  [ ] SECRET_KEY e JWT_SECRET_KEY novas geradas SÓ para produção (diferentes
+      das de dev local)
+  [ ] Todas as variáveis da seção 1 configuradas no Railway
+  [ ] `python seeds_prod.py` rodado uma vez, credenciais anotadas
+  [ ] Login adm@barbearia.com/123456 confirmado INEXISTENTE em produção
+  [ ] Decisão tomada sobre Redis pro rate limiting (seção 3) — ou
+      provisionado, ou aceito como limitação conhecida
+  [ ] `flask db upgrade` (já roda automaticamente no Procfile antes do
+      gunicorn subir) — confirmar que todas as migrations do repo (até
+      `df41b77230dd`, Bloco 6.4) aplicam limpo num banco Railway vazio
+  [ ] Upload de comprovante/foto testado em produção depois do deploy
