@@ -1,0 +1,276 @@
+RELATORIO_RELEASE_v1.1.0.txt
+Script 20 — Release v1.1.0: regressão completa + QA final
+================================================================================
+
+RESUMO EXECUTIVO — 2 FALHAS ENCONTRADAS E JÁ CORRIGIDAS — 98/98 PASS
+--------------------------------------------------------------------------------
+A regressão encontrou 2 bugs reais e reprodutíveis no módulo de produtos/
+estoque (Script 18/Bloco 6.4), ambos em `app/routes/gestor/catalogo.py`.
+Reportados ao usuário antes de qualquer commit (regra deste bloco: "NENHUM
+push com item FAIL sem autorização explícita"). Autorizado a corrigir agora
+— os dois foram corrigidos e revalidados com um teste focado (5/5 PASS) mais
+smoke geral (217 rotas, `/entrar` e `/health` 200). Nenhum exigiu migration.
+Detalhes na seção 2.
+
+Resultado final: 98/98 checagens de regressão funcional PASS.
+
+
+1. REGRESSÃO FUNCIONAL — 96/98 checagens PASS na 1ª rodada (98/98 após os fixes)
+--------------------------------------------------
+Executada com `test_client()` (requisição HTTP real de ponta a ponta contra
+código real e banco Postgres real — não mock), usando um tenant QA descartável
+(`qa-release-<sufixo aleatório>`) criado e destruído neste bloco, cobrindo:
+
+AUTENTICAÇÃO
+  PASS - login super/gestor/barbeiro(x2)/cliente
+  PASS - logout já validado em blocos anteriores (Script 01); token revogado
+         em massa confirmado neste bloco via "barbearia desativada" (ver
+         seção 3, guards)
+  PASS - troca de senha desloga outras sessões — mecanismo (`revogar_todos_
+         tokens`) já validado no Script 01/19; não re-testado aqui em
+         detalhe por não ter mudado desde então
+
+PÚBLICO
+  PASS - /b/<slug>/ carrega
+  PASS - agendar com pagamento LOCAL → status 'agendado'
+  PASS - agendar com PIX → aguardando_comprovante → upload comprovante →
+         aguardando_aprovacao → gestor aprova → agendado
+  PASS - barbeiro também aprova comprovante (fluxo alternativo ao do gestor)
+  PASS - QR code: página de booking carrega com os dados necessários para a
+         geração client-side (a geração em si é JS, fora do escopo do backend)
+
+GESTOR
+  PASS - dashboard, agenda (paginada, default = hoje — confirmado que NÃO
+         vaza agendamento de outro dia por omissão do filtro)
+  PASS - funcionários (criar barbeiro, atribuir serviços, configurar agenda)
+  PASS - serviços (criar, listar)
+  PASS - produtos (módulo novo) — criar categoria, criar produto, listar,
+         ajustar estoque, listar movimentações — MAS ver FALHA #1 (seção 2)
+  PASS - planos (criar, adicionar serviço, aprovar solicitação)
+  PASS - cupons (criar, validado pelo cliente depois)
+  PASS - relatórios Excel/PDF/JSON (hora Brasília — já validado em detalhe
+         no Script 02; aqui só confirma que os 3 formatos respondem 200 com
+         o mimetype certo)
+  PASS - clientes (paginado + busca por texto)
+
+BARBEIRO
+  PASS - dashboard
+  PASS - agendamentos (listagem)
+  PASS - horário: bloqueado quando permite_horario_barbeiro=False (403),
+         editável quando =True
+  PASS - mural "disponíveis para pegar": vazio antes de qualquer
+         transferência, populado após o gestor desativar um barbeiro com
+         acao=transferir_mural, barbeiro 2 consegue "pegar" um item do mural
+  PASS - vender produto
+
+CLIENTE
+  PASS - dashboard (SPA), cadastro nascendo do link público
+  PASS - agendar multi-etapas (multi-serviço no mesmo agendamento)
+  PASS - histórico de agendamentos
+  PASS - planos: solicitar → gestor aprova → cliente vê assinatura ativa →
+         cliente cancela
+  PASS - perfil (ver e editar)
+  PASS - validar cupom
+
+SUPER
+  PASS - estabelecimentos (criar barbearia, listar paginado)
+  PASS - gestores (listar)
+  PASS - features: catálogo reflete corretamente (planos/cupons/vip_brindes
+         nascem desligados, produtos_venda nasce ligado por padrão — Script
+         18); toggle reflete SEM restart (testado no mesmo processo, mesma
+         config de app já carregada)
+  PASS - customização: cores + upload real de imagem no Cloudinary (logo)
+  PASS - auditoria paginada
+
+VIP
+  PASS - CRUD de níveis pelo gestor (criar, editar, listar)
+
+TRANSFERÊNCIA (Script 17)
+  PASS - gestor transfere agendamento diretamente para outro barbeiro
+  PASS - gestor NÃO consegue desativar barbeiro com compromissos futuros
+         ativos sem informar acao=transferir_mural (409, payload com a
+         lista de agendamentos afetados)
+  PASS - com acao=transferir_mural, os compromissos viram
+         'aguardando_transferencia' e aparecem no mural do outro barbeiro
+  PASS - barbeiro 2 "pega" um item do mural; o outro é transferido
+         diretamente pelo gestor; mural fica vazio ao final
+
+Tenant QA e todos os seus dados (DB + os 2 assets reais do Cloudinary
+enviados durante o teste — logo de customização + comprovante PIX) foram
+completamente removidos ao final. Confirmado por query direta no banco:
+voltou às 3 barbearias pré-existentes (nenhum resíduo "qa-%").
+
+
+2. AS 2 FALHAS ENCONTRADAS E CORRIGIDAS (bugs reais, não falso-positivo)
+------------------------------------------------------------------------------
+
+FALHA #1 — Estoque inicial duplicado ao criar produto
+  Arquivo: app/routes/gestor/catalogo.py, função criar_produto (~linha 310)
+  O quê: ao criar um produto com quantidade_estoque=10, o produto nasce no
+  banco já com quantidade_estoque=10 (valor do construtor) E, em seguida, o
+  código chama `estoque_service.registrar_entrada(p.id, bid, qtd, ...)` —
+  que faz `UPDATE produtos SET quantidade_estoque = quantidade_estoque + 10`
+  por cima do valor que já era 10. Resultado: o produto fica com 20 unidades
+  em vez de 10. Reproduzido de forma determinística neste bloco (2 tenants
+  QA diferentes, mesmo resultado: 10 informados → 20 gravados).
+  Por que é sério: todo produto cadastrado com estoque inicial > 0 desde o
+  Script 18 (produção real ainda não rodou, mas qualquer barbearia de teste
+  que já tenha cadastrado produtos tem esse número dobrado no banco).
+  Causa raiz: o construtor de `Produto` já grava `quantidade_estoque=qtd`
+  E o serviço central de estoque (`registrar_entrada`) SOMA de novo por cima
+  — dupla contagem. A correção natural é ou (a) criar o Produto com
+  `quantidade_estoque=0` e deixar só o `registrar_entrada` fixar o valor (e
+  gerar o registro de auditoria em `movimentacao_estoque`, que hoje também
+  não existe pro estoque inicial de forma correta), ou (b) remover a chamada
+  a `registrar_entrada` e criar a `MovimentacaoEstoque` inicial manualmente.
+  CORRIGIDO (opção a): `Produto` agora nasce com `quantidade_estoque=0`;
+  quando `qtd > 0`, só `registrar_entrada()` grava o valor real (e o
+  `MovimentacaoEstoque` de auditoria correspondente, que já existia).
+  Revalidado: produto criado com `quantidade_estoque=10` agora grava
+  exatamente 10 (antes: 20).
+
+FALHA #2 — Criar produto e ajustar estoque não respeitavam a feature
+"produtos_venda" desligada
+  Arquivo: app/routes/gestor/catalogo.py, funções criar_produto (~linha 270)
+  e ajustar_estoque (~linha 414)
+  O quê: nenhuma das duas tinha o decorator `@feature_required
+  ('produtos_venda')` — ao contrário de `criar_categoria_produto`,
+  `movimentar_estoque` (gestor/estoque.py) e `criar_venda`/
+  `criar_venda_barbeiro` (todos já tinham o decorator). Testado neste
+  bloco: com a feature desligada, ambos os endpoints funcionavam
+  normalmente (201/200) em vez de 403, igual aos outros 3 endpoints de
+  escrita do mesmo módulo.
+  Por que era sério: uma barbearia sem a feature "produtos_venda"
+  contratada ainda conseguia cadastrar produtos e ajustar estoque via API
+  (a tela do frontend provavelmente esconde o botão, mas a API não
+  bloqueava).
+  CORRIGIDO: `@feature_required('produtos_venda')` adicionado aos dois
+  endpoints, na mesma posição usada pelos demais (entre `@gestor_required`
+  e a função). Revalidado: com a feature desligada, ambos retornam 403;
+  religada a feature, voltam a funcionar normalmente (ajustar-estoque
+  aplicado com sucesso, quantidade final correta).
+
+Nenhuma outra falha foi encontrada nos 96 itens restantes. Após os 2 fixes
+acima, revalidação focada (5 checagens) + smoke geral (217 rotas, `/entrar`
+e `/health` 200) confirmaram tudo OK — nenhum dado de teste residual ficou
+no banco.
+
+
+3. CONCORRÊNCIA
+--------------------
+Executado com servidor HTTP real (`werkzeug.serving.make_server`, não
+test_client) — necessário para ter threads/conexões de verdade disputando o
+mesmo lock de banco.
+
+[1] Double-booking (teste_concorrencia.py, criado no Script 07) — 10 threads
+    tentando criar o MESMO agendamento simultaneamente:
+      Resultado: 1x 201, 8x 409, 1x 422 — zero double-booking.
+      O script original (Script 07) espera estritamente 1x201 + 9x409, e
+      por isso reporta "FALHOU". Investigado: o único código 422 observado
+      vem da camada de revalidação via `gerar_slots()` adicionada no Script
+      08 (POSTERIOR à escrita deste teste) — uma segunda linha de defesa que
+      não existia quando a asserção foi escrita. Sob concorrência real, uma
+      thread mais lenta pode ver o slot já ocupado nessa revalidação (leitura
+      simples, sem lock) ANTES de chegar no INSERT que dispararia o
+      IntegrityError/409. Nenhum double-booking ocorreu (exatamente 1x201) —
+      o invariante que realmente importa se manteve. A asserção do script
+      está desatualizada, não o código do produto. Não alterei o script
+      (fora do escopo deste bloco); documentando aqui para não ser
+      interpretado como regressão de concorrência.
+
+[2] Dupla aprovação de solicitação de plano (mesmo script) — 5 threads
+    aprovando a MESMA solicitação: 1x 200, 4x 409. PASSOU (sem alteração).
+
+[3] Venda simultânea de produto (Script 18/Bloco 6.4) — teste novo escrito
+    neste bloco (não existia commitado; o teste original foi descartável e
+    apagado ao final do Script 18). 10 threads vendendo 1 unidade cada de um
+    produto com estoque=5:
+      Resultado: 5x 201, 5x 422 ("Estoque insuficiente"), estoque final no
+      banco = 0 (nunca negativo). PASSOU — o lock atômico de
+      `app/utils/estoque.py:registrar_saida` segura corretamente a corrida
+      mesmo com produção real de estoque via SQL direto (usado no setup do
+      teste para não passar pelo bug da FALHA #1 acima e não contaminar o
+      resultado deste teste específico).
+
+Ambos os testes de concorrência criaram e limparam seus próprios dados
+(tenants `qa-concorrencia`/`qa-concorrencia-estoque`) — confirmado sem
+resíduo no banco ao final.
+
+
+4. BANCO — migrations do zero + seeds_prod.py
+------------------------------------------------------
+Criado um banco Postgres temporário (`barberos_release_test`), vazio, só
+para este teste (não tocou o banco de desenvolvimento em uso):
+  PASS - `flask db upgrade` aplicou as 18 migrations em sequência, sem
+         conflito de heads, do zero até `df41b77230dd` (head único).
+  PASS - `python seeds_prod.py` rodou sobre esse banco vazio: sincronizou
+         as 11 features, criou a barbearia "admin" e o super_admin com
+         e-mail/senha vindos de env vars — SEM criar `adm@barbearia.com`
+         nem qualquer outro dado de desenvolvimento.
+  Banco temporário removido ao final.
+
+
+5. LIMPEZA DE REPOSITÓRIO
+------------------------------
+  - 30 scripts órfãos da era V1 removidos (commitados desde o commit inicial
+    do repositório, 2026-06-01 ou logo depois; confirmado por grep que
+    nenhum é importado por `app/` nem por nenhum outro script ativo):
+    audit.py, automate_cleanup_and_fix.py, check_login.py, check_users.py,
+    criar_super_admin.py, limpar_banco.py, pw_barbeiro.py, pw_check.py,
+    pw_console.py, pw_debug.py, pw_debug2.py, pw_err_fix.py, pw_erro.py,
+    pw_erro2.py, pw_fluxo.py, pw_gestor.py, pw_sp2.py, pw_super_pub.py,
+    setup2.py, setup_test_barbeiro.py, test_agenda.py, test_caixa.py,
+    test_catalogo.py, test_comissao.py, test_e2e.py, test_full_smoke.py,
+    test_integracao.py, test_perfis.py, test_restricoes_link.py,
+    test_suite_completo.py, teste_gestor.py.
+  - Mantidos deliberadamente (ferramentas de regressão, não lixo):
+    `teste_concorrencia.py` (Script 07), `medir_queries.py` (Script 11).
+  - `check_features.py`, `check_tables.py`, `create_db.py`, `debug_adm.py`,
+    `reset_adm.py`, `create_admin.py` continuam fora do controle de versão
+    (já resolvido no Script 19 — `check_tables.py`/`create_db.py`/
+    `debug_adm.py`/`reset_adm.py` desatrelados via `git rm --cached`;
+    `create_admin.py`/`secrets.py` já estavam no `.gitignore` desde antes).
+  - Nenhum `print()` de debug remanescente em `app/` (grep confirmado — só
+    restam os `print()` intencionais em `app/seeds.py`, saída de CLI para o
+    operador, e 3 ocorrências em `app/__init__.py` que são texto de
+    instrução dentro de mensagens de erro, não debug).
+  - `requirements.txt` conferido contra os imports reais de `app/`
+    (AST-parse de todos os arquivos): todas as dependências de terceiros
+    usadas estão listadas (Flask, Flask-JWT-Extended, Flask-Limiter,
+    Flask-Migrate, Flask-SQLAlchemy, APScheduler, cloudinary, openpyxl,
+    reportlab, python-dotenv, PyJWT, SQLAlchemy, Werkzeug, psycopg2-binary,
+    gunicorn). Nenhuma dependência faltando.
+  - `.env` confirmado FORA do controle de versão (`git ls-files | grep
+    '^\.env$'` vazio; `git status` não lista `.env` em nenhum momento deste
+    bloco).
+  - Smoke test final pós-limpeza: app sobe com as mesmas 217 rotas de
+    sempre, `GET /entrar` e `GET /health` respondem 200 — a remoção dos 30
+    scripts não quebrou nada (esperado, nenhum era importado).
+
+
+6. ESTATÍSTICAS
+--------------------
+  - Scripts do roadmap de refatoração v1.0 → v1.1: 20/20 (este é o Script 20,
+    o último).
+  - Commits da refatoração (bloco-X.Y) até aqui: 19 (mais este, quando
+    autorizado).
+  - Migrations totais no repositório: 18 (head único, sem conflito).
+  - Arquivos removidos nesta limpeza: 30.
+  - Checagens de regressão nesta release: 98 (96 PASS na 1ª rodada, 2
+    corrigidas e revalidadas → 98/98 PASS final, mais 5 checagens focadas
+    de revalidação dos fixes).
+  - Testes de concorrência: 3 (2 PASS diretos, 1 com invariante real OK mas
+    asserção do script desatualizada — ver seção 3).
+
+
+CONCLUSÃO
+---------
+v1.1.0 pronta: 98/98 checagens de regressão PASS, concorrência se comporta
+corretamente sob carga real (incluindo o módulo de produtos/vendas, nunca
+testado sob concorrência antes), migrations aplicam limpo do zero,
+repositório higienizado, e os 2 bugs encontrados (estoque inicial duplicado
+e feature guard ausente em 2 endpoints de produtos) foram corrigidos e
+revalidados — nenhum exigiu migration.
+
+Reportados ao usuário antes de qualquer commit (regra deste bloco). Fixes
+autorizados e aplicados. Prosseguindo para commit + tag v1.1.0 + push.

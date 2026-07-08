@@ -269,6 +269,7 @@ def listar_produtos():
 
 @catalogo_bp.post('/produtos')
 @gestor_required
+@feature_required('produtos_venda')
 def criar_produto():
     dados = request.get_json(silent=True)
     if not dados:
@@ -316,7 +317,11 @@ def criar_produto():
         preco=preco,
         custo_unitario=custo_unitario,
         codigo_barras=(dados.get('codigo_barras') or '').strip() or None,
-        quantidade_estoque=qtd,
+        # quantidade_estoque nasce em 0 — o estoque inicial (abaixo) é quem
+        # grava o valor real via registrar_entrada(). Gravar `qtd` aqui E
+        # somar `qtd` de novo em registrar_entrada() duplicava o estoque
+        # inicial (achado no Script 20/release v1.1.0).
+        quantidade_estoque=0,
         quantidade_reservada=0,
         estoque_minimo=estoque_minimo,
         ativo=True,
@@ -408,6 +413,7 @@ def desativar_produto(produto_id):
 
 @catalogo_bp.post('/produtos/<int:produto_id>/ajustar-estoque')
 @gestor_required
+@feature_required('produtos_venda')
 def ajustar_estoque(produto_id):
     bid = _barbearia_id_atual()
     p = Produto.query_tenant().filter_by(id=produto_id).first()
