@@ -128,6 +128,40 @@ def seed_segmentos():
     print(f'[seed] {len(_SEGMENTOS)} segmentos sincronizados.')
 
 
+# Combinação padrão de features por segmento — dados de PRODUTO, ainda não
+# validados com o dono (placeholder ilustrativo, ver MODELAGEM_FEATURES_POR_SEGMENTO.md
+# C.2 item 7). Ajustar antes de considerar definitivo.
+_SEGMENTO_FEATURES_PADRAO = {
+    'barbearia': {'produtos_venda': True, 'comissao': True, 'notificacoes': True},
+    'salao':     {'produtos_venda': True, 'planos': True, 'vip_brindes': True},
+    'manicure':  {'produtos_venda': True},
+    'clinica':   {'historico_cliente': True, 'notificacoes': True},
+}
+
+
+def seed_segmento_feature_padrao():
+    """Popula os padrões de feature por segmento. Idempotente."""
+    from app.models import Segmento, FeatureMetadata, SegmentoFeaturePadrao
+    for chave, features in _SEGMENTO_FEATURES_PADRAO.items():
+        seg = Segmento.query.filter_by(chave=chave).first()
+        if not seg:
+            continue
+        for nome_feature, ativo in features.items():
+            fm = FeatureMetadata.query.filter_by(nome=nome_feature).first()
+            if not fm:
+                continue
+            row = SegmentoFeaturePadrao.query.filter_by(
+                segmento_id=seg.id, feature_id=fm.id
+            ).first()
+            if not row:
+                row = SegmentoFeaturePadrao(segmento_id=seg.id, feature_id=fm.id)
+                db.session.add(row)
+            row.ativo_por_padrao = ativo
+
+    commit_ou_falhar('seeds.seed_segmento_feature_padrao')
+    print('[seed] SegmentoFeaturePadrao sincronizado.')
+
+
 def seed_super_admin():
     """Cria barbearia 'admin' e usuário super_admin inicial se ainda não existirem."""
     from app.models import Barbearia, Usuario

@@ -729,6 +729,24 @@ class FeatureBarbearia(db.Model):
     atualizado_em = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
 
+class SegmentoFeaturePadrao(db.Model):
+    """Define quais features nascem ativas por padrão para barbearias de um segmento.
+    Aplicado em criar_barbearia() por cima do FeatureMetadata.ativo_por_padrao global."""
+    __tablename__ = 'segmento_feature_padrao'
+    __table_args__ = (
+        db.UniqueConstraint('segmento_id', 'feature_id', name='uq_segmento_feature_padrao'),
+    )
+
+    id               = db.Column(db.Integer, primary_key=True)
+    segmento_id      = db.Column(db.Integer, db.ForeignKey('segmentos.id'), nullable=False, index=True)
+    feature_id       = db.Column(db.Integer, db.ForeignKey('feature_metadata.id'), nullable=False)
+    ativo_por_padrao = db.Column(db.Boolean, nullable=False, default=False)
+    atualizado_em    = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+    segmento = db.relationship('Segmento', backref='features_padrao')
+    feature  = db.relationship('FeatureMetadata', backref='segmento_padroes')
+
+
 # ── Auditoria / Customização ───────────────────────────────────────────────────
 
 class AuditoriaLog(db.Model):

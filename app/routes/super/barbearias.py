@@ -8,6 +8,7 @@ from app.extensions import db
 from app.models import (
     Barbearia, Usuario, FeatureMetadata, FeatureBarbearia,
     BarbeariaCustomizacao, ConfiguracaoAgendamento, AuditoriaLog, SegmentoRotulo,
+    Segmento, SegmentoFeaturePadrao,
 )
 from app.exceptions import APIError
 from app.decorators.auth import super_required
@@ -70,6 +71,7 @@ def _fmt_barbearia(b):
         'cep':             b.cep,
         'telefone_contato': b.telefone_contato,
         'instagram':       b.instagram,
+        'segmento_id':     b.segmento_id,
     }
 
 
@@ -139,6 +141,13 @@ def criar_barbearia():
     if Usuario.query.filter_by(email=gestor_email).first():
         raise APIError(f'Email "{gestor_email}" já está em uso.', 409)
 
+    segmento_id_dado = dados.get('segmento_id')
+    segmento = None
+    if segmento_id_dado is not None:
+        segmento = db.session.get(Segmento, int(segmento_id_dado))
+        if not segmento:
+            raise APIError('Segmento não encontrado.', 404)
+
     # Campos opcionais de endereço/contato
     def _opt(k): return (dados.get(k) or '').strip() or None
     rua              = _opt('rua')
@@ -157,6 +166,7 @@ def criar_barbearia():
         rua=rua, numero=numero, complemento=complemento,
         bairro=bairro, cidade=cidade, estado=estado,
         cep=cep, telefone_contato=telefone_contato, instagram=instagram,
+        segmento_id=segmento.id if segmento else None,
     )
     db.session.add(barbearia)
     db.session.flush()  # obtém barbearia.id sem commitar
@@ -175,11 +185,19 @@ def criar_barbearia():
     db.session.add(BarbeariaCustomizacao(barbearia_id=barbearia.id))
     db.session.add(ConfiguracaoAgendamento(barbearia_id=barbearia.id))
 
+    overrides = {}
+    if barbearia.segmento_id:
+        overrides = {
+            sfp.feature_id: sfp.ativo_por_padrao
+            for sfp in SegmentoFeaturePadrao.query.filter_by(
+                segmento_id=barbearia.segmento_id
+            ).all()
+        }
     for fm in FeatureMetadata.query.all():
         db.session.add(FeatureBarbearia(
             barbearia_id=barbearia.id,
             feature_id=fm.id,
-            ativo=fm.ativo_por_padrao,
+            ativo=overrides.get(fm.id, fm.ativo_por_padrao),
         ))
 
     commit_ou_falhar('super.barbearias.criar_barbearia')
@@ -702,13 +720,23 @@ def seed_segmentos_endpoint():
     return jsonify({'mensagem': 'Segmentos padrão sincronizados com sucesso.'}), 200
 
 
+@super_bp.post('/segmentos/features/seed')
+@super_required
+def seed_segmento_features_endpoint():
+    from app.seeds import seed_segmento_feature_padrao
+    seed_segmento_feature_padrao()
+    return jsonify({'mensagem': 'Padrões de feature por segmento sincronizados com sucesso.'}), 200
+
+
 @super_bp.patch('/barbearias/<int:barbearia_id>/segmento')
 @super_required
 def patch_barbearia_segmento(barbearia_id):
-    from app.models import Segmento
+    from app.labels import L
+    from app.utils.auditoria import registrar_auditoria
     b = db.session.get(Barbearia, barbearia_id)
     if not b:
         raise APIError('Estabelecimento não encontrado.', 404)
+    segmento_id_antigo = b.segmento_id
     dados = request.get_json(silent=True) or {}
     seg_id = dados.get('segmento_id')
     if seg_id is None:
@@ -718,5 +746,16 @@ def patch_barbearia_segmento(barbearia_id):
         if not seg:
             raise APIError('Segmento não encontrado.', 404)
         b.segmento_id = seg.id
+
     commit_ou_falhar('super.barbearias.patch_barbearia_segmento')
+
+    L.invalidar(segmento_id_antigo)
+    L.invalidar(b.segmento_id)
+
+    # Registrada após o commit principal — falha de log não reverte a troca de segmento
+    registrar_auditoria(
+        g.user_id, b.id, 'edit', 'barbearia', b.id,
+        f'Segmento alterado de {segmento_id_antigo} para {b.segmento_id}.',
+    )
+
     return jsonify({'mensagem': 'Segmento atualizado.', 'segmento_id': b.segmento_id}), 200
