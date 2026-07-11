@@ -62,6 +62,10 @@ def validar_codigo_recuperacao(token: str, codigo: str) -> Usuario:
 
     if solicitacao.codigo_novo != codigo:
         solicitacao.tentativas += 1
+        # Commit imediato — o errorhandler global de APIError não comita, e
+        # sem persistir aqui o contador de tentativas nunca avança de verdade
+        # (a proteção contra força bruta ficaria só decorativa).
+        db.session.commit()
         raise APIError('Código inválido.', 401)
 
     usuario = db.session.get(Usuario, solicitacao.usuario_id)

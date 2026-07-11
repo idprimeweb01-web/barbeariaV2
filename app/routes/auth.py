@@ -1,14 +1,16 @@
+import os
 from flask import Blueprint, request, g, jsonify
 from flask_jwt_extended import (
     create_access_token, create_refresh_token,
     jwt_required, get_jwt_identity,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
-from app.extensions import db
+from app.extensions import db, limiter
 from app.models import Usuario
 from app.exceptions import APIError
 from app.utils.auth import revogar_todos_tokens
 from app.utils.db import commit_ou_falhar
+from app.utils.reset_senha import gerar_codigo_recuperacao, validar_codigo_recuperacao
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/v1/auth')
 
@@ -113,3 +115,54 @@ def trocar_senha():
     commit_ou_falhar('auth.trocar_senha')
 
     return jsonify({'mensagem': 'Senha alterada com sucesso.'}), 200
+
+
+# ── POST /api/v1/auth/solicitar-reset-senha ───────────────────────────────────
+# Sem login. Resposta é SEMPRE a mesma mensagem genérica, exista o e-mail ou
+# não — não confirmar/negar existência de conta (evita enumeração de e-mails).
+
+@auth_bp.post('/solicitar-reset-senha')
+@limiter.limit(os.environ.get('RL_RESET_SENHA', '5 per minute'))
+def solicitar_reset_senha():
+    dados = request.get_json(silent=True)
+    if not dados:
+        raise APIError('Corpo da requisição inválido ou ausente.')
+
+    email = (dados.get('email') or '').strip().lower()
+    if not email:
+        raise APIError('"email" é obrigatório.')
+
+    gerar_codigo_recuperacao(email)
+    commit_ou_falhar('auth.solicitar_reset_senha')
+
+    return jsonify({
+        'mensagem': 'Se este e-mail estiver cadastrado, um código de recuperação '
+                     'foi enviado para quem pode te ajudar a redefinir a senha.',
+    }), 200
+
+
+# ── POST /api/v1/auth/confirmar-reset-senha ───────────────────────────────────
+# Sem login (o usuário perdeu a senha — é o ponto do fluxo). Token+código
+# validam a identidade; sucesso já devolve tokens novos (auto-login).
+
+@auth_bp.post('/confirmar-reset-senha')
+@limiter.limit(os.environ.get('RL_RESET_SENHA', '5 per minute'))
+def confirmar_reset_senha():
+    dados = request.get_json(silent=True)
+    if not dados:
+        raise APIError('Corpo da requisição inválido ou ausente.')
+
+    token  = (dados.get('token') or '').strip()
+    codigo = (dados.get('codigo') or '').strip()
+    if not token or not codigo:
+        raise APIError('Os campos "token" e "codigo" são obrigatórios.')
+
+    usuario = validar_codigo_recuperacao(token, codigo)
+    commit_ou_falhar('auth.confirmar_reset_senha')
+
+    return jsonify({
+        'mensagem':      'Senha redefinida com sucesso.',
+        'access_token':  create_access_token(identity=str(usuario.id)),
+        'refresh_token': create_refresh_token(identity=str(usuario.id)),
+        'usuario':       _fmt_usuario(usuario),
+    }), 200
