@@ -11,6 +11,7 @@ from app.models import (
 )
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
+from app.utils.features import feature_required
 from app.utils.agenda import (
     fim_agendamento, verificar_conflito, gerar_slots,
     servicos_do_agendamento, barbeiro_atende_todos_servicos, barbeiro_elegivel_para_transferencia,
@@ -159,6 +160,7 @@ def detalhar_agendamento(ag_id):
 
 @gestor_agenda_bp.put('/agendamentos/<int:ag_id>/aprovar')
 @gestor_required
+@feature_required('pix_integrado')
 def aprovar_agendamento(ag_id):
     ag = (
         Agendamento.query

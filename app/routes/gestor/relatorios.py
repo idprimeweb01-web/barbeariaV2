@@ -2,6 +2,7 @@ from datetime import date
 from flask import Blueprint, g, jsonify, request, send_file
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
+from app.utils.features import feature_required
 from app.labels import L
 from app.utils.relatorio import (
     COLUNAS, COLUNAS_OBRIGATORIAS, validar_colunas,
@@ -93,6 +94,7 @@ def relatorio_agendamentos_json():
 
 @gestor_relatorios_bp.get('/relatorios/agendamentos/excel')
 @gestor_required
+@feature_required('relatorios_avancados')
 def relatorio_agendamentos_excel():
     """Exporta relatório de agendamentos em Excel (.xlsx)."""
     colunas, de, ate = _parse_params()
@@ -117,6 +119,7 @@ def relatorio_agendamentos_excel():
 
 @gestor_relatorios_bp.get('/relatorios/agendamentos/pdf')
 @gestor_required
+@feature_required('relatorios_avancados')
 def relatorio_agendamentos_pdf():
     """Exporta relatório de agendamentos em PDF. Cabeçalho com nome da barbearia e período."""
     colunas, de, ate = _parse_params()

@@ -8,6 +8,7 @@ from app.models import (
 )
 from app.exceptions import APIError
 from app.decorators.auth import barbeiro_required
+from app.utils.features import feature_required
 from app.utils.agenda import (
     fim_agendamento, verificar_conflito, gerar_slots,
     servicos_do_agendamento, barbeiro_atende_todos_servicos, barbeiro_elegivel_para_transferencia,
@@ -209,6 +210,7 @@ def cancelar_agendamento(ag_id):
 
 @barbeiro_ag_bp.patch('/agendamentos/<int:ag_id>/aprovar-comprovante')
 @barbeiro_required
+@feature_required('pix_integrado')
 def aprovar_comprovante(ag_id):
     b  = _get_barbeiro(g.user_id, g.barbearia_id)
     ag = (
