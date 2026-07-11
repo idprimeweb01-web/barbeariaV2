@@ -981,3 +981,18 @@ class ItemCaixa(TenantMixin, db.Model):
     criado_em           = db.Column(db.DateTime, default=_utcnow, nullable=False)
 
     caixa = db.relationship('BarbeiroCaixa', backref='itens')
+
+    @property
+    def subtotal(self):
+        """Valor sem desconto."""
+        return float(self.preco) * self.quantidade
+
+    @property
+    def desconto_valor(self):
+        """Valor de desconto aplicado."""
+        return round(self.subtotal * float(self.desconto_percentual) / 100, 2)
+
+    @property
+    def total(self):
+        """Valor final (com desconto)."""
+        return round(self.subtotal - self.desconto_valor, 2)
