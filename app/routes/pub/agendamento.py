@@ -573,6 +573,13 @@ def quick_booking(slug):
     barbearia = _get_barbearia_ou_404(slug)
     config = _get_config(barbearia.id)
 
+    if not config.quick_booking_sem_login:
+        raise APIError(
+            'Este estabelecimento exige login para agendar. '
+            'Entre com sua conta ou cadastre-se antes de continuar.',
+            403,
+        )
+
     dados = request.get_json(silent=True)
     if not dados:
         raise APIError('Corpo da requisição inválido ou ausente.')

@@ -183,7 +183,6 @@ def criar_barbearia():
     db.session.add(gestor)
 
     db.session.add(BarbeariaCustomizacao(barbearia_id=barbearia.id))
-    db.session.add(ConfiguracaoAgendamento(barbearia_id=barbearia.id))
 
     overrides = {}
     if barbearia.segmento_id:
@@ -193,12 +192,23 @@ def criar_barbearia():
                 segmento_id=barbearia.segmento_id
             ).all()
         }
+    agendamento_login_ativo = False
     for fm in FeatureMetadata.query.all():
+        ativo = overrides.get(fm.id, fm.ativo_por_padrao)
         db.session.add(FeatureBarbearia(
             barbearia_id=barbearia.id,
             feature_id=fm.id,
-            ativo=overrides.get(fm.id, fm.ativo_por_padrao),
+            ativo=ativo,
         ))
+        if fm.nome == 'agendamento_login':
+            agendamento_login_ativo = ativo
+
+    # 'agendamento_login' ativa -> exige login pra agendar -> quick-booking
+    # anônimo (por telefone) fica desligado desde a criação.
+    db.session.add(ConfiguracaoAgendamento(
+        barbearia_id=barbearia.id,
+        quick_booking_sem_login=not agendamento_login_ativo,
+    ))
 
     commit_ou_falhar('super.barbearias.criar_barbearia')
 
@@ -366,6 +376,14 @@ def toggle_feature(barbearia_id, nome_feature):
     else:
         fb = FeatureBarbearia(barbearia_id=barbearia_id, feature_id=fm.id, ativo=True)
         db.session.add(fb)
+
+    # 'agendamento_login' é a fonte de verdade de ConfiguracaoAgendamento.
+    # quick_booking_sem_login — mantém os dois sincronizados sempre que a
+    # feature muda, não só na criação da barbearia.
+    if nome_feature == 'agendamento_login':
+        config = ConfiguracaoAgendamento.query.filter_by(barbearia_id=barbearia_id).first()
+        if config:
+            config.quick_booking_sem_login = not fb.ativo
 
     commit_ou_falhar('super.barbearias.toggle_feature')
 
@@ -726,6 +744,61 @@ def seed_segmento_features_endpoint():
     from app.seeds import seed_segmento_feature_padrao
     seed_segmento_feature_padrao()
     return jsonify({'mensagem': 'Padrões de feature por segmento sincronizados com sucesso.'}), 200
+
+
+@super_bp.get('/segmentos/<int:seg_id>/features')
+@super_required
+def listar_segmento_features(seg_id):
+    """Catálogo completo com o padrão do segmento — 'origem' distingue o que
+    tem override explícito (SegmentoFeaturePadrao) do que cai no fallback
+    global (FeatureMetadata.ativo_por_padrao)."""
+    seg = db.session.get(Segmento, seg_id)
+    if not seg:
+        raise APIError('Segmento não encontrado.', 404)
+
+    overrides = {
+        sfp.feature_id: sfp.ativo_por_padrao
+        for sfp in SegmentoFeaturePadrao.query.filter_by(segmento_id=seg_id).all()
+    }
+    return jsonify([
+        {
+            'feature':          fm.nome,
+            'descricao':        fm.descricao,
+            'ativo_por_padrao': overrides.get(fm.id, fm.ativo_por_padrao),
+            'origem':           'segmento' if fm.id in overrides else 'global',
+        }
+        for fm in FeatureMetadata.query.order_by(FeatureMetadata.nome).all()
+    ]), 200
+
+
+@super_bp.put('/segmentos/<int:seg_id>/features/<nome_feature>')
+@super_required
+def toggle_segmento_feature(seg_id, nome_feature):
+    seg = db.session.get(Segmento, seg_id)
+    if not seg:
+        raise APIError('Segmento não encontrado.', 404)
+
+    fm = FeatureMetadata.query.filter_by(nome=nome_feature).first()
+    if not fm:
+        raise APIError(f'Feature "{nome_feature}" não existe no catálogo.', 404)
+
+    dados = request.get_json(silent=True) or {}
+    if 'ativo_por_padrao' not in dados or not isinstance(dados['ativo_por_padrao'], bool):
+        raise APIError('"ativo_por_padrao" é obrigatório e deve ser booleano.', 422)
+
+    sfp = SegmentoFeaturePadrao.query.filter_by(segmento_id=seg_id, feature_id=fm.id).first()
+    if not sfp:
+        sfp = SegmentoFeaturePadrao(segmento_id=seg_id, feature_id=fm.id)
+        db.session.add(sfp)
+    sfp.ativo_por_padrao = dados['ativo_por_padrao']
+
+    commit_ou_falhar('super.barbearias.toggle_segmento_feature')
+
+    return jsonify({
+        'feature': nome_feature, 'segmento_id': seg_id,
+        'ativo_por_padrao': sfp.ativo_por_padrao,
+        'mensagem': 'Padrão de feature atualizado.',
+    }), 200
 
 
 @super_bp.patch('/barbearias/<int:barbearia_id>/segmento')
