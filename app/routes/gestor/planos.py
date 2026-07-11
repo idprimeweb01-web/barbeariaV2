@@ -317,9 +317,18 @@ def aprovar_solicitacao(sol_id):
     if sol.status != StatusSolicitacaoPlano.PENDENTE:
         raise APIError(f'Solicitação já foi {sol.status}.', 409)
 
-    p = db.session.get(Plano, sol.plano_id)
+    # Lock no Plano (não só na solicitação) — sem isso, 2 aprovações
+    # concorrentes pra assinaturas DIFERENTES do MESMO plano poderiam contar
+    # o limite de assinantes duas vezes antes de qualquer uma commitar,
+    # furando max_assinaturas mesmo com o count() abaixo.
+    p = Plano.query.filter_by(id=sol.plano_id).with_for_update().first()
     if not p or not p.ativo:
         raise APIError(f'{L("plano")} não está mais ativo.', 422)
+
+    if p.max_assinaturas is not None:
+        assinantes_ativos = ClientePlano.query.filter_by(plano_id=p.id, ativo=True).count()
+        if assinantes_ativos >= p.max_assinaturas:
+            raise APIError(f'Este {L("plano").lower()} atingiu o limite de assinantes.', 403)
 
     hoje = hoje_brasilia()
     # EC09: antes, data_fim vinha do PRIMEIRO PlanoServico (arbitrário) e

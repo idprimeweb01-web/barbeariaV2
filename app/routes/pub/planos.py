@@ -3,7 +3,7 @@ from flask import Blueprint, request, g, jsonify
 from app.extensions import db, limiter
 from app.models import (
     Barbearia, Plano, PlanoServico, Servico, Barbeiro,
-    ClientePlanoSolicitacao, Cliente,
+    ClientePlanoSolicitacao, ClientePlano, Cliente,
 )
 from app.exceptions import APIError
 from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
@@ -111,6 +111,14 @@ def solicitar_assinatura(slug, plano_id):
     plano = Plano.query.filter_by(id=plano_id, barbearia_id=b.id, ativo=True).first()
     if not plano:
         raise APIError(f'{L("plano")} não encontrado ou inativo.', 404)
+
+    # Checagem preventiva de capacidade — evita solicitação inútil de um plano
+    # já cheio. Não é a garantia final (isso é no aprovar_solicitacao, com
+    # lock); aqui é só custo evitado pro cliente e pro gestor.
+    if plano.max_assinaturas is not None:
+        assinantes_ativos = ClientePlano.query.filter_by(plano_id=plano.id, ativo=True).count()
+        if assinantes_ativos >= plano.max_assinaturas:
+            raise APIError(f'Este {L("plano").lower()} atingiu o limite de assinantes.', 403)
 
     # Plano vinculado: validar barbeiro informado
     barbeiro_id = dados.get('barbeiro_id')
