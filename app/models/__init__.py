@@ -504,13 +504,25 @@ class Pagamento(db.Model):
 # ── Senhas / Liberações ────────────────────────────────────────────────────────
 
 class SolicitacaoSenha(db.Model):
+    """v1.2: estendida com token/código/expiração — antes só tinha status, sem
+    nenhuma rota consumindo (órfã). Fluxo: gera token+código, hierarquia encaminha
+    manualmente (sem e-mail), usuário confirma o código antes de expirar em 72h."""
     __tablename__ = 'solicitacoes_senha'
+    __table_args__ = (
+        db.Index('ix_solicitacoes_senha_usuario_id', 'usuario_id'),
+        db.Index('ix_solicitacoes_senha_expira_em', 'expira_em'),
+    )
 
-    id           = db.Column(db.Integer, primary_key=True)
-    usuario_id   = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
-    barbearia_id = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False)
-    status       = db.Column(db.String(20), nullable=False, default='pendente')  # pendente, resolvido
-    criado_em    = db.Column(db.DateTime, default=_utcnow)
+    id            = db.Column(db.Integer, primary_key=True)
+    usuario_id    = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    barbearia_id  = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False)
+    status        = db.Column(db.String(20), nullable=False, default='pendente')  # pendente, resolvido
+    token         = db.Column(db.String(256), nullable=False, unique=True)
+    codigo_novo   = db.Column(db.String(20), nullable=False)
+    tentativas    = db.Column(db.Integer, nullable=False, default=0)
+    expira_em     = db.Column(db.DateTime, nullable=False)
+    confirmado_em = db.Column(db.DateTime, nullable=True)
+    criado_em     = db.Column(db.DateTime, default=_utcnow)
 
 
 class SolicitacaoLiberacao(TenantMixin, db.Model):
@@ -661,6 +673,10 @@ class ClienteVip(db.Model):
     nivel_vip_atual        = db.Column(db.Integer, default=0, nullable=False)
     brindes_resgatados     = db.Column(db.Text, default='[]')  # JSON serializado
     data_proxima_renovacao = db.Column(db.Date)
+    # v1.2: meses consecutivos de plano ativo, usado pela regra de VIP leveling
+    # (1º mês → nível 1, 2º mês consecutivo → nível 2, etc). data_proxima_renovacao
+    # dobra como janela de tolerância pós-cancelamento — não precisa de coluna nova.
+    meses_consecutivos     = db.Column(db.Integer, default=0, nullable=False)
     criado_em              = db.Column(db.DateTime, default=_utcnow)
     atualizado_em          = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 
@@ -896,3 +912,72 @@ class Notificacao(db.Model):
     # lida=True só faz sentido para in_app; email/web_push usam enviada
     enviada        = db.Column(db.Boolean, nullable=False, default=False)
     criado_em      = db.Column(db.DateTime, default=_utcnow)
+
+
+# ── VIP: histórico de mudanças (v1.2) ───────────────────────────────────────────
+
+class ClienteVipHistorico(TenantMixin, db.Model):
+    """Histórico de mudanças de nível VIP: upgrade, downgrade, aviso de vencimento,
+    cancelamento, reativação. Consultado direto por cliente_id — sem relationship
+    ORM com ClienteVip (não há FK entre as duas, cliente_id já identifica o tenant)."""
+    __tablename__ = 'cliente_vip_historico'
+
+    id             = db.Column(db.Integer, primary_key=True)
+    cliente_id     = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False, index=True)
+    evento_tipo    = db.Column(db.String(50), nullable=False)
+    # UPGRADE, DOWNGRADE, AVISO_VENCIMENTO, CANCELAMENTO, REATIVACAO
+    nivel_anterior = db.Column(db.Integer)
+    nivel_novo     = db.Column(db.Integer)
+    descricao      = db.Column(db.Text)
+    criado_em      = db.Column(db.DateTime, default=_utcnow, index=True)
+
+
+# ── PDV / Caixa diário do barbeiro (v1.2) ───────────────────────────────────────
+# Caixa por DIA (não por agendamento) — diferente do módulo Atendimento/caixa.py
+# legado, que é código morto (checkout por agendamento, nunca registrado). Abre na
+# 1ª venda do dia; fechamento é responsabilidade da rota (Parte 2), não deste model.
+
+class BarbeiroCaixa(TenantMixin, db.Model):
+    """Caixa diária de um barbeiro: soma das vendas avulsas do dia."""
+    __tablename__ = 'barbeiro_caixa'
+    __table_args__ = (
+        db.UniqueConstraint('barbeiro_id', 'data', name='uq_barbeiro_caixa_data'),
+        db.CheckConstraint('total >= 0', name='ck_barbeiro_caixa_total_positivo'),
+    )
+
+    id         = db.Column(db.Integer, primary_key=True)
+    barbeiro_id = db.Column(db.Integer, db.ForeignKey('barbeiros.id'), nullable=False, index=True)
+    aberto_em  = db.Column(db.DateTime, default=_utcnow, nullable=False)
+    fechado_em = db.Column(db.DateTime, nullable=True)
+    total      = db.Column(db.Numeric(10, 2), default=0, nullable=False)
+    data       = db.Column(db.Date, nullable=False)
+
+
+class ItemCaixa(TenantMixin, db.Model):
+    """Item vendido dentro de uma caixa diária: produto + desconto + forma de pagamento.
+    agendamento_id é opcional — só correlação, não vínculo de negócio."""
+    __tablename__ = 'item_caixa'
+    __table_args__ = (
+        db.CheckConstraint('quantidade > 0', name='ck_item_caixa_quantidade_positiva'),
+        db.CheckConstraint('preco >= 0', name='ck_item_caixa_preco_positivo'),
+        db.CheckConstraint(
+            'desconto_percentual >= 0 AND desconto_percentual <= 100',
+            name='ck_item_caixa_desconto_range',
+        ),
+        db.CheckConstraint(
+            "forma_pagamento IN ('pix','dinheiro','cartao')",
+            name='ck_item_caixa_forma_pagamento_valida',
+        ),
+    )
+
+    id                  = db.Column(db.Integer, primary_key=True)
+    caixa_id            = db.Column(db.Integer, db.ForeignKey('barbeiro_caixa.id'), nullable=False, index=True)
+    produto_id          = db.Column(db.Integer, db.ForeignKey('produtos.id'), nullable=False, index=True)
+    quantidade          = db.Column(db.Integer, default=1, nullable=False)
+    preco               = db.Column(db.Numeric(10, 2), nullable=False)
+    desconto_percentual = db.Column(db.Numeric(5, 2), default=0, nullable=False)
+    forma_pagamento     = db.Column(db.String(20), nullable=False)  # pix, dinheiro, cartao
+    agendamento_id      = db.Column(db.Integer, db.ForeignKey('agendamentos.id'), nullable=True)
+    criado_em           = db.Column(db.DateTime, default=_utcnow, nullable=False)
+
+    caixa = db.relationship('BarbeiroCaixa', backref='itens')
