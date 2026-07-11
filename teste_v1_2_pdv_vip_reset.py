@@ -51,7 +51,10 @@ def setup(app):
         usr_cli = Usuario(barbearia_id=b.id, nome='QA Cliente', telefone='11999992003',
                            email='qa.cliente.v12@teste.com',
                            perfil='cliente', ativo=True, senha=generate_password_hash('senha123'))
-        db.session.add_all([gestor, usr_barb1, usr_barb2, usr_cli])
+        usr_cli2 = Usuario(barbearia_id=b.id, nome='QA Cliente 2', telefone='11999992004',
+                            email='qa.cliente2.v12@teste.com',
+                            perfil='cliente', ativo=True, senha=generate_password_hash('senha123'))
+        db.session.add_all([gestor, usr_barb1, usr_barb2, usr_cli, usr_cli2])
         db.session.flush()
 
         barb1 = Barbeiro(barbearia_id=b.id, usuario_id=usr_barb1.id, ativo=True)
@@ -61,7 +64,9 @@ def setup(app):
 
         cli = Cliente(barbearia_id=b.id, usuario_id=usr_cli.id, nome='QA Cliente',
                        telefone='11999992003', ativo=True)
-        db.session.add(cli)
+        cli2 = Cliente(barbearia_id=b.id, usuario_id=usr_cli2.id, nome='QA Cliente 2',
+                        telefone='11999992004', ativo=True)
+        db.session.add_all([cli, cli2])
         db.session.flush()
 
         produto = Produto(barbearia_id=b.id, nome='Pomada QA', preco=20, custo_unitario=10,
@@ -78,6 +83,13 @@ def setup(app):
         db.session.add(PlanoServico(plano_id=plano.id, servico_id=servico.id,
                                      limite_uso_mensal=99999, dias_expiracao=30, ativo=True))
 
+        plano_limitado = Plano(barbearia_id=b.id, nome='Plano QA Limitado', preco_mensal=80,
+                                ativo=True, max_assinaturas=1)
+        db.session.add(plano_limitado)
+        db.session.flush()
+        db.session.add(PlanoServico(plano_id=plano_limitado.id, servico_id=servico.id,
+                                     limite_uso_mensal=99999, dias_expiracao=30, ativo=True))
+
         # Habilita as features que os fluxos exigem — bypassando criar_barbearia(),
         # que faria isso via ativo_por_padrao/SegmentoFeaturePadrao.
         for nome_feature in ('produtos_venda', 'vip_brindes'):
@@ -91,7 +103,9 @@ def setup(app):
             'gestor_email': gestor.email, 'gestor_id': gestor.id,
             'barb1_id': barb1.id, 'barb2_id': barb2.id,
             'cliente_id': cli.id, 'cliente_usuario_id': usr_cli.id,
+            'cliente2_id': cli2.id, 'cliente2_email': usr_cli2.email,
             'produto_id': produto.id, 'plano_id': plano.id,
+            'plano_limitado_id': plano_limitado.id,
         }
 
 
@@ -202,8 +216,27 @@ def testar_vip(client, ctx):
 
     r = client.post('/api/v1/gestor/vip/niveis', json={
         'nivel': 1, 'brinde_descricao': 'Corte gratis', 'tipo_brinde': 'fisico',
+        'brindes': [{'name': 'Corte gratis', 'description': 'Um corte por mes'},
+                    {'name': 'Bebida', 'description': 'Cafe ou agua'}],
     })
-    check('POST nivel 1 -> 201', r.status_code == 201, str(r.get_json()))
+    check('POST nivel 1 com brindes estruturados -> 201', r.status_code == 201, str(r.get_json()))
+    nivel1_id = r.get_json()['nivel']['id']
+    check('brindes voltam na resposta com 2 itens', len(r.get_json()['nivel']['brindes']) == 2, str(r.get_json()))
+
+    r = client.post('/api/v1/gestor/vip/niveis', json={
+        'nivel': 99, 'brinde_descricao': 'invalido', 'tipo_brinde': 'fisico',
+        'brindes': [{'description': 'sem nome'}],
+    })
+    check('POST nivel com brinde sem "name" -> 400', r.status_code == 400, str(r.get_json()))
+    r = client.get('/api/v1/gestor/vip/niveis')
+    check('nivel 99 invalido nao foi criado', all(n['nivel'] != 99 for n in r.get_json()))
+
+    r = client.put(f'/api/v1/gestor/vip/niveis/{nivel1_id}', json={
+        'brindes': [{'name': 'Corte + barba gratis', 'description': 'Atualizado'}],
+    })
+    check('PUT editar brindes -> 200', r.status_code == 200, str(r.get_json()))
+    check('brindes atualizados tem 1 item', len(r.get_json()['nivel']['brindes']) == 1, str(r.get_json()))
+
     r = client.post('/api/v1/gestor/vip/niveis', json={
         'nivel': 2, 'brinde_descricao': '10% desconto', 'tipo_brinde': 'desconto', 'valor_desconto': 10,
     })
@@ -282,6 +315,48 @@ def testar_vip(client, ctx):
         check('historico registrou o DOWNGRADE', n_downgrade == 1, str(n_downgrade))
 
 
+def testar_limite_plano(client, ctx):
+    print('\n--- Limite de clientes por plano (max_assinaturas) ---')
+
+    r = client.post(f'/b/{ctx["slug"]}/entrar', json={'email': 'qa.cliente.v12@teste.com', 'senha': 'senha123'})
+    check('login cliente 1', r.status_code == 200)
+    r = client.post(f'/api/v1/pub/{ctx["slug"]}/planos/{ctx["plano_limitado_id"]}/solicitar', json={'metodo_pagamento': 'local'})
+    check('cliente 1 solicita plano limitado (vaga livre) -> 201', r.status_code == 201, str(r.get_json()))
+    sol1_id = r.get_json()['solicitacao_id']
+    client.post('/sair')
+
+    r = client.post(f'/b/{ctx["slug"]}/entrar', json={'email': ctx['cliente2_email'], 'senha': 'senha123'})
+    check('login cliente 2', r.status_code == 200)
+    r = client.post(f'/api/v1/pub/{ctx["slug"]}/planos/{ctx["plano_limitado_id"]}/solicitar', json={'metodo_pagamento': 'local'})
+    check('cliente 2 solicita plano limitado (ainda 0 ativos) -> 201', r.status_code == 201, str(r.get_json()))
+    sol2_id = r.get_json()['solicitacao_id']
+    client.post('/sair')
+
+    r = client.post('/entrar', json={'email': ctx['gestor_email'], 'senha': 'senha123'})
+    check('login gestor', r.status_code == 200)
+
+    r = client.put(f'/api/v1/gestor/planos/solicitacoes/{sol1_id}/aprovar')
+    check('aprovar solicitacao do cliente 1 (1o, dentro do limite) -> 200', r.status_code == 200, str(r.get_json()))
+
+    r = client.put(f'/api/v1/gestor/planos/solicitacoes/{sol2_id}/aprovar')
+    check('aprovar solicitacao do cliente 2 (plano ja cheio) -> 403', r.status_code == 403, str(r.get_json()))
+
+    with client.application.app_context():
+        ativos = ClientePlano.query.filter_by(plano_id=ctx['plano_limitado_id'], ativo=True).count()
+        check('exatamente 1 ClientePlano ativo pro plano limitado (nao furou o limite)', ativos == 1, str(ativos))
+
+    r = client.put(f'/api/v1/gestor/planos/solicitacoes/{sol2_id}/rejeitar', json={'motivo': 'plano cheio'})
+    check('rejeitar solicitacao pendente do cliente 2 -> 200', r.status_code == 200, str(r.get_json()))
+    client.post('/sair')
+
+    r = client.post(f'/b/{ctx["slug"]}/entrar', json={'email': ctx['cliente2_email'], 'senha': 'senha123'})
+    check('login cliente 2 de novo', r.status_code == 200)
+    r = client.post(f'/api/v1/pub/{ctx["slug"]}/planos/{ctx["plano_limitado_id"]}/solicitar', json={'metodo_pagamento': 'local'})
+    check('cliente 2 tenta solicitar de novo, plano ja cheio -> 403 (checagem preventiva)',
+          r.status_code == 403, str(r.get_json()))
+    client.post('/sair')
+
+
 def testar_reset_senha(client, ctx):
     print('\n--- Reset de senha ---')
     r = client.post('/api/v1/auth/solicitar-reset-senha', json={'email': ctx['gestor_email']})
@@ -358,6 +433,7 @@ def main():
     try:
         testar_pdv_caixa(client, dados)
         testar_vip(client, dados)
+        testar_limite_plano(client, dados)
         testar_reset_senha(client, dados)
     finally:
         cleanup(app, dados['barbearia_id'])
