@@ -1,6 +1,6 @@
 from flask import Blueprint, request, g, jsonify
 from app import db
-from app.models import VipNivel, ClienteVip
+from app.models import VipNivel, ClienteVip, ClienteVipHistorico, Cliente
 from app.utils import registrar_auditoria
 from app.decorators.auth import gestor_required
 from app.utils.features import feature_required
@@ -180,3 +180,99 @@ def deletar_nivel(nivel_id):
     registrar_auditoria(g.user_id, barbearia_id, 'delete', 'vip_nivel', nivel_id,
                          f'Deletou nível VIP {nivel_num}.')
     return jsonify({'mensagem': 'Nível VIP deletado.', 'id': nivel_id})
+
+
+# ── GET /api/v1/gestor/vip/clientes ───────────────────────────────────────────
+# v1.2: lista clientes com nível VIP > 0. Sem @feature_required — leitura,
+# mesmo padrão de listar_niveis (só as escritas são gateadas neste arquivo).
+
+@vip_bp.get('/clientes')
+@gestor_required
+def listar_clientes_vip():
+    barbearia_id = g.barbearia_id
+
+    q = ClienteVip.query.filter_by(barbearia_id=barbearia_id).filter(ClienteVip.nivel_vip_atual > 0)
+
+    nivel_param = request.args.get('nivel')
+    if nivel_param is not None:
+        try:
+            q = q.filter(ClienteVip.nivel_vip_atual == int(nivel_param))
+        except ValueError:
+            return _erro('"nivel" deve ser um inteiro.', 422)
+
+    try:
+        page     = max(1, int(request.args.get('page', 1)))
+        per_page = min(100, max(1, int(request.args.get('per_page', 50))))
+    except ValueError:
+        return _erro('"page" e "per_page" devem ser inteiros.', 422)
+
+    paginado = q.order_by(ClienteVip.nivel_vip_atual.desc()).paginate(
+        page=page, per_page=per_page, error_out=False
+    )
+
+    cliente_ids = [cv.cliente_id for cv in paginado.items]
+    clientes_map = (
+        {c.id: c for c in Cliente.query.filter(Cliente.id.in_(cliente_ids)).all()}
+        if cliente_ids else {}
+    )
+
+    return jsonify({
+        'dados': [
+            {
+                'cliente_id':             cv.cliente_id,
+                'cliente_nome':           clientes_map.get(cv.cliente_id).nome if clientes_map.get(cv.cliente_id) else None,
+                'nivel_vip_atual':        cv.nivel_vip_atual,
+                'meses_consecutivos':     cv.meses_consecutivos,
+                'data_proxima_renovacao': cv.data_proxima_renovacao.isoformat() if cv.data_proxima_renovacao else None,
+                'atualizado_em':          cv.atualizado_em.isoformat() if cv.atualizado_em else None,
+            }
+            for cv in paginado.items
+        ],
+        'page':     paginado.page,
+        'per_page': paginado.per_page,
+        'total':    paginado.total,
+        'pages':    paginado.pages,
+    }), 200
+
+
+# ── GET /api/v1/gestor/vip/clientes/<id>/historico ────────────────────────────
+
+@vip_bp.get('/clientes/<int:cliente_id>/historico')
+@gestor_required
+def historico_cliente_vip(cliente_id):
+    barbearia_id = g.barbearia_id
+
+    cliente = Cliente.query.filter_by(id=cliente_id, barbearia_id=barbearia_id).first()
+    if not cliente:
+        return _erro('Cliente não encontrado.', 404)
+
+    try:
+        page     = max(1, int(request.args.get('page', 1)))
+        per_page = min(100, max(1, int(request.args.get('per_page', 50))))
+    except ValueError:
+        return _erro('"page" e "per_page" devem ser inteiros.', 422)
+
+    paginado = (
+        ClienteVipHistorico.query
+        .filter_by(cliente_id=cliente_id, barbearia_id=barbearia_id)
+        .order_by(ClienteVipHistorico.criado_em.desc())
+        .paginate(page=page, per_page=per_page, error_out=False)
+    )
+
+    return jsonify({
+        'dados': [
+            {
+                'id':             h.id,
+                'evento_tipo':    h.evento_tipo,
+                'nivel_anterior': h.nivel_anterior,
+                'nivel_novo':     h.nivel_novo,
+                'descricao':      h.descricao,
+                'criado_em':      h.criado_em.isoformat() if h.criado_em else None,
+            }
+            for h in paginado.items
+        ],
+        'page':     paginado.page,
+        'per_page': paginado.per_page,
+        'total':    paginado.total,
+        'pages':    paginado.pages,
+    }), 200
