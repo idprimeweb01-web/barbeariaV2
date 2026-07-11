@@ -71,6 +71,14 @@
           </label>
           <input type="text" id="fNomeExib" placeholder="Ex: Carlos Barber Shop">
         </div>
+        <div class="field">
+          <label for="fSegmento">Segmento
+            <small style="color:#555;font-weight:400"> (define os rótulos e as features padrão)</small>
+          </label>
+          <select id="fSegmento">
+            <option value="">Sem segmento (padrão barbearia)</option>
+          </select>
+        </div>
 
         <div class="field-group-title">Dados do Gestor</div>
 
@@ -216,6 +224,14 @@
         <label for="eUrl">URL de agendamento personalizada</label>
         <input type="text" id="eUrl" placeholder="https://…">
       </div>
+      <div class="field">
+        <label for="eSegmento">Segmento
+          <small style="color:#555;font-weight:400"> (troca só os rótulos — não reajusta features já ligadas)</small>
+        </label>
+        <select id="eSegmento">
+          <option value="">Sem segmento (padrão barbearia)</option>
+        </select>
+      </div>
 
       <div class="field-group-title">Endereço e Contato</div>
       <div style="display:grid;grid-template-columns:3fr 1fr;gap:10px">
@@ -280,6 +296,22 @@ let _lista = [];
 let _slugManual = false;
 let _paginaAtual  = 1;
 let _totalPaginas = 1;
+let _segmentos = [];
+
+// ── Segmentos (carrega uma vez, popula os dois <select>) ───────────────────
+async function carregarSegmentos() {
+  if (_segmentos.length) return;
+  try {
+    const r = await Bos.get('/super/segmentos');
+    _segmentos = r || [];
+    const opts = _segmentos.map(s => `<option value="${s.id}">${esc(s.nome)}</option>`).join('');
+    document.getElementById('fSegmento').insertAdjacentHTML('beforeend', opts);
+    document.getElementById('eSegmento').insertAdjacentHTML('beforeend', opts);
+  } catch (e) {
+    // Sem segmentos configurados não impede criar/editar — só fica sem a opção.
+  }
+}
+carregarSegmentos();
 
 // ── Slug automático ────────────────────────────────────────────────────────
 function autoSlug() {
@@ -322,6 +354,7 @@ async function criar(e) {
     nome:             document.getElementById('fNome').value.trim(),
     slug:             document.getElementById('fSlug').value.trim(),
     nome_exibicao:    document.getElementById('fNomeExib').value.trim() || null,
+    segmento_id:      document.getElementById('fSegmento').value ? parseInt(document.getElementById('fSegmento').value) : null,
     gestor_nome:      document.getElementById('fGNome').value.trim(),
     gestor_email:     document.getElementById('fGEmail').value.trim().toLowerCase(),
     gestor_telefone:  document.getElementById('fGTel').value.trim(),
@@ -438,6 +471,7 @@ async function verDetalhes(id) {
   document.getElementById('detalheConteudo').innerHTML = '<div style="color:#555;padding:20px 0;text-align:center">Carregando…</div>';
   document.getElementById('detalheBotoes').innerHTML = '';
   abrirModal('modalDetalhe');
+  await carregarSegmentos();
 
   try {
     const d = await Bos.get(`/super/barbearias/${id}`);
@@ -462,6 +496,13 @@ async function verDetalhes(id) {
             <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Status</div>
             ${d.ativo ? '<span class="badge-green">Ativa</span>' : '<span class="badge-gray">Inativa</span>'}
           </div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Segmento</div>
+          <div style="font-size:13px">${(() => {
+            const seg = _segmentos.find(s => s.id === d.segmento_id);
+            return seg ? esc(seg.nome) : '<span style="color:#555">Sem segmento</span>';
+          })()}</div>
         </div>
         ${g ? `
         <div style="background:#181818;border:1px solid #2a2a2a;border-radius:8px;padding:12px 14px">
@@ -535,6 +576,8 @@ async function ativar(id) {
 // ── Editar estabelecimento ─────────────────────────────────────────────────
 let _editandoId = null;
 
+let _segmentoIdOriginal = null;
+
 async function abrirEditar(id) {
   _editandoId = id;
   document.getElementById('erroEditar').style.display = 'none';
@@ -543,6 +586,7 @@ async function abrirEditar(id) {
   document.getElementById('btnSalvarTxt').style.display = '';
   document.getElementById('btnSalvarSpin').style.display = 'none';
   abrirModal('modalEditar');
+  await carregarSegmentos();
 
   try {
     const d = await Bos.get(`/super/barbearias/${id}`);
@@ -551,6 +595,8 @@ async function abrirEditar(id) {
     document.getElementById('eNomeExib').value   = v('nome_exibicao');
     document.getElementById('eSlug').value        = v('slug');
     document.getElementById('eUrl').value         = v('url_agendamento');
+    _segmentoIdOriginal = d.segmento_id || null;
+    document.getElementById('eSegmento').value    = d.segmento_id || '';
     document.getElementById('eRua').value         = v('rua');
     document.getElementById('eNumero').value      = v('numero');
     document.getElementById('eComplemento').value = v('complemento');
@@ -594,8 +640,14 @@ async function salvarEditar(e) {
     instagram:        t('eInstagram') || null,
   };
 
+  const segmentoNovo = document.getElementById('eSegmento').value
+    ? parseInt(document.getElementById('eSegmento').value) : null;
+
   try {
     await Bos.patch(`/super/barbearias/${_editandoId}`, dados);
+    if (segmentoNovo !== _segmentoIdOriginal) {
+      await Bos.patch(`/super/barbearias/${_editandoId}/segmento`, { segmento_id: segmentoNovo });
+    }
     toast('Estabelecimento atualizado.', 'success');
     fecharModal('modalEditar');
     await carregar();

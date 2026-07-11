@@ -366,11 +366,17 @@
         </svg>
         Vendas
       </a>
-      <a href="/gestor/planos" class="nav-link" data-path="/gestor/planos">
+      <a href="/gestor/planos" class="nav-link" data-path="/gestor/planos" id="nav-planos" style="display:none">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
         </svg>
         Planos
+      </a>
+      <a href="/gestor/vip" class="nav-link" data-path="/gestor/vip" id="nav-vip" style="display:none">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/>
+        </svg>
+        VIP
       </a>
       <a href="/gestor/relatorios" class="nav-link" data-path="/gestor/relatorios">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -537,18 +543,24 @@
       const f = {};
       (lista || []).forEach(x => { f[x.nome] = x.ativo; });
       window._features = f;
-      if (f.pix_integrado) {
-        const navPix = document.getElementById('nav-pix');
-        if (navPix) navPix.style.display = '';
-      }
-      if (f.cupons) {
-        const navCupons = document.getElementById('nav-cupons');
-        if (navCupons) navCupons.style.display = '';
-      }
-      if (f.produtos_venda) {
-        const navVendas = document.getElementById('nav-vendas');
-        if (navVendas) navVendas.style.display = '';
-      }
+
+      // Cada feature com tela própria de nav esconde o link até confirmar
+      // que está ativa. Features sem tela de nav (comissao, notificacoes,
+      // agendamento_login, historico_cliente, fila_espera) não entram aqui —
+      // não há link a esconder.
+      const NAV_POR_FEATURE = {
+        pix_integrado:  'nav-pix',
+        cupons:         'nav-cupons',
+        produtos_venda: 'nav-vendas',
+        planos:         'nav-planos',
+        vip_brindes:    'nav-vip',
+      };
+      Object.entries(NAV_POR_FEATURE).forEach(([feature, navId]) => {
+        if (f[feature]) {
+          const el = document.getElementById(navId);
+          if (el) el.style.display = '';
+        }
+      });
     } catch {}
   })();
 

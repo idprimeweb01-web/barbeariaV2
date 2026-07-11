@@ -462,6 +462,12 @@ def super_segmento_rotulos(seg_id):
     return render_template('super/segmento_rotulos.html', seg_id=seg_id, **_super_ctx())
 
 
+@views_bp.get('/super/segmentos/<int:seg_id>/features')
+@session_required('super_admin')
+def super_segmento_features(seg_id):
+    return render_template('super/segmento_features.html', seg_id=seg_id, **_super_ctx())
+
+
 @views_bp.get('/super/customizacao')
 @session_required('super_admin')
 def super_customizacao():

@@ -1,0 +1,97 @@
+{% extends "super/base.html" %}
+{% block title %}Features do Segmento{% endblock %}
+{% block page_title %}Padrão de Features{% endblock %}
+
+{% block styles %}
+<style>
+  .feat-container { max-width: 720px; }
+  .feat-section { background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; }
+  .feat-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid #181818; gap: 16px; }
+  .feat-row:last-child { border-bottom: none; }
+  .feat-name { font-size: 14px; font-weight: 700; color: #ddd; margin-bottom: 4px; }
+  .feat-desc { font-size: 12px; color: #555; }
+  .feat-origem { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; border-radius: 4px; padding: 2px 7px; margin-left: 8px; }
+  .feat-origem.segmento { background: rgba(186,117,23,.15); color: var(--cor-primaria); }
+  .feat-origem.global { background: #181818; color: #555; border: 1px solid #2a2a2a; }
+  .toggle-ios {
+    position: relative; width: 46px; height: 26px;
+    background: #181818; border: 1px solid #2d2d2d; border-radius: 999px;
+    cursor: pointer; transition: all .2s; flex-shrink: 0;
+  }
+  .toggle-ios.active { background: var(--cor-primaria); border-color: var(--cor-primaria); }
+  .toggle-ios::after {
+    content: ''; position: absolute; width: 22px; height: 22px;
+    background: #fff; border-radius: 50%; top: 1px; left: 1px; transition: left .2s;
+  }
+  .toggle-ios.active::after { left: 22px; }
+  .toggle-ios.busy { opacity: .5; cursor: wait; pointer-events: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="feat-container">
+  <div style="margin-bottom:16px">
+    <a href="/super/segmentos" style="font-size:13px;color:#555;text-decoration:none">← Voltar a Segmentos</a>
+  </div>
+  <div style="font-size:22px;font-weight:700;color:#eee;margin-bottom:4px" id="segNome">Carregando…</div>
+  <div style="font-size:13px;color:#555;margin-bottom:20px">
+    Define quais features uma barbearia nova deste segmento já nasce com — aplicado só na criação, não muda barbearias já existentes.
+  </div>
+
+  <div class="feat-section" id="featuresContainer">
+    <div class="empty-state">Carregando…</div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SEG_ID = {{ seg_id | tojson }};
+
+function linha(f) {
+  const ativo = !!f.ativo_por_padrao;
+  return `
+    <div class="feat-row">
+      <div>
+        <div class="feat-name">${esc(f.feature)}
+          <span class="feat-origem ${f.origem}">${f.origem === 'segmento' ? 'padrão do segmento' : 'padrão global'}</span>
+        </div>
+        <div class="feat-desc">${esc(f.descricao || '')}</div>
+      </div>
+      <div class="toggle-ios ${ativo ? 'active' : ''}" data-feature="${esc(f.feature)}"
+           onclick="alternar('${esc(f.feature)}')"></div>
+    </div>`;
+}
+
+async function carregar() {
+  try {
+    const [seg, lista] = await Promise.all([
+      Bos.get('/super/segmentos').then(l => l.find(s => s.id === SEG_ID)),
+      Bos.get('/super/segmentos/' + SEG_ID + '/features'),
+    ]);
+    document.getElementById('segNome').textContent = seg ? seg.nome : `Segmento #${SEG_ID}`;
+    document.getElementById('featuresContainer').innerHTML = lista.map(linha).join('');
+  } catch (e) {
+    document.getElementById('featuresContainer').innerHTML =
+      `<div class="empty-state">Erro: ${esc(e.message)}</div>`;
+  }
+}
+
+async function alternar(nome) {
+  const toggle = document.querySelector(`.toggle-ios[data-feature="${nome}"]`);
+  const novoEstado = !toggle.classList.contains('active');
+  toggle.classList.add('busy');
+  try {
+    await Bos.put('/super/segmentos/' + SEG_ID + '/features/' + nome, { ativo_por_padrao: novoEstado });
+    await carregar();
+    toast('Padrão atualizado.', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    toggle.classList.remove('busy');
+  }
+}
+
+carregar();
+</script>
+{% endblock %}
