@@ -365,6 +365,12 @@ def aprovar_solicitacao(sol_id):
         logger.error('commit falhou em gestor.planos.aprovar_solicitacao: %s', exc, exc_info=True)
         raise APIError('Erro ao aprovar solicitação. Tente novamente.', 500)
 
+    # VIP leveling (v1.2) — registrado após o commit principal: falha aqui não
+    # pode desfazer a aprovação do plano em si.
+    from app.utils.vip_leveling import processar_evento_plano
+    processar_evento_plano(sol.cliente_id, g.barbearia_id, 'aprovacao')
+    commit_ou_falhar('gestor.planos.aprovar_solicitacao.vip_leveling')
+
     return jsonify({
         'mensagem': f'{L("plano")} ativado para o cliente.',
         'cliente_plano_id': cp.id,

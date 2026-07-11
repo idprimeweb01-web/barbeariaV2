@@ -153,6 +153,13 @@ def cancelar_assinatura(cp_id):
         'cliente.planos.cancelar_assinatura',
         f'Erro ao salvar {L("plano")}. Tente novamente.',
     )
+
+    # VIP leveling (v1.2) — abre a janela de tolerância pós-cancelamento.
+    # Registrado após o commit principal: falha aqui não desfaz o cancelamento.
+    from app.utils.vip_leveling import processar_evento_plano
+    processar_evento_plano(cli.id, g.barbearia_id, 'cancelamento')
+    commit_ou_falhar('cliente.planos.cancelar_assinatura.vip_leveling')
+
     return jsonify({'mensagem': f'{L("plano")} cancelado.', 'id': cp_id}), 200
 
 

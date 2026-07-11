@@ -210,6 +210,42 @@ def _expirar_planos() -> None:
     commit_ou_falhar('utils.scheduler._expirar_planos')
     logger.info('Scheduler: %d plano(s) expirado(s) desativado(s)', len(vencidos))
 
+    # VIP leveling (v1.2) — expiração passiva (cliente não renovou) abre a
+    # mesma janela de tolerância que um cancelamento ativo. Depois do commit
+    # principal: falha aqui não pode desfazer a desativação do plano.
+    from app.utils.vip_leveling import processar_evento_plano
+    for cp in vencidos:
+        processar_evento_plano(cp.cliente_id, cp.barbearia_id, 'cancelamento')
+    commit_ou_falhar('utils.scheduler._expirar_planos.vip_leveling')
+
+
+def _processar_vencimento_vip(app) -> None:
+    with app.app_context():
+        try:
+            _varrer_vencimento_vip()
+        except Exception:
+            logger.exception('Scheduler: erro não tratado em _varrer_vencimento_vip')
+
+
+def _varrer_vencimento_vip() -> None:
+    """v1.2: varredura diária de quem está na janela de tolerância pós-
+    cancelamento (ClienteVip.data_proxima_renovacao setada) — envia lembrete
+    nos dias certos e reseta a progressão pra quem deixou a janela fechar
+    sem renovar. Não usa o mesmo laço de _expirar_planos porque a janela
+    continua relevante todo santo dia até fechar, não só no dia em que o
+    plano venceu."""
+    from app.models import ClienteVip
+    from app.utils.vip_leveling import processar_evento_plano
+
+    abertos = ClienteVip.query.filter(ClienteVip.data_proxima_renovacao.isnot(None)).all()
+    if not abertos:
+        return
+
+    for cv in abertos:
+        processar_evento_plano(cv.cliente_id, cv.barbearia_id, 'vencimento')
+    commit_ou_falhar('utils.scheduler._varrer_vencimento_vip')
+    logger.info('Scheduler: %d janela(s) de tolerância VIP verificada(s)', len(abertos))
+
 
 def iniciar_scheduler(app) -> object:
     """
@@ -255,6 +291,17 @@ def iniciar_scheduler(app) -> object:
         timezone=BRASILIA,
         args=[app],
         id='expiracao_planos',
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _processar_vencimento_vip,
+        trigger='cron',
+        hour=3, minute=30,  # depois de expiracao_planos, mesma janela de baixo tráfego
+        timezone=BRASILIA,
+        args=[app],
+        id='vencimento_vip',
         replace_existing=True,
         max_instances=1,
         coalesce=True,

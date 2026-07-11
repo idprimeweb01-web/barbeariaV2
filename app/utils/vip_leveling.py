@@ -4,8 +4,10 @@ ativo, com janela de tolerância pós-cancelamento.
 
 Reaproveita VipNivel/ClienteVip existentes (app/routes/vip.py já tem o CRUD
 de níveis) — só adiciona a progressão automática, que nunca existia (Script
-15 deixou incrementar_nivel_vip/resetar_nivel_vip prontas em app/utils/vip.py
-mas nenhum endpoint as chamava).
+15 tinha deixado incrementar_nivel_vip/resetar_nivel_vip prontas em
+app/utils/vip.py, mas nenhum endpoint as chamava; removidas nesta sessão —
+processar_evento_plano cobre o mesmo papel com a regra completa de meses
+consecutivos + janela de tolerância).
 
 data_proxima_renovacao (coluna já existente em ClienteVip) faz o papel de
 "até quando o nível VIP continua valendo" tanto pra renovação normal quanto
@@ -100,8 +102,8 @@ def notificar_aviso_vencimento(cliente_id: int, barbearia_id: int, dias_restante
 def processar_evento_plano(cliente_id: int, barbearia_id: int, evento_tipo: str) -> None:
     """Processa eventos de plano (aprovacao, cancelamento, vencimento) e
     atualiza o status VIP. As mudanças em ClienteVip/ClienteVipHistorico não
-    são comitadas aqui — quem chama decide o momento (mesmo padrão de
-    app/utils/vip.py:incrementar_nivel_vip). ATENÇÃO: criar_notificacao()
+    são comitadas aqui — quem chama decide o momento (mesmo padrão usado em
+    commit_ou_falhar nos chamadores). ATENÇÃO: criar_notificacao()
     faz seu próprio commit interno (padrão já existente no projeto) — se
     nivel_novo != nivel_anterior, a notificação já sai comitada antes do
     commit_ou_falhar do chamador; não depender de tudo cair na mesma
@@ -128,6 +130,8 @@ def processar_evento_plano(cliente_id: int, barbearia_id: int, evento_tipo: str)
             cv.data_proxima_renovacao = None
 
     nivel_novo = calcular_vip_level(cliente_id, barbearia_id)
+    if cv:
+        cv.nivel_vip_atual = nivel_novo
 
     if nivel_novo > nivel_anterior:
         notificar_upgrade_vip(cliente_id, barbearia_id, nivel_anterior, nivel_novo)
