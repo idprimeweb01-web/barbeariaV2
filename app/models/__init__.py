@@ -659,6 +659,10 @@ class VipNivel(TenantMixin, db.Model):
     ativo            = db.Column(db.Boolean, default=True, nullable=False)
     modo_brinde_ativo = db.Column(db.Boolean, default=True, nullable=False)
     criado_em        = db.Column(db.DateTime, default=_utcnow)
+    # v1.2: lista estruturada de brindes [{"name": "...", "description": "..."}] —
+    # complementa brinde_descricao (mantido por compatibilidade com o que já lê
+    # esse campo), não o substitui.
+    brindes          = db.Column(db.JSON, nullable=False, default=list)
 
 
 class ClienteVip(db.Model):

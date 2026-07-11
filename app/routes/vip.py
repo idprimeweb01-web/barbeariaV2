@@ -15,11 +15,33 @@ def _erro(msg, code=400):
     return jsonify({'erro': msg}), code
 
 
+def _validar_brindes(valor):
+    """Valida a lista estruturada [{"name": "...", "description": "..."}].
+    None -> lista vazia (campo opcional). Levanta ValueError com mensagem
+    pronta pra devolver ao cliente se o formato estiver errado."""
+    if valor is None:
+        return []
+    if not isinstance(valor, list):
+        raise ValueError('"brindes" deve ser uma lista de objetos {name, description}.')
+
+    limpos = []
+    for item in valor:
+        if not isinstance(item, dict):
+            raise ValueError('Cada item de "brindes" deve ser um objeto {name, description}.')
+        nome = (item.get('name') or '').strip()
+        descricao = (item.get('description') or '').strip()
+        if not nome:
+            raise ValueError('Cada brinde precisa de "name".')
+        limpos.append({'name': nome, 'description': descricao})
+    return limpos
+
+
 def _fmt_nivel(v):
     return {
         'id':                v.id,
         'nivel':             v.nivel,
         'brinde_descricao':  v.brinde_descricao,
+        'brindes':           v.brindes or [],
         'tipo_brinde':       v.tipo_brinde,
         'valor_desconto':    float(v.valor_desconto) if v.valor_desconto is not None else None,
         'modo_brinde_ativo': v.modo_brinde_ativo,
@@ -70,6 +92,11 @@ def criar_nivel():
     else:
         valor = None
 
+    try:
+        brindes = _validar_brindes(dados.get('brindes'))
+    except ValueError as e:
+        return _erro(str(e))
+
     if VipNivel.query.filter_by(barbearia_id=barbearia_id, nivel=nivel).first():
         return _erro('Já existe um nível VIP com este número.', 409)
 
@@ -77,6 +104,7 @@ def criar_nivel():
         barbearia_id=barbearia_id,
         nivel=nivel,
         brinde_descricao=descricao,
+        brindes=brindes,
         tipo_brinde=tipo_brinde,
         valor_desconto=valor,
         ativo=bool(dados.get('ativo', True)),
@@ -115,6 +143,11 @@ def editar_nivel(nivel_id):
         if not descricao:
             return _erro('"brinde_descricao" não pode ser vazio.')
         vip_nivel.brinde_descricao = descricao
+    if 'brindes' in dados:
+        try:
+            vip_nivel.brindes = _validar_brindes(dados['brindes'])
+        except ValueError as e:
+            return _erro(str(e))
     if 'tipo_brinde' in dados:
         tipo_brinde = (dados['tipo_brinde'] or '').strip().lower()
         if tipo_brinde not in TIPOS_BRINDE_VALIDOS:
