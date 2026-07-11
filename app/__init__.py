@@ -262,6 +262,9 @@ def create_app(config=None):
     from .routes.cliente.perfil import cliente_perfil_bp
     app.register_blueprint(cliente_perfil_bp)
 
+    from .routes.cliente.features import cliente_features_bp
+    app.register_blueprint(cliente_features_bp)
+
     from .routes.vip import vip_bp
     app.register_blueprint(vip_bp)
 
