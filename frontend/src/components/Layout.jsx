@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Star, Calendar, Gift, Clock, User, LogOut, Scissors
@@ -8,13 +8,16 @@ import { api } from '../api'
 const NOME = window.BOS_USUARIO || 'Cliente'
 const BK_NOME = window.BOS_NOME || 'Barbearia'
 
+// `feature: null` = sempre visível (funcionalidade nuclear, não é um
+// toggle do catálogo). Itens com `feature` só aparecem se a barbearia
+// tiver aquela feature ativa — mesmo padrão do NAV_POR_FEATURE do gestor.
 const NAV = [
-  { to: '/cliente/dashboard',  label: 'Dashboard',   Icon: LayoutDashboard },
-  { to: '/cliente/planos',     label: 'Meus Planos',  Icon: Star },
-  { to: '/cliente/agendar',    label: 'Agendar',      Icon: Calendar },
-  { to: '/cliente/beneficios', label: 'Benefícios',   Icon: Gift },
-  { to: '/cliente/historico',  label: 'Histórico',    Icon: Clock },
-  { to: '/cliente/perfil',     label: 'Meu Perfil',   Icon: User },
+  { to: '/cliente/dashboard',  label: 'Dashboard',   Icon: LayoutDashboard, feature: null },
+  { to: '/cliente/planos',     label: 'Meus Planos',  Icon: Star,           feature: 'planos' },
+  { to: '/cliente/agendar',    label: 'Agendar',      Icon: Calendar,       feature: null },
+  { to: '/cliente/beneficios', label: 'Benefícios',   Icon: Gift,           feature: 'vip_brindes' },
+  { to: '/cliente/historico',  label: 'Histórico',    Icon: Clock,          feature: null },
+  { to: '/cliente/perfil',     label: 'Meu Perfil',   Icon: User,           feature: null },
 ]
 
 export let showToast = () => {}
@@ -22,7 +25,20 @@ export let showToast = () => {}
 export default function Layout({ children, title }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [toasts, setToasts] = useState([])
+  const [features, setFeatures] = useState(null)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    api.features.listar().then(setFeatures).catch(() => setFeatures([]))
+  }, [])
+
+  // Enquanto features ainda não carregou, mostra só os itens sempre-ativos
+  // (evita um "flash" de links que serão escondidos um instante depois).
+  const navVisivel = NAV.filter(({ feature }) => {
+    if (!feature) return true
+    if (!features) return false
+    return !!features.find(f => f.nome === feature)?.ativo
+  })
 
   showToast = useCallback((msg, tipo = 'success') => {
     const id = Date.now()
@@ -52,7 +68,7 @@ export default function Layout({ children, title }) {
         </div>
 
         <nav className="sidebar-nav">
-          {NAV.map(({ to, label, Icon }) => (
+          {navVisivel.map(({ to, label, Icon }) => (
             <NavLink
               key={to}
               to={to}

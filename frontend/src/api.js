@@ -1,4 +1,5 @@
 const SLUG = window.BOS_SLUG || '';
+let _featuresCache = null;
 
 async function _req(method, url, body) {
   const opts = {
@@ -44,7 +45,13 @@ export const api = {
   },
 
   features: {
-    listar: () => _req('GET', `/api/v1/cliente/features`),
+    // Memoizado: Layout + páginas pedem a mesma lista a cada navegação
+    // (Layout remonta a cada troca de rota); features não mudam durante
+    // a sessão então uma única chamada de rede basta.
+    listar: () => {
+      if (!_featuresCache) _featuresCache = _req('GET', `/api/v1/cliente/features`);
+      return _featuresCache;
+    },
   },
 
   logout: async () => {

@@ -3,6 +3,7 @@ import { Star, CheckCircle, Clock, XCircle } from 'lucide-react'
 import Layout from '../components/Layout'
 import { showToast } from '../components/Layout'
 import { FeatureGate } from '../components/FeatureGate'
+import { RecursoIndisponivel } from '../components/RecursoIndisponivel'
 import { api } from '../api'
 
 function fmtData(iso) {
@@ -90,6 +91,7 @@ export default function Planos() {
 
   return (
     <Layout title="Meus Planos">
+    <FeatureGate features={features} feature="planos" fallback={<RecursoIndisponivel />}>
 
       {/* Assinaturas ativas */}
       <div className="section-header">
@@ -261,6 +263,7 @@ export default function Planos() {
           </div>
         </>
       )}
+    </FeatureGate>
     </Layout>
   )
 }

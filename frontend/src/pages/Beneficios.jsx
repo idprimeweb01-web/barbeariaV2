@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Star, Gift, CheckCircle, Award, TrendingUp } from 'lucide-react'
 import Layout from '../components/Layout'
+import { FeatureGate } from '../components/FeatureGate'
+import { RecursoIndisponivel } from '../components/RecursoIndisponivel'
 import { api } from '../api'
 
 export default function Beneficios() {
   const [planos, setPlanos] = useState([])
   const [vip, setVip]       = useState(null)
+  const [features, setFeatures] = useState([])
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
 
@@ -14,9 +17,11 @@ export default function Beneficios() {
     Promise.all([
       api.get('/planos?ativo=true'),
       api.get('/vip').catch(() => null),
-    ]).then(([p, v]) => {
+      api.features.listar(),
+    ]).then(([p, v, feats]) => {
       setPlanos(Array.isArray(p) ? p : [])
       setVip(v)
+      setFeatures(Array.isArray(feats) ? feats : [])
     }).finally(() => setLoading(false))
   }, [])
 
@@ -31,6 +36,7 @@ export default function Beneficios() {
 
   return (
     <Layout title="Benefícios">
+    <FeatureGate features={features} feature="vip_brindes" fallback={<RecursoIndisponivel />}>
 
       {/* VIP Status */}
       <div className="card" style={{ marginBottom: 24, background: nivelVip > 0 ? 'rgba(245,158,11,.04)' : 'var(--surface)', borderColor: nivelVip > 0 ? 'rgba(245,158,11,.3)' : 'var(--border)' }}>
@@ -173,6 +179,7 @@ export default function Beneficios() {
           </div>
         </div>
       )}
+    </FeatureGate>
     </Layout>
   )
 }
