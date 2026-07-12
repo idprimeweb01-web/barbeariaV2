@@ -11,17 +11,19 @@ from app.utils.db import commit_ou_falhar
 # FeatureBarbearia(ativo=True) automaticamente — ver seed_feature_metadata().
 FEATURES = [
     ('planos',               'Planos de assinatura mensal para clientes', False),
-    ('relatorios_avancados', 'Relatórios customizáveis e exportação Excel/PDF', False),
     ('vip_brindes',          'Programa VIP com níveis e brindes por fidelidade', False),
-    ('agendamento_login',    'Exige login do cliente para agendar online', False),
     ('historico_cliente',    'Histórico completo de atendimentos por cliente', False),
     ('cupons',               'Cupons de desconto para clientes', False),
-    ('fila_espera',          'Lista de espera para horários lotados', False),
     ('comissao',             'Cálculo de comissão por barbeiro (avulso e plano)', False),
     ('notificacoes',         'Notificações por SMS/WhatsApp/e-mail', False),
     ('pix_integrado',        'Pagamento PIX com comprovante e aprovação manual', False),
     ('produtos_venda',       'Venda avulsa de produtos com controle de estoque', True),
 ]
+
+# Removidas do catálogo (nunca ganharam uso real ou o dono decidiu simplificar):
+# 'relatorios_avancados', 'agendamento_login', 'fila_espera' — ver migration
+# que remove os registros de FeatureMetadata/FeatureBarbearia/
+# SegmentoFeaturePadrao correspondentes.
 
 
 def seed_feature_metadata():
@@ -132,10 +134,10 @@ def seed_segmentos():
 # validados com o dono (placeholder ilustrativo, ver MODELAGEM_FEATURES_POR_SEGMENTO.md
 # C.2 item 7). Ajustar antes de considerar definitivo.
 _SEGMENTO_FEATURES_PADRAO = {
-    'barbearia': {'produtos_venda': True, 'comissao': True, 'notificacoes': True},
-    'salao':     {'produtos_venda': True, 'planos': True, 'vip_brindes': True},
-    'manicure':  {'produtos_venda': True},
-    'clinica':   {'historico_cliente': True, 'notificacoes': True},
+    'barbearia': {'produtos_venda': True, 'comissao': True, 'notificacoes': True, 'pix_integrado': False},
+    'salao':     {'produtos_venda': True, 'planos': True, 'vip_brindes': True, 'pix_integrado': False},
+    'manicure':  {'produtos_venda': True, 'pix_integrado': False},
+    'clinica':   {'historico_cliente': True, 'notificacoes': True, 'pix_integrado': False},
 }
 
 

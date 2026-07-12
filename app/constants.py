@@ -33,6 +33,15 @@ class MetodoPagamento:
     TODOS = frozenset({PIX, LOCAL})
 
 
+class StatusPagamento:
+    """Agendamento.status_pagamento — controle de dívida/recebimento,
+    independente do Agendamento.status (que é sobre o atendimento em si)."""
+    PENDENTE = 'pendente'
+    PAGO = 'pago'
+
+    TODOS = frozenset({PENDENTE, PAGO})
+
+
 class StatusSolicitacaoPlano:
     PENDENTE = 'pendente'
     APROVADO = 'aprovado'
@@ -97,3 +106,18 @@ class TipoMovimentacaoEstoque:
 
     TODOS = frozenset({ENTRADA, SAIDA_VENDA, SAIDA_USO, AJUSTE})
     SAIDAS = frozenset({SAIDA_VENDA, SAIDA_USO})
+
+
+class TipoEventoWebhook:
+    """Eventos de negócio que disparam webhook n8n (v1.2/Frente 2) —
+    1 URL única por barbearia, gestor escolhe quais destes 5 ficam ativos."""
+    AGENDAMENTO_CRIADO    = 'agendamento_criado'
+    AGENDAMENTO_APROVADO  = 'agendamento_aprovado'
+    AGENDAMENTO_CANCELADO = 'agendamento_cancelado'
+    PLANO_ATIVADO         = 'plano_ativado'
+    VENDA_CONCLUIDA       = 'venda_concluida'
+
+    TODOS = frozenset({
+        AGENDAMENTO_CRIADO, AGENDAMENTO_APROVADO, AGENDAMENTO_CANCELADO,
+        PLANO_ATIVADO, VENDA_CONCLUIDA,
+    })

@@ -224,11 +224,13 @@
           <span class="m-label">Pagar no local</span>
           <span class="m-sub">Na hora do atendimento</span>
         </button>
+        {% if pix_ativo %}
         <button class="method-btn" id="mPix" onclick="setMetodo('pix')">
           <div class="m-icon">📱</div>
           <span class="m-label">PIX</span>
           <span class="m-sub">Código gerado agora</span>
         </button>
+        {% endif %}
       </div>
       <button class="btn-primary" id="btnS5" onclick="confirmar()">Confirmar agendamento</button>
     </div>

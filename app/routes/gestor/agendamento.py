@@ -18,11 +18,12 @@ from app.utils.agenda import (
 )
 from app.utils.cupons import incrementar_uso_cupom, decrementar_uso_cupom
 from app.utils.notificacoes import criar_notificacao
+from app.utils.webhooks import disparar_webhook
 from app.utils.tz import naive_brasilia
 from app.labels import L
 from app.utils import normalizar_telefone
 from app.utils.db import commit_ou_falhar
-from app.constants import StatusAgendamento, StatusTransferencia
+from app.constants import StatusAgendamento, StatusTransferencia, TipoEventoWebhook
 
 gestor_agenda_bp = Blueprint('gestor_agenda', __name__, url_prefix='/api/v1/gestor')
 
@@ -74,6 +75,7 @@ def _fmt_ag_gestor(ag, clientes=None, barbeiros=None, pixes=None):
         'inicio':           ag.data_hora.isoformat(),
         'fim':              fim.isoformat(),
         'metodo_pagamento': ag.metodo_pagamento,
+        'status_pagamento': ag.status_pagamento,
         'observacao':       ag.observacao,
         'cliente':          {
             'id': cliente.id, 'nome': cliente.nome, 'telefone': cliente.telefone
@@ -187,6 +189,12 @@ def aprovar_agendamento(ag_id):
 
     ag.status = StatusAgendamento.AGENDADO
     commit_ou_falhar('gestor.agendamento.aprovar_agendamento')
+
+    disparar_webhook(ag.barbearia_id, TipoEventoWebhook.AGENDAMENTO_APROVADO, {
+        'agendamento_id': ag.id, 'cliente_id': ag.cliente_id, 'barbeiro_id': ag.barbeiro_id,
+        'data_hora': ag.data_hora.isoformat(), 'aprovado_por': 'gestor',
+    })
+
     return jsonify({'mensagem': f'{L("agendamento")} aprovado.', 'id': ag_id, 'status': StatusAgendamento.AGENDADO}), 200
 
 
@@ -210,6 +218,12 @@ def cancelar_agendamento_gestor(ag_id):
 
     ag.status = StatusAgendamento.CANCELADO
     commit_ou_falhar('gestor.agendamento.cancelar_agendamento_gestor')
+
+    disparar_webhook(ag.barbearia_id, TipoEventoWebhook.AGENDAMENTO_CANCELADO, {
+        'agendamento_id': ag.id, 'cliente_id': ag.cliente_id, 'barbeiro_id': ag.barbeiro_id,
+        'data_hora': ag.data_hora.isoformat(), 'cancelado_por': 'gestor',
+    })
+
     return jsonify({'mensagem': f'{L("agendamento")} cancelado pelo gestor.', 'id': ag_id}), 200
 
 

@@ -5,6 +5,8 @@ from app.decorators.auth import barbeiro_required
 from app.utils.features import feature_required
 from app.utils.db import commit_ou_falhar
 from app.utils.vendas import criar_venda_core
+from app.utils.webhooks import disparar_webhook
+from app.constants import TipoEventoWebhook
 
 barbeiro_vendas_bp = Blueprint('barbeiro_vendas', __name__, url_prefix='/api/v1/barbeiro/vendas')
 
@@ -62,4 +64,10 @@ def criar_venda_barbeiro():
         metodo_pagamento=(dados.get('metodo_pagamento') or '').strip().lower(),
     )
     commit_ou_falhar('barbeiro.vendas.criar_venda_barbeiro')
+
+    disparar_webhook(g.barbearia_id, TipoEventoWebhook.VENDA_CONCLUIDA, {
+        'venda_id': venda.id, 'cliente_id': venda.cliente_id, 'barbeiro_id': venda.barbeiro_id,
+        'valor_total': float(venda.valor_total), 'metodo_pagamento': venda.metodo_pagamento,
+    })
+
     return jsonify(_fmt_venda_simples(venda)), 201

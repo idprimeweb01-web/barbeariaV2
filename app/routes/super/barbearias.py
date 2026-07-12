@@ -192,7 +192,6 @@ def criar_barbearia():
                 segmento_id=barbearia.segmento_id
             ).all()
         }
-    agendamento_login_ativo = False
     for fm in FeatureMetadata.query.all():
         ativo = overrides.get(fm.id, fm.ativo_por_padrao)
         db.session.add(FeatureBarbearia(
@@ -200,15 +199,8 @@ def criar_barbearia():
             feature_id=fm.id,
             ativo=ativo,
         ))
-        if fm.nome == 'agendamento_login':
-            agendamento_login_ativo = ativo
 
-    # 'agendamento_login' ativa -> exige login pra agendar -> quick-booking
-    # anônimo (por telefone) fica desligado desde a criação.
-    db.session.add(ConfiguracaoAgendamento(
-        barbearia_id=barbearia.id,
-        quick_booking_sem_login=not agendamento_login_ativo,
-    ))
+    db.session.add(ConfiguracaoAgendamento(barbearia_id=barbearia.id))
 
     commit_ou_falhar('super.barbearias.criar_barbearia')
 
@@ -376,14 +368,6 @@ def toggle_feature(barbearia_id, nome_feature):
     else:
         fb = FeatureBarbearia(barbearia_id=barbearia_id, feature_id=fm.id, ativo=True)
         db.session.add(fb)
-
-    # 'agendamento_login' é a fonte de verdade de ConfiguracaoAgendamento.
-    # quick_booking_sem_login — mantém os dois sincronizados sempre que a
-    # feature muda, não só na criação da barbearia.
-    if nome_feature == 'agendamento_login':
-        config = ConfiguracaoAgendamento.query.filter_by(barbearia_id=barbearia_id).first()
-        if config:
-            config.quick_booking_sem_login = not fb.ativo
 
     commit_ou_falhar('super.barbearias.toggle_feature')
 

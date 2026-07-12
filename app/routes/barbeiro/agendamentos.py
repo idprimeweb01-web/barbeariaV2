@@ -15,9 +15,10 @@ from app.utils.agenda import (
 )
 from app.utils.cupons import incrementar_uso_cupom, decrementar_uso_cupom
 from app.utils.notificacoes import criar_notificacao
+from app.utils.webhooks import disparar_webhook
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.utils.db import commit_ou_falhar
-from app.constants import StatusAgendamento, StatusTransferencia
+from app.constants import StatusAgendamento, StatusTransferencia, TipoEventoWebhook
 
 barbeiro_ag_bp = Blueprint('barbeiro_agendamentos', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -100,6 +101,7 @@ def _fmt_ag(ag, cli, historico, notas):
         'inicio':          ag.data_hora.isoformat(),
         'hora':            ag.data_hora.strftime('%H:%M'),
         'data':            ag.data_hora.strftime('%d/%m/%Y'),
+        'status_pagamento': ag.status_pagamento,
         'observacao':      ag.observacao,
         'cliente': {'id': cli.id, 'nome': cli.nome, 'telefone': cli.telefone} if cli else None,
         'servicos':        servicos_info,
@@ -203,6 +205,12 @@ def cancelar_agendamento(ag_id):
         decrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
     ag.status = StatusAgendamento.CANCELADO
     commit_ou_falhar('barbeiro.agendamentos.cancelar_agendamento')
+
+    disparar_webhook(ag.barbearia_id, TipoEventoWebhook.AGENDAMENTO_CANCELADO, {
+        'agendamento_id': ag.id, 'cliente_id': ag.cliente_id, 'barbeiro_id': ag.barbeiro_id,
+        'data_hora': ag.data_hora.isoformat(), 'cancelado_por': 'barbeiro',
+    })
+
     return jsonify({'id': ag.id, 'status': ag.status}), 200
 
 
@@ -235,6 +243,12 @@ def aprovar_comprovante(ag_id):
         incrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
     ag.status = StatusAgendamento.AGENDADO
     commit_ou_falhar('barbeiro.agendamentos.aprovar_comprovante')
+
+    disparar_webhook(ag.barbearia_id, TipoEventoWebhook.AGENDAMENTO_APROVADO, {
+        'agendamento_id': ag.id, 'cliente_id': ag.cliente_id, 'barbeiro_id': ag.barbeiro_id,
+        'data_hora': ag.data_hora.isoformat(), 'aprovado_por': 'barbeiro',
+    })
+
     return jsonify({'id': ag.id, 'status': StatusAgendamento.AGENDADO}), 200
 
 

@@ -1,0 +1,332 @@
+RELATORIO_SISTEMA_PARA_TELAS.txt
+BarberOS — estado do backend (não commitado) + mapa para construção das telas
+================================================================================
+Gerado em: 2026-07-12. Base: v1.1.0 (commit dbb1826, já em produção/origin) +
+16 commits locais NÃO PUSHADOS (v1.2 + Frente 1 + Frente 2 parcial) + esta
+sessão (Frente 3/dívida + fixes). Nada disso está commitado ainda nesta sessão
+(exceto os 16 commits anteriores, que já existem localmente).
+
+ATUALIZAÇÃO (mesma sessão, depois deste relatório): os 2 eventos que
+faltavam no webhook (plano_ativado, venda_concluida) foram completados e
+testados (disparar_webhook chamado em gestor/planos.py:aprovar_solicitacao,
+gestor/vendas.py:criar_venda e barbeiro/vendas.py:criar_venda_barbeiro) —
+agora os 5 eventos do catálogo disparam de verdade. As telas antigas
+identificadas como lixo foram apagadas: os 6 templates órfãos de
+app/templates/cliente/ (base/dashboard/agendar/beneficios/historico/
+perfil.html), app/templates/barbeiro/caixa.html (modelo antigo de caixa) e
+app/routes/caixa.py (blueprint morto, nunca registrado). Também corrigido
+um efeito colateral real da remoção: o botão "Iniciar" em barbeiro/
+agenda.html redirecionava para a rota /barbeiro/caixa/<id> que acabou de
+ser removida — ajustado para só atualizar a lista em vez de navegar (a
+navegação não fazia mais sentido de qualquer forma, já que o PDV novo é
+por-dia, não por-agendamento). Atendimento/AtendimentoItem/Pagamento (models
+usados só pelo caixa.py morto) foram deixados intactos no banco — remover
+tabelas exigiria uma migration, fora do escopo de "apagar telas".
+
+RESUMO DA VERIFICAÇÃO DE CONSISTÊNCIA (o que você perguntou):
+  - App sobe limpo, 236 rotas, zero erro de import.
+  - 21/21 checagens de um smoke test real (Postgres, não mock) cobrindo as
+    3 frentes + v1.2 inteiro: PASS.
+  - 1 BUG REAL encontrado e CORRIGIDO nesta sessão: `max_assinaturas` (limite
+    de vagas por plano) não podia ser setado via API (criar_plano/editar_plano
+    ignoravam o campo) — a lógica de bloqueio já existia e funcionava, mas
+    era inatingível. Corrigido; `_fmt_plano` agora também retorna
+    `max_assinaturas` e `assinantes_ativos`.
+  - 1 pendência cosmética, não bloqueante: `notificar_cliente()` (app/utils/
+    notificacoes.py) solta um IntegrityError interno (capturado, não quebra
+    nada, só polui log) quando um cliente walk-in sem conta de usuário recebe
+    notificação de confirmação com a feature 'notificacoes' ligada. Não
+    corrigido agora — não impede nada, é só ruído de log.
+  - Pode ir para o HTML sem mais bloqueios de backend.
+
+
+════════════════════════════════════════════════════════════════════════════
+PARTE 1 — MAPA DE MODELS POR DOMÍNIO (o que existe hoje)
+════════════════════════════════════════════════════════════════════════════
+
+FEATURES / SEGMENTO (Frente 1)
+  FeatureMetadata      — catálogo global, 8 features hoje: planos, vip_brindes,
+                          historico_cliente, cupons, comissao, notificacoes,
+                          pix_integrado, produtos_venda (única ativo_por_padrao=True)
+  FeatureBarbearia     — toggle POR BARBEARIA (UNIQUE barbearia_id+feature_id)
+  Segmento             — 4 seedados: barbearia, salao, manicure, clinica
+  SegmentoRotulo       — vocabulário por segmento (Barbeiro→Cabeleireira etc.)
+  SegmentoFeaturePadrao — override de ativo_por_padrao POR SEGMENTO (fallback
+                          pro padrão global quando não há override)
+
+PAGAMENTO / DÍVIDA (Frente 3, feita nesta sessão)
+  Agendamento.status_pagamento — 'pendente' | 'pago'. 'local'→pendente,
+                          'pix'→pago automaticamente na criação (PIX já é
+                          considerado recebido; local é cobrado depois).
+
+WEBHOOK N8N (Frente 2, parcial — SEM TELA)
+  BarbeariaWebhookConfig — 1 URL por barbearia + lista de eventos ativos + ativo
+  WebhookLog            — 1 linha por tentativa de disparo (sucesso/falha/status)
+
+VIP (v1.2, estendido)
+  VipNivel              — CRUD já existia (Script 15). brinde_descricao agora
+                          é usada como texto livre (não há mais campo
+                          estruturado {name,description} separado — a
+                          "estruturação" da v1.2 foi sobre ClienteVip, ver abaixo)
+  ClienteVip            — nivel_vip_atual, meses_consecutivos (NOVO v1.2),
+                          data_proxima_renovacao (dobra como janela de
+                          tolerância pós-cancelamento)
+  ClienteVipHistorico   — log de UPGRADE/DOWNGRADE/AVISO_VENCIMENTO por cliente
+
+PDV / CAIXA DO BARBEIRO (v1.2 — NOVO, substitui o conceito antigo)
+  BarbeiroCaixa         — 1 caixa POR DIA por barbeiro (não por agendamento;
+                          UNIQUE barbeiro_id+data). Abre na 1ª venda, fecha manual.
+  ItemCaixa             — produto+quantidade+desconto+forma_pagamento dentro
+                          de uma caixa; preço sempre resolvido do Produto no
+                          servidor (nunca aceito do client)
+  ⚠️ app/routes/caixa.py (a versão ANTIGA, por-agendamento) continua morta —
+     nunca registrada em create_app(). app/templates/barbeiro/caixa.html
+     (a tela que existe hoje, renderizada por GET /barbeiro/caixa/<agendamento_id>)
+     foi escrita para esse modelo ANTIGO e NUNCA foi atualizada pro novo PDV
+     por-dia — ela não bate com os endpoints novos. NÃO REAPROVEITAR essa
+     tela: construir do zero contra /api/v1/barbeiro/caixa.
+
+RESET DE SENHA (v1.2 — sem e-mail externo)
+  SolicitacaoSenha (estendida) — token (único), codigo_novo (8 dígitos),
+                          tentativas (máx 3), expira_em (72h), confirmado_em
+  Fluxo: cliente/gestor/barbeiro esquece a senha → pede token+código →
+  código vai por NOTIFICAÇÃO IN-APP pra hierarquia (cliente→gestor→super;
+  gestor/barbeiro→super direto) → hierarquia repassa por WhatsApp/telefone
+  MANUALMENTE (não há e-mail/SMS de verdade) → usuário confirma com o código.
+
+
+════════════════════════════════════════════════════════════════════════════
+PARTE 2 — POR ÁREA: ENDPOINTS + FLUXO (pra construir as telas)
+════════════════════════════════════════════════════════════════════════════
+
+──────────────────────────────────────────
+SUPER ADMIN
+──────────────────────────────────────────
+Criar barbearia (agora com segmento):
+  POST /api/v1/super/barbearias
+    body: {..., segmento_id: int|null}
+    → aplica overrides de SegmentoFeaturePadrao por cima do padrão global
+      automaticamente (nada a fazer na tela além de mandar o segmento_id)
+
+Gerenciar features por barbearia (já existe, tela em super/features.html):
+  GET/PUT /api/v1/super/barbearias/<id>/features[/<nome>]
+
+Gerenciar padrão de features POR SEGMENTO (endpoint existe, TELA NÃO EXISTE):
+  GET /api/v1/super/segmentos/<id>/features
+    → [{feature, descricao, ativo_por_padrao, origem: 'segmento'|'global'}]
+  PUT /api/v1/super/segmentos/<id>/features/<nome>
+    → body {ativo_por_padrao: bool}
+  Tela sugerida: dentro de super/segmentos.html ou segmento_rotulos.html,
+  nova aba "Features padrão" com toggle por feature, mostrando badge
+  "customizado" quando origem='segmento'.
+
+Trocar segmento de barbearia existente (endpoint existe, SEM FORM na tela
+super/barbearias.html hoje):
+  PATCH /api/v1/super/barbearias/<id>/segmento
+    body: {segmento_id: int|null}
+    → sempre grava auditoria (AuditoriaLog) e invalida cache de rótulos
+
+──────────────────────────────────────────
+GESTOR
+──────────────────────────────────────────
+Dashboard (GET /api/v1/gestor/dashboard) — campos relevantes pra tela nova:
+  agendamentos_pendentes (NOVO — dívida de hoje), pendentes_pix, hoje{},
+  mes{}, top_servicos, estoque_critico, assinantes_ativos
+
+Relatório de dívidas (NOVO, sem tela ainda):
+  GET /api/v1/gestor/relatorios/dividas
+    → [{cliente_id, nome, qtd_agendamentos, valor_devido}]
+  Tela sugerida: nova aba em gestor/relatorios.html, tabela simples
+  ordenada por valor_devido desc.
+
+Agendamentos — agora com status_pagamento (NOVO campo no payload de
+GET /api/v1/gestor/agendamentos e GET /api/v1/barbeiro/agendamentos):
+  'pendente' | 'pago' — mostrar badge na listagem/grade existente.
+
+Planos — agora com limite de vagas (FIX desta sessão):
+  POST/PATCH /api/v1/gestor/planos
+    body ganha: max_assinaturas: int|null (null = ilimitado)
+  GET retorna: max_assinaturas, assinantes_ativos (NOVO)
+  Tela: gestor/planos.html precisa de um campo numérico "Limite de vagas
+  (vazio = ilimitado)" no form de criar/editar, e mostrar "X de Y vagas"
+  na listagem quando max_assinaturas não for null.
+
+VIP — clientes e histórico (NOVO, sem tela ainda):
+  GET /api/v1/gestor/vip/clientes?nivel=N&page=1
+    → paginado: [{cliente_id, cliente_nome, nivel_vip_atual,
+                  meses_consecutivos, data_proxima_renovacao, atualizado_em}]
+  GET /api/v1/gestor/vip/clientes/<id>/historico?page=1
+    → paginado: eventos UPGRADE/DOWNGRADE/AVISO_VENCIMENTO/CANCELAMENTO
+  Tela sugerida: nova aba em gestor/vip.html (que hoje só tem CRUD de
+  níveis) — tabela de clientes VIP + modal/drawer de histórico ao clicar.
+
+Webhook n8n — API 100% pronta, TELA NÃO EXISTE (é o que você quer construir):
+  GET  /api/v1/gestor/webhook
+    → {webhook_url, ativo, eventos_ativos: [...], eventos_disponiveis: [...],
+       atualizado_em}
+  PUT  /api/v1/gestor/webhook
+    → body parcial: {webhook_url?, eventos_ativos?: string[], ativo?: bool}
+    → ativo=true EXIGE webhook_url já setada (senão 422)
+  POST /api/v1/gestor/webhook/testar
+    → body {webhook_url?} (se omitido, usa a já salva) → dispara um POST de
+      teste síncrono, NÃO grava em WebhookLog (só validação manual)
+    → retorno: {sucesso: bool, http_status: int|null, erro: str|null}
+  GET  /api/v1/gestor/webhook/logs?page=1&per_page=20
+    → paginado: [{id, tipo_evento, http_status, sucesso, erro_mensagem, criado_em}]
+
+  Eventos disponíveis hoje (TipoEventoWebhook.TODOS, app/constants.py):
+    agendamento_criado, agendamento_aprovado, agendamento_cancelado,
+    plano_ativado, venda_concluida
+  ⚠️ DOS 5, SÓ 3 REALMENTE DISPARAM HOJE: agendamento_criado (pub/agendamento.py,
+  _criar_agendamento_core), agendamento_aprovado (gestor/agendamento.py:
+  aprovar_agendamento + barbeiro/agendamentos.py:aprovar_comprovante),
+  agendamento_cancelado (3 pontos: cliente/gestor/barbeiro cancelam).
+  'plano_ativado' e 'venda_concluida' aparecem na lista de eventos
+  disponíveis pra escolher na tela, mas NUNCA disparam de verdade (grep
+  confirmado: nenhum disparar_webhook(...PLANO_ATIVADO...) ou
+  (...VENDA_CONCLUIDA...) existe no código). Se você marcar esses 2 checkboxes
+  na tela, nada vai acontecer quando um plano for aprovado ou uma venda for
+  concluída — a tela pode deixar claro isso (ex: desabilitar esses 2
+  checkboxes com um "em breve") ou eu completo o disparo desses 2 eventos
+  antes de você construir a tela — sua escolha.
+
+  Tela sugerida (a que você quer): formulário com campo URL, toggle
+  ativo, checkboxes por evento (os 3 reais ligados normalmente, os 2
+  que faltam marcados como pendente/desabilitado), botão "Testar" que
+  chama POST /testar e mostra o resultado inline, e uma tabela abaixo
+  com GET /logs (paginada) mostrando as últimas tentativas.
+
+PDV/Caixa do barbeiro — tem tela pro barbeiro (ver seção BARBEIRO), mas se
+o gestor precisar de uma visão consolidada de todos os caixas, ISSO NÃO
+EXISTE ainda (só o próprio barbeiro vê o seu via GET /api/v1/barbeiro/caixa).
+
+──────────────────────────────────────────
+BARBEIRO
+──────────────────────────────────────────
+Dashboard (GET /api/v1/barbeiro/dashboard) — ganhou:
+  agendamentos_pendentes (dívida de hoje do próprio barbeiro)
+
+PDV / Caixa diário (NOVO módulo, TELA PRECISA SER RECONSTRUÍDA DO ZERO —
+a existente em barbeiro/caixa.html é do modelo antigo e não serve):
+  GET   /api/v1/barbeiro/caixa?data=YYYY-MM-DD (default hoje)
+    → null se não há caixa aberta nesse dia, senão {id, data, aberto_em,
+      fechado_em, total, itens: [{produto_id, produto_nome, quantidade,
+      preco, desconto_percentual, subtotal, total, forma_pagamento,
+      agendamento_id, criado_em}]}
+  POST  /api/v1/barbeiro/caixa  (sem body) — abre a caixa de hoje
+    (idempotente: chamar de novo no mesmo dia devolve a mesma, 200 em vez
+    de 201)
+  POST  /api/v1/barbeiro/caixa/<id>/itens
+    body: {produto_id, quantidade, desconto_percentual?, forma_pagamento
+    ('pix'|'dinheiro'|'cartao'), agendamento_id?}
+    (preço vem do Produto no servidor — não mandar preço do client)
+  DELETE /api/v1/barbeiro/caixa/itens/<item_id>
+  PATCH /api/v1/barbeiro/caixa/<id>/fechar
+  Fluxo de tela: barbeiro abre a página → chama GET (caixa de hoje) → se
+  null, mostra botão "Abrir caixa" (POST) → depois de aberta, formulário
+  pra adicionar item (busca produto, quantidade, forma de pagamento) →
+  lista de itens com botão remover → botão "Fechar caixa" no fim do dia.
+
+──────────────────────────────────────────
+CLIENTE (SPA React, frontend/src/)
+──────────────────────────────────────────
+Descoberta de features (NOVO, já integrado nas páginas Agendar/Planos
+nesta sessão):
+  GET /api/v1/cliente/features → mesmo formato de gestor/barbeiro
+  api.features.listar() já existe em frontend/src/api.js
+
+Agendar (Agendar.jsx) — JÁ REFATORADO nesta sessão:
+  usa <PaymentBox> (frontend/src/components/PaymentBox.jsx), que usa
+  <FeatureGate> (frontend/src/components/FeatureGate.jsx) pra esconder
+  PIX quando 'pix_integrado' está off. Padrão pra reaproveitar em
+  qualquer tela nova: buscar `api.features.listar()`, guardar em state
+  `features` (array), passar como prop `features={features}` pro
+  FeatureGate/qualquer componente que precise gatear algo.
+
+Planos (Planos.jsx) — idem, FeatureGate aplicado no seletor de método.
+
+VIP/Benefícios (Beneficios.jsx) — AINDA NÃO CONSOME features nem os
+novos dados de VIP leveling (meses_consecutivos, histórico). Hoje só
+GET /api/v1/cliente/vip (nivel_vip_atual, nivel_info, data_proxima_renovacao)
+— isso já reflete o VIP leveling automaticamente (o campo é o mesmo,
+só que agora quem escreve nele é processar_evento_plano). Se quiser
+mostrar "faltam X meses pro próximo nível" ou histórico de mudanças
+pro cliente, precisaria de um endpoint novo (não existe hoje — só o
+gestor tem GET .../vip/clientes/<id>/historico).
+
+Reset de senha — NÃO EXISTE TELA no React nem no login server-rendered
+(staff/login.html, cliente/entrar.html) hoje. Backend pronto:
+  POST /api/v1/auth/solicitar-reset-senha  body: {email}
+    → sempre 200 com mensagem genérica (não revela se e-mail existe)
+  POST /api/v1/auth/confirmar-reset-senha  body: {token, codigo}
+    → 200 com access_token/refresh_token novos (auto-login) se código bater
+  Fluxo pretendido: usuário pede reset → gestor/super vê a notificação
+  in-app com o código → repassa por WhatsApp → usuário digita o
+  token+código numa tela nova. O TOKEN também precisaria ser entregue ao
+  usuário de alguma forma (hoje só existe no banco — nenhuma rota expõe
+  o token pro usuário que pediu; ele precisaria vir por outro canal, ou
+  a tela de "solicitar" precisaria devolver o token na resposta pro
+  próprio usuário guardar enquanto espera o código — DECISÃO DE PRODUTO
+  pendente, o endpoint atual não devolve o token na resposta por design
+  atual, só o código vai pra hierarquia).
+
+──────────────────────────────────────────
+PÚBLICO (sem login, pub/booking.html)
+──────────────────────────────────────────
+Já ajustado nesta sessão: botão PIX (#mPix) só renderiza se
+`pix_ativo` (passado pelo Flask via `feature_ativa(b.id, 'pix_integrado')`
+em views/auth.py:pub_booking). Qualquer tela pública nova que precise
+gatear por feature deve seguir o mesmo padrão (calcular no view Flask,
+passar como variável Jinja — não existe endpoint de features público
+sem tenant, e não devia existir um genérico sem slug).
+
+
+════════════════════════════════════════════════════════════════════════════
+PARTE 3 — MAPA DE EVENTOS → NOTIFICAÇÃO IN-APP → WEBHOOK
+════════════════════════════════════════════════════════════════════════════
+Dois sistemas de "avisar alguém" coexistem, propositalmente independentes:
+
+  Notificacao (in_app)         Webhook (externo, n8n)
+  ─────────────────────         ──────────────────────
+  Sempre que 'notificacoes'     Sempre que webhook.ativo=True E o evento
+  estiver ativa (feature)       está em eventos_ativos (por barbearia)
+  Consumida pelo próprio        Consumida por sistema externo (n8n)
+  usuário no sino de notif.     via HTTP POST
+
+Evento                    | Notificacao in_app | Webhook
+---------------------------|---------------------|------------------
+Agendamento criado         | Sim (se feature ON) | Sim
+Agendamento aprovado (PIX) | Não                  | Sim
+Agendamento cancelado      | Não                  | Sim
+Agendamento transferido    | Sim                  | Não (não está nos 5 eventos)
+Lembrete (scheduler)       | Sim                  | Não
+Plano expirado (scheduler) | Sim                  | Não
+Plano ativado (aprovado)   | Não (só VIP leveling)| NÃO DISPARA (gap, ver Parte 2)
+Venda concluída            | Não                  | NÃO DISPARA (gap, ver Parte 2)
+VIP upgrade/downgrade      | Sim                  | Não
+Reset de senha solicitado  | Sim (pra hierarquia) | Não
+
+
+════════════════════════════════════════════════════════════════════════════
+PARTE 4 — PENDÊNCIAS PARA VOCÊ DECIDIR ANTES/DURANTE A CONSTRUÇÃO DAS TELAS
+════════════════════════════════════════════════════════════════════════════
+  1. Webhook: completar os 2 eventos que faltam (plano_ativado, venda_concluida)
+     antes ou depois da tela? Não bloqueia construir a tela agora (os
+     checkboxes existem no catálogo), só o comportamento real de 2 dos 5.
+  2. Reset de senha: o token não é devolvido pro usuário em nenhuma
+     resposta hoje — só o código vai pra hierarquia via notificação. Como
+     o usuário vai digitar o token na tela de confirmação se não o recebe
+     em lugar nenhum? Precisa de decisão de produto antes de construir
+     essa tela específica.
+  3. barbeiro/caixa.html (tela existente) não serve mais — precisa ser
+     reconstruída do zero contra o novo /api/v1/barbeiro/caixa (por dia,
+     não por agendamento).
+  4. Segmento→Feature: existe endpoint (GET/PUT .../segmentos/<id>/features)
+     mas nenhuma tela ainda — se quiser essa tela também, avisar.
+  5. VIP clientes/histórico: endpoints prontos, sem tela.
+  6. Relatório de dívidas: endpoint pronto, sem tela.
+
+
+ARQUIVO GERADO POR: verificação ao vivo do código atual + smoke test real
+(Postgres). Se o código mudar depois desta data, reconfirmar antes de
+tratar como fato — mesma regra de qualquer documento deste tipo.

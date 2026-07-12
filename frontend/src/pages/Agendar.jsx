@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Calendar, User, Scissors, Clock, CheckCircle, AlertCircle } from 'lucide-react'
 import Layout from '../components/Layout'
 import { showToast } from '../components/Layout'
+import PaymentBox from '../components/PaymentBox'
 import { api } from '../api'
 
 const SLUG = window.BOS_SLUG || ''
@@ -18,6 +19,7 @@ function hoje() {
 export default function Agendar() {
   const [step, setStep]             = useState(1) // 1=serviço, 2=barbeiro, 3=data/hora, 4=confirmar
   const [planoAtivo, setPlanoAtivo] = useState(null)
+  const [features, setFeatures]     = useState([])
   const [servicos, setServicos]     = useState([])  // todos disponíveis
   const [barbeiros, setBarbeiros]   = useState([])
   const [slots, setSlots]           = useState([])
@@ -40,11 +42,13 @@ export default function Agendar() {
     Promise.all([
       api.get('/planos?ativo=true'),
       api.pub.get('/servicos'),
-    ]).then(([assinaturas, svcs]) => {
+      api.features.listar(),
+    ]).then(([assinaturas, svcs, feats]) => {
       const ass = Array.isArray(assinaturas) ? assinaturas : []
       const plano = ass.find(a => a.ativo !== false) || null
       setPlanoAtivo(plano)
       setServicos(Array.isArray(svcs) ? svcs : [])
+      setFeatures(Array.isArray(feats) ? feats : [])
     }).finally(() => setLoading(false))
   }, [])
 
@@ -296,15 +300,7 @@ export default function Agendar() {
 
           <div className="card" style={{ marginBottom: 20 }}>
             <div className="field-row">
-              <div className="field">
-                <label>Forma de pagamento</label>
-                <select value={metodo} onChange={e => setMetodo(e.target.value)}>
-                  <option value="local">No local</option>
-                  <option value="pix">PIX</option>
-                  <option value="cartao">Cartão</option>
-                  <option value="dinheiro">Dinheiro</option>
-                </select>
-              </div>
+              <PaymentBox metodo={metodo} setMetodo={setMetodo} features={features} />
               <div className="field">
                 <label>Cupom (opcional)</label>
                 <input type="text" placeholder="CODIGO123" value={cupom} onChange={e => setCupom(e.target.value.toUpperCase())} />

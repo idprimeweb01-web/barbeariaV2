@@ -1,14 +1,17 @@
 from datetime import date
 from flask import Blueprint, g, jsonify, request, send_file
+from sqlalchemy import func
+from app.extensions import db
+from app.models import Cliente, Agendamento
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
-from app.utils.features import feature_required
 from app.labels import L
 from app.utils.relatorio import (
     COLUNAS, COLUNAS_OBRIGATORIAS, validar_colunas,
     gerar_dados, gerar_excel, gerar_pdf,
 )
 from app.utils.tz import hoje_brasilia, naive_brasilia
+from app.constants import StatusPagamento
 
 gestor_relatorios_bp = Blueprint('gestor_relatorios', __name__, url_prefix='/api/v1/gestor')
 
@@ -94,7 +97,6 @@ def relatorio_agendamentos_json():
 
 @gestor_relatorios_bp.get('/relatorios/agendamentos/excel')
 @gestor_required
-@feature_required('relatorios_avancados')
 def relatorio_agendamentos_excel():
     """Exporta relatório de agendamentos em Excel (.xlsx)."""
     colunas, de, ate = _parse_params()
@@ -119,7 +121,6 @@ def relatorio_agendamentos_excel():
 
 @gestor_relatorios_bp.get('/relatorios/agendamentos/pdf')
 @gestor_required
-@feature_required('relatorios_avancados')
 def relatorio_agendamentos_pdf():
     """Exporta relatório de agendamentos em PDF. Cabeçalho com nome da barbearia e período."""
     colunas, de, ate = _parse_params()
@@ -153,3 +154,37 @@ def listar_colunas():
         },
         'obrigatorias': sorted(COLUNAS_OBRIGATORIAS),
     }), 200
+
+
+# ── Dívidas por cliente ────────────────────────────────────────────────────────
+
+@gestor_relatorios_bp.get('/relatorios/dividas')
+@gestor_required
+def relatorio_dividas():
+    """Clientes com agendamentos de pagamento pendente (status_pagamento='pendente'),
+    somados por cliente — usado pra cobrar quem ainda deve."""
+    clientes_devedores = (
+        db.session.query(
+            Cliente.id, Cliente.nome,
+            func.count(Agendamento.id).label('qtd_agendamentos'),
+            func.sum(Agendamento.valor_total).label('valor_total'),
+        )
+        .join(Agendamento, Agendamento.cliente_id == Cliente.id)
+        .filter(
+            Agendamento.barbearia_id == g.barbearia_id,
+            Agendamento.status_pagamento == StatusPagamento.PENDENTE,
+        )
+        .group_by(Cliente.id, Cliente.nome)
+        .order_by(func.sum(Agendamento.valor_total).desc())
+        .all()
+    )
+
+    return jsonify([
+        {
+            'cliente_id':       c.id,
+            'nome':             c.nome,
+            'qtd_agendamentos': c.qtd_agendamentos,
+            'valor_devido':     float(c.valor_total),
+        }
+        for c in clientes_devedores
+    ]), 200

@@ -7,7 +7,8 @@ from app.decorators.auth import gestor_required
 from app.utils.features import feature_required
 from app.utils.db import commit_ou_falhar
 from app.utils.vendas import criar_venda_core, cancelar_venda_core
-from app.constants import StatusVenda
+from app.utils.webhooks import disparar_webhook
+from app.constants import StatusVenda, TipoEventoWebhook
 
 gestor_vendas_bp = Blueprint('gestor_vendas', __name__, url_prefix='/api/v1/gestor/vendas')
 
@@ -76,6 +77,12 @@ def criar_venda():
         metodo_pagamento=(dados.get('metodo_pagamento') or '').strip().lower(),
     )
     commit_ou_falhar('gestor.vendas.criar_venda')
+
+    disparar_webhook(bid, TipoEventoWebhook.VENDA_CONCLUIDA, {
+        'venda_id': venda.id, 'cliente_id': venda.cliente_id, 'barbeiro_id': venda.barbeiro_id,
+        'valor_total': float(venda.valor_total), 'metodo_pagamento': venda.metodo_pagamento,
+    })
+
     return jsonify(_fmt_venda(venda)), 201
 
 

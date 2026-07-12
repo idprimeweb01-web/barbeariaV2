@@ -473,7 +473,6 @@
       badge = `<span class="badge-canc">Cancelado</span>`;
     } else if (ag.em_atendimento) {
       badge = `<span class="badge-em-at">Em atend.</span>`;
-      if (ag.atendimento_id) acoes = `<button class="btn-ver" onclick="irCaixa(${ag.id})">Ver →</button>`;
     } else {
       badge = `<span class="badge-ag">Agendado</span>`;
       acoes = `<div style="display:flex;gap:5px;flex-wrap:wrap">
@@ -573,14 +572,13 @@
     if (btn) { btn.disabled = true; btn.textContent = '…'; }
     try {
       await api.barbeiro.iniciar(agId);
-      window.location.href = `/barbeiro/caixa/${agId}`;
+      toast('Atendimento iniciado.', 'success');
+      await carregarDia(_dataAtual);
     } catch(e) {
       toast(e.message, 'error');
       if (btn) { btn.disabled = false; btn.textContent = 'Iniciar'; }
     }
   }
-
-  function irCaixa(agId) { window.location.href = `/barbeiro/caixa/${agId}`; }
 
   // ── Cancel flow ──────────────────────────────────────────────
   function calcularTempoRestante(dataHoraStr, duracaoMin) {

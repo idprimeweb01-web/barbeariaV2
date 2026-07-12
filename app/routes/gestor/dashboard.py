@@ -10,7 +10,7 @@ from app.decorators.auth import gestor_required
 from app.utils.features import feature_ativa
 from app.utils.tz import hoje_brasilia
 from app.labels import L
-from app.constants import StatusAgendamento
+from app.constants import StatusAgendamento, StatusPagamento
 
 gestor_dash_bp = Blueprint('gestor_dashboard', __name__, url_prefix='/api/v1/gestor')
 
@@ -67,6 +67,13 @@ def dashboard_gestor():
             StatusAgendamento.AGUARDANDO_COMPROVANTE, StatusAgendamento.AGUARDANDO_APROVACAO,
             StatusAgendamento.AGUARDANDO_PAGAMENTO,
         ]),
+    ).count()
+
+    # ── Pagamentos pendentes hoje ──────────────────────────────────────────────
+    agendamentos_pendentes = Agendamento.query.filter(
+        Agendamento.barbearia_id == bid,
+        Agendamento.status_pagamento == StatusPagamento.PENDENTE,
+        db.func.date(Agendamento.data_hora) == hoje,
     ).count()
 
     # ── Top serviços do mês ───────────────────────────────────────────────────
@@ -139,6 +146,7 @@ def dashboard_gestor():
             'ticket_medio':                            ticket_medio,
         },
         'pendentes_pix':     pendentes_pix,
+        'agendamentos_pendentes': agendamentos_pendentes,
         'top_' + L('servicos').lower(): top_servicos,
         'estoque_critico':   estoque_critico,
         'estoque_baixo_count': estoque_baixo_count,

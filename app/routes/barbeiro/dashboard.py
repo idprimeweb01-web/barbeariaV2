@@ -8,7 +8,7 @@ from app.decorators.auth import barbeiro_required
 from app.utils.features import feature_ativa
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.labels import L
-from app.constants import StatusAgendamento
+from app.constants import StatusAgendamento, StatusPagamento
 
 barbeiro_dash_bp = Blueprint('barbeiro_dashboard', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -79,6 +79,17 @@ def dashboard_barbeiro():
     comissao_hoje, receita_hoje = _comissao_ags(ags_hoje)
     comissao_mes,  receita_mes  = _comissao_ags(ags_mes)
 
+    agendamentos_pendentes = (
+        Agendamento.query
+        .filter(
+            Agendamento.barbearia_id == g.barbearia_id,
+            Agendamento.barbeiro_id == barbeiro.id,
+            Agendamento.status_pagamento == StatusPagamento.PENDENTE,
+            db.func.date(Agendamento.data_hora) == hoje,
+        )
+        .count()
+    )
+
     # Próximos 5 agendamentos futuros
     agora = naive_brasilia()
     proximos = (
@@ -144,6 +155,7 @@ def dashboard_barbeiro():
             L('comissao').lower():           comissao_mes,
         },
         'proximos': proximos_fmt,
+        'agendamentos_pendentes': agendamentos_pendentes,
         'comissao_breakdown': comissao_breakdown,
         'rotulos': {
             'agendamento':  L('agendamento'),

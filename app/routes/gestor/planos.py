@@ -11,9 +11,10 @@ from app.decorators.auth import gestor_required
 from app.utils.features import feature_required
 from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
 from app.utils.tz import hoje_brasilia, naive_brasilia
+from app.utils.webhooks import disparar_webhook
 from app.labels import L
 from app.utils.db import commit_ou_falhar
-from app.constants import StatusSolicitacaoPlano
+from app.constants import StatusSolicitacaoPlano, TipoEventoWebhook
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,8 @@ def _fmt_plano(p, com_servicos=False):
         'barbeiro_id':   p.barbeiro_id,
         'is_plano_aberto': p.barbeiro_id is None,
         'ativo':         p.ativo,
+        'max_assinaturas': p.max_assinaturas,
+        'assinantes_ativos': ClientePlano.query.filter_by(plano_id=p.id, ativo=True).count(),
         'criado_em':     p.criado_em.isoformat() if p.criado_em else None,
     }
     if com_servicos:
@@ -96,12 +99,21 @@ def criar_plano():
         if not br:
             raise APIError(f'{L("profissional")} id={barbeiro_id} não encontrado.', 404)
 
+    max_assinaturas = dados.get('max_assinaturas')  # null = ilimitado
+    if max_assinaturas is not None:
+        try:
+            max_assinaturas = int(max_assinaturas)
+            assert max_assinaturas > 0
+        except (TypeError, ValueError, AssertionError):
+            raise APIError('"max_assinaturas" deve ser um inteiro positivo ou null (ilimitado).')
+
     p = Plano(
         barbearia_id=g.barbearia_id,
         nome=nome,
         descricao=(dados.get('descricao') or '').strip() or None,
         preco_mensal=preco,
         barbeiro_id=barbeiro_id,
+        max_assinaturas=max_assinaturas,
         ativo=True,
     )
     db.session.add(p)
@@ -142,6 +154,17 @@ def editar_plano(plano_id):
             raise APIError('"preco_mensal" inválido.')
     if 'ativo' in dados:
         p.ativo = bool(dados['ativo'])
+    if 'max_assinaturas' in dados:
+        valor = dados['max_assinaturas']
+        if valor is None:
+            p.max_assinaturas = None
+        else:
+            try:
+                valor = int(valor)
+                assert valor > 0
+            except (TypeError, ValueError, AssertionError):
+                raise APIError('"max_assinaturas" deve ser um inteiro positivo ou null (ilimitado).')
+            p.max_assinaturas = valor
 
     commit_ou_falhar('gestor.planos.editar_plano', f'Erro ao salvar {L("plano").lower()}. Tente novamente.')
     return jsonify(_fmt_plano(p, com_servicos=True)), 200
@@ -379,6 +402,11 @@ def aprovar_solicitacao(sol_id):
     from app.utils.vip_leveling import processar_evento_plano
     processar_evento_plano(sol.cliente_id, g.barbearia_id, 'aprovacao')
     commit_ou_falhar('gestor.planos.aprovar_solicitacao.vip_leveling')
+
+    disparar_webhook(g.barbearia_id, TipoEventoWebhook.PLANO_ATIVADO, {
+        'cliente_plano_id': cp.id, 'cliente_id': sol.cliente_id, 'plano_id': sol.plano_id,
+        'data_inicio': hoje.isoformat(), 'data_fim': data_fim.isoformat() if data_fim else None,
+    })
 
     return jsonify({
         'mensagem': f'{L("plano")} ativado para o cliente.',

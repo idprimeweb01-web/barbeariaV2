@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Star, CheckCircle, Clock, XCircle } from 'lucide-react'
 import Layout from '../components/Layout'
 import { showToast } from '../components/Layout'
+import { FeatureGate } from '../components/FeatureGate'
 import { api } from '../api'
 
 function fmtData(iso) {
@@ -30,16 +31,22 @@ export default function Planos() {
   const [loading, setLoading]           = useState(true)
   const [solicitando, setSolicitando]   = useState(null)
   const [metodo, setMetodo]             = useState('pix')
+  const [features, setFeatures]         = useState([])
 
   useEffect(() => {
     Promise.all([
       api.get('/planos?ativo=true'),
       api.planos.listar(),
       api.get('/planos/solicitacoes'),
-    ]).then(([ass, disp, sols]) => {
+      api.features.listar(),
+    ]).then(([ass, disp, sols, feats]) => {
       setAssinaturas(Array.isArray(ass) ? ass : [])
       setPlanosDisp(Array.isArray(disp) ? disp : [])
       setSolicitacoes(Array.isArray(sols) ? sols : [])
+      const feats2 = Array.isArray(feats) ? feats : []
+      setFeatures(feats2)
+      const ativo = !!feats2.find(f => f.nome === 'pix_integrado')?.ativo
+      if (!ativo) setMetodo('dinheiro')
     }).finally(() => setLoading(false))
   }, [])
 
@@ -161,7 +168,9 @@ export default function Planos() {
                 onChange={e => setMetodo(e.target.value)}
                 style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '4px 8px', fontSize: 12 }}
               >
-                <option value="pix">PIX</option>
+                <FeatureGate features={features} feature="pix_integrado">
+                  <option value="pix">PIX</option>
+                </FeatureGate>
                 <option value="dinheiro">Dinheiro</option>
                 <option value="cartao">Cartão</option>
               </select>

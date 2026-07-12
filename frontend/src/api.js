@@ -43,6 +43,10 @@ export const api = {
     solicitar: (id, body) => _req('POST', `/api/v1/pub/${SLUG}/planos/${id}/solicitar`, body),
   },
 
+  features: {
+    listar: () => _req('GET', `/api/v1/cliente/features`),
+  },
+
   logout: async () => {
     await fetch('/sair', { method: 'POST', credentials: 'same-origin' });
     window.location.href = `/b/${SLUG}/entrar`;

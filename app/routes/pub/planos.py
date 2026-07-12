@@ -6,6 +6,7 @@ from app.models import (
     ClientePlanoSolicitacao, ClientePlano, Cliente,
 )
 from app.exceptions import APIError
+from app.utils.features import feature_ativa
 from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
 from app.utils.telefone import normalizar_telefone
 from app.labels import L
@@ -152,6 +153,9 @@ def solicitar_assinatura(slug, plano_id):
     metodo = (dados.get('metodo_pagamento') or 'pix').lower()
     if metodo not in ('pix', 'dinheiro', 'cartao'):
         metodo = 'pix'
+
+    if metodo == 'pix' and not feature_ativa(b.id, 'pix_integrado'):
+        raise APIError('PIX não está disponível para este estabelecimento.', 403)
 
     sol = ClientePlanoSolicitacao(
         barbearia_id=b.id,

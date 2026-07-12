@@ -7,11 +7,12 @@ from app.exceptions import APIError
 from app.decorators.auth import cliente_required
 from app.utils.agenda import fim_agendamento
 from app.utils.cupons import decrementar_uso_cupom
+from app.utils.webhooks import disparar_webhook
 from app.utils.tz import naive_brasilia
 from app.labels import L
 from app.routes.pub.agendamento import _get_config, _criar_agendamento_core, _fmt_agendamento
 from app.utils.db import commit_ou_falhar
-from app.constants import StatusAgendamento, MetodoPagamento
+from app.constants import StatusAgendamento, MetodoPagamento, TipoEventoWebhook
 
 cliente_bp = Blueprint('cliente', __name__, url_prefix='/api/v1/cliente')
 
@@ -178,4 +179,10 @@ def cancelar_agendamento(ag_id):
         'cliente.agendamento.cancelar_agendamento',
         f'Erro ao cancelar {L("agendamento").lower()}. Tente novamente.',
     )
+
+    disparar_webhook(ag.barbearia_id, TipoEventoWebhook.AGENDAMENTO_CANCELADO, {
+        'agendamento_id': ag.id, 'cliente_id': ag.cliente_id, 'barbeiro_id': ag.barbeiro_id,
+        'data_hora': ag.data_hora.isoformat(), 'cancelado_por': 'cliente',
+    })
+
     return jsonify({'mensagem': f'{L("agendamento")} cancelado com sucesso.', 'id': ag_id}), 200

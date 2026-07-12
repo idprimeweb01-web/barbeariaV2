@@ -26,9 +26,10 @@ from app.utils.notificacoes import notificar_cliente
 from app.utils.features import feature_ativa
 from app.utils.cupons import validar_cupom, incrementar_uso_cupom
 from app.utils.auditoria import registrar_auditoria
+from app.utils.webhooks import disparar_webhook
 from app.labels import L
 from app.utils.db import commit_ou_falhar
-from app.constants import StatusAgendamento, MetodoPagamento
+from app.constants import StatusAgendamento, MetodoPagamento, StatusPagamento, TipoEventoWebhook
 
 pub_bp = Blueprint('pub', __name__, url_prefix='/api/v1/pub')
 
@@ -176,6 +177,9 @@ def _criar_agendamento_core(
     """
     config = _get_config(barbearia_id)
 
+    if metodo == MetodoPagamento.PIX and not feature_ativa(barbearia_id, 'pix_integrado'):
+        raise APIError('PIX não está disponível para este estabelecimento.', 403)
+
     # Verifica antecedência máxima (usa data de Brasília, não UTC do servidor)
     dias_ahead = (data_hora.date() - hoje_brasilia()).days
     if dias_ahead < 0:
@@ -291,6 +295,7 @@ def _criar_agendamento_core(
         valor_desconto=valor_desconto,
         cupom_id=cupom.id if cupom else None,
         metodo_pagamento=metodo,
+        status_pagamento=StatusPagamento.PENDENTE if metodo == MetodoPagamento.LOCAL else StatusPagamento.PAGO,
         observacao=observacao,
     )
     db.session.add(ag)
@@ -394,6 +399,18 @@ def _criar_agendamento_core(
                 f'{ag.data_hora.strftime("%d/%m/%Y %H:%M")} — {servicos_nomes}'
             ),
         )
+
+    # Webhook n8n (Frente 2) — independente da feature 'notificacoes', que é
+    # só sobre notificar o cliente in-app; webhook é integração externa.
+    disparar_webhook(barbearia_id, TipoEventoWebhook.AGENDAMENTO_CRIADO, {
+        'agendamento_id': ag.id,
+        'cliente_id': cliente_id,
+        'barbeiro_id': barbeiro_id,
+        'data_hora': ag.data_hora.isoformat(),
+        'servicos': [s.nome for s, _ in servicos_obj],
+        'valor_total': float(valor_total),
+        'status': status,
+    })
 
     return ag, servicos_info, pix_info
 

@@ -78,19 +78,16 @@ const FEATURES = [
   { key: 'planos',               name: 'Planos de Assinatura',     desc: 'Clientes podem contratar planos mensais com serviços inclusos' },
   { key: 'vip_brindes',          name: 'Programa VIP + Brindes',   desc: 'Clientes VIP recebem brinde ao renovar plano' },
   { key: 'pix_integrado',        name: 'PIX Integrado',            desc: 'Gestor gerencia aprovação de pagamentos PIX no painel' },
-  { key: 'agendamento_login',    name: 'Login para Agendamento',   desc: 'Clientes autenticam para agendar (requer conta)' },
   { key: 'historico_cliente',    name: 'Histórico do Cliente',     desc: 'Clientes veem histórico completo de agendamentos' },
   { key: 'cupons',               name: 'Sistema de Cupons',        desc: 'Criar e aplicar cupons de desconto' },
-  { key: 'fila_espera',          name: 'Fila de Espera',           desc: 'Clientes podem entrar em fila quando lotado' },
-  { key: 'relatorios_avancados', name: 'Relatórios Avançados',     desc: 'Dashboards detalhados de receita e performance' },
   { key: 'comissao',             name: 'Controle de Comissão',     desc: 'Gerenciar comissões individuais dos barbeiros' },
   { key: 'notificacoes',         name: 'Notificações Push',        desc: 'Enviar notificações automáticas para clientes' },
 ];
 
 const SECTIONS = [
   { title: 'CLIENTE — PLANOS',          keys: ['planos', 'vip_brindes', 'pix_integrado'] },
-  { title: 'CLIENTE — FUNCIONALIDADES', keys: ['agendamento_login', 'historico_cliente', 'cupons', 'fila_espera'] },
-  { title: 'NEGÓCIO',                   keys: ['relatorios_avancados', 'comissao', 'notificacoes'] },
+  { title: 'CLIENTE — FUNCIONALIDADES', keys: ['historico_cliente', 'cupons'] },
+  { title: 'NEGÓCIO',                   keys: ['comissao', 'notificacoes'] },
 ];
 
 async function carregarBarbearias() {

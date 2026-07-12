@@ -1,0 +1,1355 @@
+INVENTARIO_COMPLETO_BARBEROS.txt
+Inventário técnico completo — BarberOS — fonte de verdade para 3 frentes futuras
+================================================================================
+Gerado em: 2026-07-07 (sessão de documentação, código na tag v1.1.0 / commit dbb1826)
+Regra seguida: SOMENTE LEITURA. Nenhum arquivo de código foi alterado para
+produzir este inventário. Onde algo não existe, está escrito "NÃO EXISTE"
+explicitamente — nada foi inferido ou inventado.
+
+⚠️ NOTA SOBRE O CAMINHO DE SAÍDA: a tarefa pediu para salvar em
+/home/claude/INVENTARIO_COMPLETO_BARBEROS.txt — esse caminho NÃO EXISTE neste
+ambiente (é Windows, não há /home aqui; confirmado via `ls /home` → "No such
+file or directory"). Salvo em vez disso na raiz do repositório:
+c:\Users\ceno\Desktop\barbearia caio\barberos\INVENTARIO_COMPLETO_BARBEROS.txt
+
+
+PRIORIDADES DECLARADAS PELO DONO (nesta ordem):
+  (1) Sistema de Features ativa/inativa por SEGMENTO/BARBEARIA
+  (2) Integração n8n/webhooks configurável via HTML
+  (3) Modelagem e recriação de TODAS as páginas frontend
+Este documento segue essa ordem nas seções B, D e E respectivamente (a
+estrutura pedida definiu A-B-C-D-E-F; mantive a numeração pedida).
+
+
+════════════════════════════════════════════════════════════════════════════
+PARTE A — MAPA GERAL DO PROJETO
+════════════════════════════════════════════════════════════════════════════
+
+--------------------------------------------------------------------------
+1. Estrutura de pastas (2 níveis) de app/, com contagem de arquivos por tipo
+--------------------------------------------------------------------------
+app/                          : .py: 7
+app/decorators/                : .py: 2
+app/models/                    : .py: 2
+app/routes/                    : .py: 4
+app/routes/barbeiro/           : .py: 8
+app/routes/cliente/            : .py: 7
+app/routes/gestor/             : .py: 14
+app/routes/pub/                : .py: 3
+app/routes/super/              : .py: 3
+app/routes/views/              : .py: 2
+app/static/cliente_portal/     : .html: 1, .js: 1  (+ app/static/cliente_portal/assets/index.css, não capturado no nível 2)
+app/static/css/                : .css: 1
+app/static/js/                 : .js: 1
+app/templates/barbeiro/        : .html: 12
+app/templates/cliente/         : .html: 9
+app/templates/gestor/          : .html: 16
+app/templates/pub/              : .html: 1
+app/templates/staff/            : .html: 1
+app/templates/super/            : .html: 10
+app/utils/                     : .py: 18
+
+TOTAIS GERAIS (recursivo, app/ inteiro):
+  .py:   70
+  .html: 50  (49 Jinja templates em app/templates/ + 1 app/static/cliente_portal/index.html, que é o build da SPA React, não um template Flask)
+  .js:   2   (app/static/js/bos.js + app/static/cliente_portal/index.js, build da SPA)
+  .css:  2   (app/static/css/style.css + app/static/cliente_portal/assets/index.css, build da SPA)
+
+Fora de app/ (não pedido explicitamente, mas relevante para as 3 frentes):
+  frontend/                    — projeto Vite/React fonte da SPA do cliente,
+                                  compila para app/static/cliente_portal/
+                                  (frontend/vite.config.js: outDir
+                                  '../app/static/cliente_portal'). 6 páginas
+                                  .jsx em frontend/src/pages/.
+  migrations/versions/         — 17 arquivos de migration (.py) + __pycache__.
+
+
+--------------------------------------------------------------------------
+2. Blueprints Flask — todos, registrados ou não
+--------------------------------------------------------------------------
+Total de blueprints DEFINIDOS no código (grep "= Blueprint(" em app/): 34
+Total REGISTRADOS em create_app() (app/__init__.py:180-278): 33
+
+REGISTRADOS (nome da variável | nome do blueprint | url_prefix | arquivo | linha do register_blueprint):
+  views_bp              | 'views'              | (nenhum)                    | app/routes/views/auth.py:17        | app/__init__.py:182
+  auth_bp                | 'auth'               | /api/v1/auth                | app/routes/auth.py:13               | app/__init__.py:185
+  super_bp               | 'super'              | /api/v1/super                | app/routes/super/barbearias.py:40   | app/__init__.py:188
+  catalogo_bp            | 'gestor_catalogo'    | /api/v1/gestor               | app/routes/gestor/catalogo.py:15    | app/__init__.py:191
+  profissionais_bp       | 'gestor_profissionais'| /api/v1/gestor              | app/routes/gestor/profissionais.py:23| app/__init__.py:194
+  pub_bp                 | 'pub'                | /api/v1/pub                  | app/routes/pub/agendamento.py:33    | app/__init__.py:197
+  cliente_bp             | 'cliente'            | /api/v1/cliente              | app/routes/cliente/agendamento.py:16| app/__init__.py:200
+  gestor_agenda_bp       | 'gestor_agenda'      | /api/v1/gestor               | app/routes/gestor/agendamento.py:26 | app/__init__.py:203
+  planos_bp              | 'gestor_planos'      | /api/v1/gestor               | app/routes/gestor/planos.py:20      | app/__init__.py:206
+  pub_planos_bp          | 'pub_planos'         | (nenhum — path hardcoded na rota) | app/routes/pub/planos.py:15    | app/__init__.py:209
+  cliente_planos_bp      | 'cliente_planos'     | /api/v1/cliente              | app/routes/cliente/planos.py:14     | app/__init__.py:212
+  cliente_dash_bp        | 'cliente_dashboard'  | /api/v1/cliente              | app/routes/cliente/dashboard.py:13  | app/__init__.py:215
+  barbeiro_dash_bp       | 'barbeiro_dashboard' | /api/v1/barbeiro             | app/routes/barbeiro/dashboard.py:13 | app/__init__.py:218
+  gestor_dash_bp         | 'gestor_dashboard'   | /api/v1/gestor               | app/routes/gestor/dashboard.py:15   | app/__init__.py:221
+  gestor_features_bp     | 'gestor_features'    | /api/v1/gestor               | app/routes/gestor/features.py:10    | app/__init__.py:224
+  super_dash_bp          | 'super_dashboard'    | /api/v1/super                | app/routes/super/dashboard.py:10    | app/__init__.py:227
+  gestor_relatorios_bp   | 'gestor_relatorios'  | /api/v1/gestor               | app/routes/gestor/relatorios.py:12  | app/__init__.py:230
+  gestor_auditoria_bp    | 'gestor_auditoria'   | /api/v1/gestor               | app/routes/gestor/auditoria.py:7    | app/__init__.py:233
+  gestor_clientes_bp     | 'gestor_clientes'    | /api/v1/gestor               | app/routes/gestor/clientes.py:13    | app/__init__.py:236
+  gestor_barbearia_bp    | 'gestor_barbearia'   | /api/v1/gestor               | app/routes/gestor/barbearia.py:9    | app/__init__.py:239
+  cliente_notif_bp       | 'cliente_notificacoes'| /api/v1/cliente             | app/routes/cliente/notificacoes.py:8| app/__init__.py:242
+  barbeiro_notif_bp      | 'barbeiro_notificacoes'| /api/v1/barbeiro           | app/routes/barbeiro/notificacoes.py:8| app/__init__.py:245
+  barbeiro_ag_bp         | 'barbeiro_agendamentos'| /api/v1/barbeiro           | app/routes/barbeiro/agendamentos.py:21| app/__init__.py:248
+  barbeiro_horario_bp    | 'barbeiro_horario'   | /api/v1/barbeiro             | app/routes/barbeiro/horario.py:9    | app/__init__.py:251
+  barbeiro_cli_bp        | 'barbeiro_clientes'  | /api/v1/barbeiro             | app/routes/barbeiro/clientes.py:9    | app/__init__.py:254
+  cupons_bp              | 'gestor_cupons'      | /api/v1/gestor               | app/routes/gestor/cupons.py:11      | app/__init__.py:257
+  cliente_cupons_bp      | 'cliente_cupons'     | /api/v1/cliente              | app/routes/cliente/cupons.py:8      | app/__init__.py:260
+  cliente_perfil_bp      | 'cliente_perfil'     | /api/v1/cliente              | app/routes/cliente/perfil.py:9      | app/__init__.py:263
+  vip_bp                 | 'vip'                | /api/v1/gestor/vip           | app/routes/vip.py:9                 | app/__init__.py:266
+  gestor_estoque_bp      | 'gestor_estoque'     | /api/v1/gestor/estoque       | app/routes/gestor/estoque.py:11     | app/__init__.py:269
+  gestor_vendas_bp       | 'gestor_vendas'      | /api/v1/gestor/vendas        | app/routes/gestor/vendas.py:12      | app/__init__.py:272
+  barbeiro_vendas_bp     | 'barbeiro_vendas'    | /api/v1/barbeiro/vendas      | app/routes/barbeiro/vendas.py:9     | app/__init__.py:275
+  barbeiro_produtos_bp   | 'barbeiro_produtos'  | /api/v1/barbeiro             | app/routes/barbeiro/produtos.py:13  | app/__init__.py:278
+
+NÃO REGISTRADO — CÓDIGO MORTO (1 caso):
+  caixa                  | 'caixa'              | (nenhum)                    | app/routes/caixa.py:13
+  Não aparece em nenhum app.register_blueprint(...) em app/__init__.py.
+  Confirmado morto em auditorias anteriores do projeto (Scripts 05/09/18):
+  nenhum blueprint 'caixa' é montado, então nenhuma rota deste arquivo
+  responde no servidor real, mesmo que o arquivo tenha sido corrigido
+  pontualmente (bugs de import) em blocos passados. Decisão de produto
+  pendente: reconstruir PDV no v2 ou remover definitivamente (ver
+  docs/Roadmap.md, já citado como pendência antes desta sessão).
+
+Total de rotas HTTP registradas no servidor (app.url_map, medido ao vivo
+via `create_app()`): 217.
+
+
+--------------------------------------------------------------------------
+3. Models SQLAlchemy — schema completo (43 classes)
+--------------------------------------------------------------------------
+Arquivo único: app/models/__init__.py (881 linhas). Formato por model:
+  Classe (tabela) @ linha inicial
+    coluna: tipo, flags [nullable/default/FK/unique], relationships, checks
+
+Barbearia (barbearias) @ 13
+  id: Integer PK | nome: String(150) NOT NULL | nome_exibicao: String(150)
+  | slug: String(50) UNIQUE NOT NULL, index | ativo: Boolean default=True NOT NULL
+  | url_agendamento: String(255) | chave_pix/pix_nome_titular/pix_cidade/pix_banco: String
+  | criado_em: DateTime default=utcnow | whatsapp_business_id/whatsapp_phone_number_id: String(100)
+  | billing_plano: String(50) | billing_mensalidade_valor: Numeric(10,2)
+  | billing_vencimento_dia: Integer | billing_proximo_vencimento: Date
+  | billing_status: String(20) default='em_dia' NOT NULL
+  | rua/numero/complemento/bairro/cidade/estado/cep/telefone_contato/instagram: String
+  | segmento_id: Integer FK->segmentos.id, nullable
+
+Segmento (segmentos) @ 53
+  id: Integer PK | nome: String(100) NOT NULL | chave: String(50) UNIQUE NOT NULL, index
+
+SegmentoRotulo (segmento_rotulos) @ 61
+  id: Integer PK | segmento_id: Integer FK->segmentos.id UNIQUE NOT NULL
+  | rotulo_tenant/_plural, rotulo_profissional/_plural, rotulo_servico/_plural,
+    rotulo_agendamento/_plural, rotulo_cliente/_plural, rotulo_produto/_plural,
+    rotulo_plano/_plural: String(50) com defaults em português (ex: 'Estabelecimento')
+  | rotulo_pagamento/rotulo_faturamento/rotulo_relatorio: String(50)
+  | atualizado_em: DateTime default/onupdate=utcnow
+
+Usuario (usuarios) @ 97
+  id: Integer PK | barbearia_id: Integer FK->barbearias.id nullable, index
+  | nome: String(100) NOT NULL | telefone: String(20) NOT NULL | email: String(100)
+  | senha: String(255) | perfil: String(20) NOT NULL (super_admin/gestor/barbeiro/cliente)
+  | ativo: Boolean default=True NOT NULL | foto_perfil_url: String(255)
+  | data_nascimento: Date | criado_em: DateTime default=utcnow
+  | duplo_fator_ativo: Boolean default=False NOT NULL | duplo_fator_segredo: String(64)
+  | whatsapp_verificado: Boolean default=False NOT NULL
+  | token_valido_apos: DateTime nullable (revogação em massa)
+  relationships: barbeiro (1:1 backref), cliente (1:1 backref)
+
+TokenRevogado (tokens_revogados) @ 124
+  id: Integer PK | jti: String(64) UNIQUE NOT NULL, index
+  | usuario_id: Integer FK->usuarios.id nullable, index (SEM cascade — ver DT-002 na memória do projeto)
+  | tipo: String(10) ('access'/'refresh') | revogado_em: DateTime default=utcnow
+  | motivo: String(100) ('logout'/'usuario_desativado'/'tenant_desativado')
+
+Barbeiro (barbeiros) @ 137
+  CHECK: comissao_percentual BETWEEN 0 AND 100 (ck_barbeiros_comissao_percentual_range)
+  id: Integer PK | barbearia_id FK NOT NULL index | usuario_id FK NOT NULL index
+  | foto: String(255) | bio: String(300)
+  | comissao_percentual: Numeric(5,2) default=0 NOT NULL
+  | comissao_plano_percentual: Numeric(5,2) default=0 NOT NULL | ativo: Boolean default=True NOT NULL
+  | comissao_tipo: String(20) default='percentual' NOT NULL ('percentual'|'fixo')
+  | comissao_valor_fixo: Numeric(10,2) default=0 NOT NULL
+  relationships: servicos (BarbeiroServico), configuracao_agenda (1:1)
+
+Cliente (clientes) @ 163
+  UNIQUE(barbearia_id, telefone) — uq_cliente_barbearia_telefone
+  id PK | barbearia_id FK NOT NULL index | usuario_id FK nullable index
+  | nome String(100) NOT NULL | telefone String(20) NOT NULL | email String(150)
+  | foto String(255) | observacoes Text | ativo Boolean default=True NOT NULL
+  | primeira_visita Date | ultimo_acesso DateTime
+  | notif_sms/notif_whatsapp/notif_email: Boolean default=True NOT NULL
+  | data_nascimento Date | criado_em DateTime default=utcnow
+  | barbeiro_preferido_id: Integer FK->barbeiros.id nullable
+  | saldo_creditos: Numeric(10,2) default=0 NOT NULL
+  | whatsapp_opt_in: Boolean default=False NOT NULL
+
+Servico (servicos, TenantMixin) @ 196
+  id PK | nome String(100) NOT NULL | descricao String(300)
+  | duracao_minutos Integer NOT NULL | preco Numeric(10,2) NOT NULL
+  | foto String(255) | ativo Boolean default=True NOT NULL
+  ⚠️ NÃO tem campo de tipo (presencial/domiciliar) — ver Parte C.
+
+BarbeiroServico (barbeiro_servicos) @ 208
+  UNIQUE(barbeiro_id, servico_id) — uq_barbeiro_servico
+  id PK | barbeiro_id FK NOT NULL index | servico_id FK NOT NULL index
+
+CategoriaProduto (categoria_produto, TenantMixin) @ 219
+  UNIQUE(barbearia_id, nome) — uq_categoria_produto_barbearia_nome
+  id PK | nome String(80) NOT NULL | ativo Boolean default=True NOT NULL
+
+Produto (produtos, TenantMixin) @ 231
+  CHECKs: quantidade_estoque>=0, quantidade_reservada>=0, custo_unitario>=0, estoque_minimo>=0
+  id PK | nome String(100) NOT NULL | categoria String(50) (legado texto livre)
+  | categoria_id FK->categoria_produto.id nullable index | marca String(80)
+  | preco Numeric(10,2) NOT NULL | custo_unitario Numeric(10,2) default=0 NOT NULL
+  | codigo_barras String(50) | quantidade_estoque Integer default=0 NOT NULL
+  | quantidade_reservada Integer default=0 NOT NULL | estoque_minimo Integer default=0 NOT NULL
+  | foto String(255) (legado) | foto_url String(300) | ativo Boolean default=True NOT NULL
+  | criado_em DateTime default=utcnow
+  property: quantidade_disponivel = max(0, estoque - reservada)
+
+MovimentacaoEstoque (movimentacao_estoque, TenantMixin) @ 261
+  CHECKs: quantidade>0; tipo IN ('entrada','saida_venda','saida_uso','ajuste')
+  id PK | produto_id FK NOT NULL index | tipo String(20) NOT NULL
+  | quantidade Integer NOT NULL | quantidade_apos Integer NOT NULL (snapshot)
+  | motivo String(200) | usuario_id FK NOT NULL
+  | referencia_venda_id FK->venda.id nullable | referencia_atendimento_id FK->atendimentos.id nullable
+  | criado_em DateTime default=naive_brasilia (⚠️ único deste bloco que usa Brasília, não UTC)
+
+Venda (venda, TenantMixin) @ 286
+  CHECKs: valor_total>=0; status IN ('concluida','cancelada'); metodo_pagamento IN ('pix','dinheiro','cartao')
+  id PK | cliente_id FK->clientes.id nullable | cliente_nome_livre String(100) nullable
+  | barbeiro_id FK->barbeiros.id nullable | usuario_registro_id FK NOT NULL
+  | metodo_pagamento String(20) NOT NULL | status String(20) default='concluida' NOT NULL
+  | valor_total Numeric(10,2) default=0 NOT NULL | criado_em DateTime default=naive_brasilia
+
+VendaItem (venda_item) @ 306
+  CHECK: quantidade>0
+  id PK | venda_id FK NOT NULL index | produto_id FK NOT NULL | quantidade Integer NOT NULL
+  | preco_unitario Numeric(10,2) NOT NULL | custo_unitario_snapshot Numeric(10,2) default=0 NOT NULL
+  | comissao_valor Numeric(10,2) default=0 NOT NULL
+
+ConfiguracaoAgenda (configuracao_agenda) @ 323
+  UNIQUE(barbeiro_id) — uq_configuracao_agenda_barbeiro
+  id PK | barbearia_id FK NOT NULL index | barbeiro_id FK NOT NULL
+  | horario_abertura Time NOT NULL | horario_fechamento Time NOT NULL
+  | intervalo_minutos Integer NOT NULL | loja_aberta Boolean default=True NOT NULL
+  | permite_horario_barbeiro Boolean default=False NOT NULL
+  | atualizado_em DateTime default/onupdate=utcnow
+  ⚠️ Só existe por BARBEIRO — não existe conceito de buffer/deslocamento aqui.
+
+Agendamento (agendamentos, TenantMixin) @ 340
+  CHECK status IN (9 valores — ver StatusAgendamento em app/constants.py)
+  CHECKs: valor_total>=0, valor_desconto>=0
+  id PK | cliente_id FK NOT NULL index | barbeiro_id FK NOT NULL index
+  | data_hora DateTime NOT NULL | duracao_minutos Integer NOT NULL
+  | status String(30) NOT NULL | valor_total Numeric(10,2) default=0 NOT NULL
+  | observacao String(300) | metodo_pagamento String(20) default='local' NOT NULL ('pix'|'local')
+  | criado_em DateTime default=utcnow | cupom_id FK->cupons.id nullable index
+  | valor_desconto Numeric(10,2) default=0 NOT NULL
+  relationship: itens (AgendamentoServico, viewonly)
+  ⚠️ NÃO tem: endereco, taxa_deslocamento, tipo_atendimento (presencial/domiciliar) — ver Parte C.
+
+AgendamentoServico (agendamento_servicos) @ 379
+  id PK | agendamento_id FK NOT NULL index | servico_id FK NOT NULL
+  | quantidade Integer default=1 NOT NULL | preco_unitario Numeric(10,2) NOT NULL
+  | is_plano Boolean default=False NOT NULL | cliente_plano_id FK->cliente_plano.id nullable index
+  relationship: servico (viewonly)
+
+AgendamentoSolicitacaoPix (agendamento_solicitacao_pix) @ 394
+  id PK | barbearia_id FK NOT NULL index | agendamento_id FK->agendamentos.id UNIQUE NOT NULL
+  | comprovante_url String(255) | status String(20) default='pendente' NOT NULL
+  | motivo_rejeicao String(500) | criado_em DateTime default=utcnow | respondido_em DateTime
+
+TransferenciaAgendamento (transferencia_agendamento, TenantMixin) @ 408
+  id PK | agendamento_id FK NOT NULL index | barbeiro_origem_id FK NOT NULL
+  | barbeiro_destino_id FK nullable | motivo String(200) NOT NULL
+  | status String(20) default='pendente' NOT NULL (StatusTransferencia)
+  | criado_em DateTime default=naive_brasilia | concluido_em DateTime
+
+HorarioBloqueado (horarios_bloqueados, TenantMixin) @ 429
+  id PK | barbeiro_id FK NOT NULL index | data_hora_inicio DateTime NOT NULL
+  | data_hora_fim DateTime NOT NULL | motivo String(100)
+
+PausaBarbeiro (pausa_barbeiro) @ 439
+  id PK | barbearia_id FK NOT NULL | barbeiro_id FK NOT NULL index
+  | hora_inicio Time NOT NULL | hora_fim Time NOT NULL | descricao String(50)
+  | criado_em DateTime default=utcnow
+
+ReservaProduto (reservas_produtos) @ 454 — SEM TenantMixin
+  id PK | agendamento_id FK NOT NULL index | produto_id FK NOT NULL
+  | quantidade Integer default=1 NOT NULL | status String(20) NOT NULL
+
+Atendimento (atendimentos, TenantMixin) @ 464
+  id PK | agendamento_id FK->agendamentos.id UNIQUE NOT NULL | barbeiro_id FK NOT NULL index
+  | cliente_id FK NOT NULL index | status_operacao String(20) NOT NULL ('efetuado'/'nao_efetuado')
+  | total Numeric(10,2) | criado_em DateTime default=utcnow
+  (usado só pelo código morto app/routes/caixa.py — ver item 2)
+
+AtendimentoItem (atendimento_itens) @ 476
+  id PK | atendimento_id FK NOT NULL index | tipo String(20) NOT NULL ('servico'/'produto')
+  | servico_id FK nullable | produto_id FK nullable | preco_unitario Numeric(10,2) NOT NULL
+  | quantidade Integer default=1 NOT NULL
+
+Pagamento (pagamentos) @ 488
+  id PK | atendimento_id FK NOT NULL index | forma_pagamento String(30) NOT NULL
+  | valor Numeric(10,2) NOT NULL | status String(20) default='aprovado' NOT NULL
+  | gateway String(30) | gateway_transaction_id String(100) | criado_em DateTime default=utcnow
+  | gateway_status String(50) | gateway_metadata Text (P2: integração de gateway externo, dormente)
+
+SolicitacaoSenha (solicitacoes_senha) @ 506
+  id PK | usuario_id FK NOT NULL | barbearia_id FK NOT NULL
+  | status String(20) default='pendente' NOT NULL | criado_em DateTime default=utcnow
+
+SolicitacaoLiberacao (solicitacoes_liberacao, TenantMixin) @ 516
+  id PK | barbeiro_id FK NOT NULL index | data Date NOT NULL
+  | hora_inicio/hora_fim Time nullable (null = dia inteiro) | motivo String(300)
+  | status String(20) default='pendente' NOT NULL | notificado Boolean default=False NOT NULL
+  | data_solicitacao DateTime default=utcnow | data_resposta DateTime
+
+Plano (planos, TenantMixin) @ 533
+  id PK | barbeiro_id FK nullable index (NULL = plano aberto) | nome String(150) NOT NULL
+  | descricao Text | preco_mensal Numeric(10,2) NOT NULL | ativo Boolean default=True NOT NULL
+  | criado_em/atualizado_em DateTime default/onupdate=utcnow
+  | trial_dias Integer default=0 NOT NULL | max_assinaturas Integer nullable (NULL=ilimitado)
+
+PlanoServico (plano_servicos) @ 550
+  UNIQUE(plano_id, servico_id) — uq_plano_servico
+  id PK | plano_id FK NOT NULL index | servico_id FK NOT NULL index
+  | limite_uso_mensal Integer NOT NULL (99999 = sentinela ilimitado)
+  | dias_expiracao Integer NOT NULL | ativo Boolean default=True NOT NULL
+
+ClientePlano (cliente_plano) @ 564 — SEM TenantMixin (tem barbearia_id manual)
+  id PK | barbearia_id FK NOT NULL index | cliente_id FK NOT NULL index
+  | plano_id FK NOT NULL index | barbeiro_id FK nullable (null=plano aberto)
+  | data_inicio Date NOT NULL | data_fim Date | ativo Boolean default=True NOT NULL
+  | criado_em DateTime default=utcnow | auto_renovar Boolean default=False NOT NULL (dormente — PIX não permite débito automático, ver memória do projeto)
+  | solicitacao_id FK->cliente_plano_solicitacao.id UNIQUE nullable
+
+ClientePlanoUso (cliente_plano_uso) @ 587
+  UNIQUE(cliente_plano_id, servico_id, data_uso) — uq_plano_uso_dia
+  id PK | cliente_plano_id FK NOT NULL index | servico_id FK NOT NULL index
+  | data_uso Date NOT NULL | semana_do_mes Integer NOT NULL (campo morto, nunca lido)
+  | usado Boolean default=False NOT NULL (campo morto, nunca lido)
+
+ClientePlanoSolicitacao (cliente_plano_solicitacao) @ 604 — nome real SINGULAR na tabela
+  id PK | barbearia_id FK NOT NULL index | cliente_id FK NOT NULL index
+  | plano_id FK NOT NULL | barbeiro_id FK nullable | valor Numeric(10,2) NOT NULL
+  | comprovante_url String(255) | metodo_pagamento String(20) default='pix' NOT NULL
+  | status String(20) default='pendente' NOT NULL | criado_em DateTime default=utcnow
+  | aprovado_em DateTime | motivo_rejeicao String(500)
+
+PlanoBarbeiro (plano_barbeiros) @ 621
+  UNIQUE(plano_id, barbeiro_id) — uq_plano_barbeiro
+  id PK | plano_id FK NOT NULL index | barbeiro_id FK NOT NULL | barbearia_id FK NOT NULL
+  | adicionado_em DateTime default=utcnow
+
+VipNivel (vip_niveis, TenantMixin) @ 636
+  UNIQUE(barbearia_id, nivel) — uq_barbearia_nivel
+  id PK | nivel Integer NOT NULL | brinde_descricao Text NOT NULL
+  | tipo_brinde String(20) NOT NULL ('fisico'/'desconto') | valor_desconto Numeric(10,2)
+  | ativo Boolean default=True NOT NULL | modo_brinde_ativo Boolean default=True NOT NULL
+  | criado_em DateTime default=utcnow
+
+ClienteVip (cliente_vip) @ 652 — SEM TenantMixin
+  UNIQUE(cliente_id, barbearia_id) — uq_cliente_barbearia_vip
+  id PK | cliente_id FK NOT NULL index | barbearia_id FK NOT NULL
+  | nivel_vip_atual Integer default=0 NOT NULL | brindes_resgatados Text default='[]' (JSON serializado)
+  | data_proxima_renovacao Date | criado_em/atualizado_em DateTime default/onupdate=utcnow
+
+Cupom (cupons, TenantMixin) @ 670
+  UNIQUE(barbearia_id, codigo); CHECKs: valor_desconto>=0, quantidade_usos>=0,
+  tipo_desconto IN ('percentual','valor_fixo'), (tipo!='percentual' OR valor<=100)
+  id PK | nome String(100) NOT NULL | codigo String(30) NOT NULL
+  | tipo_desconto String(20) NOT NULL | valor_desconto Numeric(10,2) NOT NULL
+  | data_expiracao Date NOT NULL | quantidade_maxima_usos Integer nullable (NULL=ilimitado)
+  | quantidade_usos Integer default=0 NOT NULL | ativo Boolean default=True NOT NULL
+  | criado_em/atualizado_em DateTime default/onupdate=utcnow
+
+FeatureMetadata (feature_metadata) @ 701 — ver Parte B para detalhe completo
+  id PK | nome String(50) UNIQUE NOT NULL | descricao String(200)
+  | ativo_por_padrao Boolean default=False NOT NULL
+  relationship: flags (FeatureBarbearia, backref='feature')
+
+FeatureBarbearia (feature_barbearia) @ 718 — ver Parte B
+  UNIQUE(barbearia_id, feature_id) — uq_feature_barbearia
+  id PK | barbearia_id FK NOT NULL index | feature_id FK->feature_metadata.id NOT NULL
+  | ativo Boolean default=False NOT NULL | atualizado_em DateTime default/onupdate=utcnow
+
+AuditoriaLog (auditoria_log) @ 734
+  id PK | usuario_id FK nullable index (SEM cascade) | barbearia_id FK nullable index
+  | tipo_acao String(50) NOT NULL ('create'/'edit'/'delete'/'login')
+  | entidade String(100) NOT NULL | entidade_id Integer | descricao String(500) NOT NULL
+  | criado_em DateTime default=utcnow
+
+BarbeariaCustomizacao (barbearia_customizacao) @ 747
+  id PK | barbearia_id FK UNIQUE NOT NULL
+  | cor_primaria/cor_secundaria/cor_acentuacao/texto_primario/texto_secundario/
+    texto_terciario/botao_primario/botao_secundario: String(7) com defaults hex
+  | logo_filename/fundo_padrao_filename: String(255) (legado)
+  | logo_url/imagem_capa_url/imagem_boas_vindas_url: String(500)
+  | fonte String(50) default='Inter' | criado_em/atualizado_em DateTime default/onupdate=utcnow
+
+ClienteNota (cliente_notas) @ 772 — SEM TenantMixin (tem barbearia_id manual)
+  id PK | barbearia_id FK NOT NULL index | cliente_id FK NOT NULL index
+  | autor_usuario_id FK nullable | tipo String(30) default='observacao' NOT NULL
+    ('observacao'|'alerta'|'preferencia') | conteudo Text NOT NULL | criado_em DateTime default=utcnow
+
+FilaEspera (fila_espera) @ 791 — modelo existe, SEM lógica de negócio associada
+  id PK | barbearia_id FK NOT NULL index | cliente_id FK NOT NULL index
+  | barbeiro_preferido_id FK nullable | servico_id FK nullable | data_preferida Date nullable
+  | prioridade Integer default=0 NOT NULL | posicao Integer default=0 NOT NULL
+  | status String(20) default='aguardando' NOT NULL ('aguardando'|'chamado'|'atendido'|'cancelado')
+  | chamado_em DateTime | criado_em DateTime default=utcnow
+  ⚠️ Corresponde à feature 'fila_espera' do catálogo — MAS não há nenhuma rota
+  Flask que crie/liste/promova FilaEspera (grep confirma zero uso fora do
+  próprio arquivo de models). Tabela existe, feature existe no catálogo,
+  ZERO lógica de negócio implementada — ver Parte F.
+
+BarbeiroComissaoServico (barbeiro_comissao_servico) @ 812
+  UNIQUE(barbeiro_id, servico_id) — uq_comissao_barbeiro_servico
+  id PK | barbeiro_id FK NOT NULL index | servico_id FK NOT NULL | barbearia_id FK NOT NULL index
+  | comissao_tipo String(20) default='percentual' NOT NULL
+  | comissao_percentual Numeric(5,2) default=0 NOT NULL | comissao_valor_fixo Numeric(10,2) default=0 NOT NULL
+  | criado_em/atualizado_em DateTime default/onupdate=utcnow
+  (override de comissão por serviço — só armazenamento, sem lógica de cálculo que o use ainda, per comentário no próprio model)
+
+ConfiguracaoAgendamento (configuracao_agendamento) @ 838 — regras de negócio configuráveis por tenant
+  id PK | barbearia_id FK UNIQUE NOT NULL
+  | cancelamento_horas_minimas Integer default=3 NOT NULL
+  | permite_multi_servico Boolean default=True NOT NULL
+  | quick_booking_sem_login Boolean default=True NOT NULL
+  | intervalo_slot_minutos Integer default=15 NOT NULL
+  | antecedencia_maxima_dias Integer default=60 NOT NULL
+  | notif_antecedencia_cliente_min Integer default=30 NOT NULL
+  | notif_antecedencia_barbeiro_min Integer default=15 NOT NULL
+  | atualizado_em DateTime default/onupdate=utcnow
+  Comentário no código (linha 834-836): "Campo tipo_recurso reservado para
+  Parte B (multi-segmento)" — MAS esse campo tipo_recurso NÃO EXISTE de fato
+  na classe (grep confirma: não há coluna com esse nome em nenhum model).
+  É uma intenção documentada em comentário, não um campo implementado.
+
+Notificacao (notificacoes) @ 857
+  id PK | barbearia_id FK NOT NULL index | usuario_id FK NOT NULL index
+  | agendamento_id FK nullable index | tipo String(50) NOT NULL
+    ('lembrete_cliente'|'lembrete_barbeiro'|'confirmacao'|'cancelamento'|'custom'|outros ad-hoc)
+  | canal String(20) default='in_app' NOT NULL ('in_app'|'email'|'web_push')
+  | titulo String(200) NOT NULL | corpo String(1000) NOT NULL
+  | lida Boolean default=False NOT NULL | enviada Boolean default=False NOT NULL
+  | criado_em DateTime default=utcnow
+
+
+--------------------------------------------------------------------------
+4. Migrations — ordem, revision, down_revision, head
+--------------------------------------------------------------------------
+Total: 17 arquivos em migrations/versions/. Um único head (sem conflito),
+confirmado via `flask db heads` e via `flask db upgrade` do zero nesta sessão.
+
+Ordem linear (com 1 ponto de branch + merge):
+ 1. 4d187bf2d837  v2_initial_schema                              (down=None — raiz)
+ 2. ca00bd81d3ab  add_data_nascimento_e_configuracao_             (down=4d187bf2d837)
+      ├─ 3a. c0713368a4a7  agendamento_valor_total_...            (down=ca00bd81d3ab)
+      │    4. b92a16188478  notificacoes_e_campos_notif_config    (down=c0713368a4a7)
+      │    5. 7919e10ce25f  fase9_p2_campos_e_tabelas              (down=b92a16188478)
+      │    6. 8f2a724280e6  p2_customizacao_imagens_url            (down=7919e10ce25f)
+      │    7. 76b70299da96  p3_barbearia_contato_e_pausa_barbeiro  (down=8f2a724280e6)
+      └─ 3b. d1a3e7f9b205  add_permite_horario_barbeiro            (down=ca00bd81d3ab)
+ 8. 992b53c7662d  merge_heads                                     (down=(76b70299da96, d1a3e7f9b205) — MERGE)
+ 9. a3f8c2e1d047  extend_agendamento_status_varchar30              (down=992b53c7662d)
+10. c5d7f9a1b3e5  segmentos_e_rotulos                               (down=a3f8c2e1d047)
+11. 843668e4f632  cupons                                            (down=c5d7f9a1b3e5)
+12. 2070465e5fe1  bloco_1_2_tokens_revogados_token_valido_         (down=843668e4f632)
+13. 0fc98933f5eb  integridade_producao_bloco21                     (down=2070465e5fe1)
+14. 070b21d15769  indices_performance_bloco52                      (down=0fc98933f5eb)
+15. a75fb199332d  transferencia_agendamento_bloco34                (down=070b21d15769)
+16. df41b77230dd  modulo_produtos_vendas_estoque_bloco64  ← HEAD ATUAL (down=a75fb199332d)
+
+Validado nesta sessão (Script 20/release v1.1.0): as 17 migrations aplicam
+limpo em sequência num banco Postgres vazio, sem conflito, até df41b77230dd.
+
+
+════════════════════════════════════════════════════════════════════════════
+PARTE B — FEATURES (ativa/inativa por segmento) — PRIORIDADE 1
+════════════════════════════════════════════════════════════════════════════
+
+--------------------------------------------------------------------------
+5. Tudo relacionado a Feature/Segmento/toggle
+--------------------------------------------------------------------------
+
+MODELS — schema completo já dado na Parte A.3. Resumo dos 4 nomes pedidos:
+  FeatureMetadata     → app/models/__init__.py:701 (catálogo de features da plataforma)
+  FeatureBarbearia    → app/models/__init__.py:718 (flag ativo/inativo POR BARBEARIA)
+  Segmento            → app/models/__init__.py:53  (nome + chave, ex: 'barbearia','salao')
+  SegmentoRotulo       → app/models/__init__.py:61  (rótulos de vocabulário por segmento — NADA a ver com features)
+
+COMO UMA FEATURE É CHECADA HOJE — cada uso real (arquivo:linha + string verificada):
+  app/utils/features.py:6   def feature_ativa(barbearia_id, nome) — implementação central
+  app/utils/features.py:19  def feature_required(nome) — decorator que usa feature_ativa + g.barbearia_id
+
+  Usos de @feature_required(...) (bloqueiam a rota com 403 se a feature estiver OFF):
+    'vip_brindes'      → app/routes/vip.py:45 (criar_nivel), :96 (editar_nivel),
+                          :148 (toggle_modo_brinde), :167 (deletar_nivel)
+                          [listar_niveis, linha 33, NÃO é gateado — leitura sempre permitida]
+    'produtos_venda'   → app/routes/gestor/catalogo.py:194 (criar_categoria_produto),
+                          :215 (editar_categoria_produto), :237 (desativar_categoria_produto),
+                          :272 (criar_produto — adicionado no Script 20/release v1.1.0,
+                          FALTAVA antes), :416 (ajustar_estoque — idem, FALTAVA antes)
+                          app/routes/gestor/estoque.py:35 (movimentar_estoque)
+                          app/routes/gestor/vendas.py:62 (criar_venda), :134 (cancelar_venda)
+                          app/routes/barbeiro/vendas.py:48 (criar_venda_barbeiro)
+                          [listar_produtos, detalhar_produto, editar_produto,
+                          desativar_produto, upload_foto_produto, listar_categorias,
+                          listar_vendas — NÃO gateados, só as escritas "de criação/execução"
+                          listadas acima; editar_produto/desativar_produto/upload_foto_produto
+                          TAMBÉM não têm o decorator — mesma lacuna da FALHA #2 corrigida
+                          no Script 20, que só cobriu criar_produto/ajustar_estoque, não
+                          os outros 3 endpoints de escrita de produto]
+    'cupons'           → app/routes/gestor/cupons.py:34 (listar_cupons — AQUI a listagem
+                          TAMBÉM é gateada, diferente do padrão de produtos/planos/vip),
+                          :61 (criar_cupom), :123 (editar_cupom), :187 (excluir_cupom)
+    'planos'           → app/routes/gestor/planos.py:76 (criar_plano), :125 (editar_plano),
+                          :154 (desativar_plano)
+                          [listar_planos, detalhar_plano, adicionar/remover_servico_plano,
+                          listar_assinaturas, listar/aprovar/rejeitar_solicitacoes —
+                          NENHUM destes é gateado por 'planos', só os 3 de cima]
+    'historico_cliente'→ app/routes/gestor/features.py:36 (historico_cliente_resumo —
+                          endpoint de EXEMPLO, o próprio comentário do código diz isso)
+
+  Usos de feature_ativa(...) direto (checagem condicional, não bloqueia com 403):
+    'notificacoes'  → app/routes/pub/agendamento.py:387 (só dispara notificação de
+                       confirmação de agendamento se ativa — não impede o agendamento em si)
+    'comissao'      → app/routes/barbeiro/dashboard.py:120 (mostra ou esconde bloco de
+                       comissão no dashboard do barbeiro)
+    'planos'        → app/routes/cliente/dashboard.py:83 e app/routes/gestor/dashboard.py:123
+                       (mostra ou esconde widgets relacionados a plano no dashboard)
+    'cupons'        → app/utils/cupons.py:14 (validar_cupom levanta erro se a feature
+                       estiver OFF, mesmo que o cupom exista no banco)
+
+STRINGS DE FEATURE JÁ USADAS NO CÓDIGO (varredura, não memória) — 7 das 11 do catálogo:
+  'cupons', 'notificacoes', 'vip_brindes', 'produtos_venda', 'comissao',
+  'planos', 'historico_cliente'
+
+CATÁLOGO COMPLETO (app/seeds.py:12-24, FEATURES, 11 entradas — nome | descrição | ativo_por_padrao):
+  'planos'               | Planos de assinatura mensal para clientes           | False
+  'relatorios_avancados' | Relatórios customizáveis e exportação Excel/PDF     | False
+  'vip_brindes'          | Programa VIP com níveis e brindes por fidelidade    | False
+  'agendamento_login'    | Exige login do cliente para agendar online         | False
+  'historico_cliente'    | Histórico completo de atendimentos por cliente      | False
+  'cupons'               | Cupons de desconto para clientes                    | False
+  'fila_espera'          | Lista de espera para horários lotados               | False
+  'comissao'             | Cálculo de comissão por barbeiro (avulso e plano)   | False
+  'notificacoes'         | Notificações por SMS/WhatsApp/e-mail                | False
+  'pix_integrado'        | Pagamento PIX com comprovante e aprovação manual    | False
+  'produtos_venda'       | Venda avulsa de produtos com controle de estoque    | True (única ativa por padrão)
+
+⚠️ ACHADO IMPORTANTE: 4 das 11 features do catálogo NÃO SÃO CHECADAS EM
+NENHUM LUGAR do backend (grep confirmado, zero ocorrências de feature_ativa/
+feature_required com essas strings):
+  'relatorios_avancados' — os endpoints de relatório (gestor/relatorios.py:50,
+     94, 118, 142) rodam incondicionalmente com só @gestor_required, IGNORANDO
+     completamente esta feature. Ligar/desligar no painel super NÃO MUDA NADA
+     no comportamento — é decoração pura.
+  'agendamento_login'    — NÃO EXISTE nenhum código que force login do cliente
+     para agendar; o quick-booking público (pub/agendamento.py:quick_booking)
+     sempre aceita agendamento por telefone sem conta, incondicionalmente.
+  'fila_espera'          — a TABELA existe (FilaEspera, models:791) mas NÃO
+     EXISTE nenhuma rota Flask que crie, liste ou promova uma entrada nela
+     (grep confirmado). Feature 100% decorativa + tabela órfã.
+  'pix_integrado'        — usado APENAS no frontend (app/templates/gestor/
+     base.html:540, `if (f.pix_integrado) { mostra link da sidebar }`) para
+     esconder o link de navegação "Aprovação PIX". O BACKEND (aprovar
+     comprovante/agendamento, gestor/agendamento.py:aprovar_agendamento e
+     barbeiro/agendamentos.py:aprovar_comprovante) NÃO checa esta feature —
+     um gestor pode chamar a API de aprovação diretamente mesmo com a
+     feature desligada; só o link da tela fica escondido.
+
+ENDPOINT PARA SUPER ADMIN LIGAR/DESLIGAR FEATURE POR BARBEARIA:
+  EXISTE. PUT /api/v1/super/barbearias/<int:barbearia_id>/features/<nome_feature>
+  → app/routes/super/barbearias.py:333 (toggle_feature). Alterna
+  FeatureBarbearia.ativo (cria a linha com ativo=True se ainda não existir).
+  Complementares:
+    GET /api/v1/super/barbearias/<id>/features  → super/barbearias.py:324 (por barbearia)
+    GET /api/v1/super/features                  → super/barbearias.py:539 (catálogo global,
+                                                    todas as barbearias x todas as features)
+
+TELA HTML de gestão de features:
+  EXISTE. app/templates/super/features.html (168 linhas), renderizada por
+  GET /super/features → app/routes/views/auth.py:441-444 (super_features()).
+  Tem hardcoded no próprio HTML/JS (linhas 78-93) uma lista de metadados de
+  exibição (nome amigável + descrição + agrupamento em categorias "CLIENTE —
+  PLANOS" / "CLIENTE — FUNCIONALIDADES" / "NEGÓCIO") que DUPLICA — sem
+  sincronização automática — o que já está em app/seeds.py:FEATURES. Se uma
+  feature nova for adicionada em seeds.py sem atualizar este HTML, ela não
+  aparece nessa tela organizada (mas aparece nas rotas cruas de JSON).
+
+COMO O FRONTEND DESCOBRE QUAIS FEATURES ESTÃO ATIVAS:
+  GET /api/v1/gestor/features  → app/routes/gestor/features.py:13 (listar_features)
+     Consumido em app/templates/gestor/base.html:526-553 — Bos.get('/gestor/features')
+     roda uma vez ao carregar QUALQUER tela do gestor, monta window._features,
+     e só usa isso para 3 das 11 features (esconder/mostrar 3 links de nav):
+       f.pix_integrado    → mostra #nav-pix       (base.html:540-543)
+       f.cupons           → mostra #nav-cupons     (base.html:544-547)
+       f.produtos_venda   → mostra #nav-vendas     (base.html:548-551)
+     As outras 8 features (planos, vip_brindes, comissao, historico_cliente,
+     notificacoes, relatorios_avancados, agendamento_login, fila_espera) NÃO
+     têm nenhum id de nav correspondente (grep confirmado: 'nav-planos'/
+     'nav-vip'/'nav-relatorios' NÃO EXISTEM em nenhum template) — os links
+     de Planos e VIP na sidebar do gestor SEMPRE aparecem, mesmo com a
+     feature desligada; o clique leva a uma tela que então falha ao tentar
+     criar/editar (403 da API), mas a LISTAGEM funciona normalmente (não
+     gateada) — UX inconsistente.
+  GET /api/v1/barbeiro/features → app/routes/barbeiro/produtos.py:16
+     (listar_features_barbeiro) — mesmo formato, usado só para decidir se
+     mostra o botão "Vender produto" (não confirmado onde no HTML, mas o
+     comentário do próprio arquivo, linha 20-22, diz esse é o propósito).
+  Para o CLIENTE: NÃO EXISTE nenhum endpoint equivalente (GET /api/v1/
+     cliente/features não existe). O frontend do cliente é a SPA React
+     (frontend/) e ela não consulta feature flags em lugar nenhum — grep
+     em frontend/src confirma zero referência a "feature" no código fonte.
+
+--------------------------------------------------------------------------
+6. Mapa SEGMENTO → FEATURES
+--------------------------------------------------------------------------
+NÃO EXISTE. Confirmado por varredura completa de todo uso de `segmento_id`
+e `Segmento` no código (app/models, app/labels.py, app/seeds.py, app/routes/
+super/barbearias.py): Segmento e SegmentoRotulo servem EXCLUSIVAMENTE para
+trocar o VOCABULÁRIO exibido (ex: "Barbeiro" vira "Cabeleireira" no segmento
+'salao', "Agendamento" vira "Consulta" no segmento 'clinica' — ver app/
+labels.py e os 4 segmentos seedados: barbearia/salao/manicure/clinica em
+app/seeds.py:56-101). NADA no código relaciona Segmento a FeatureMetadata ou
+FeatureBarbearia. Hoje, features são 100% por BARBEARIA individual (toggle
+manual pelo super admin, uma barbearia de cada vez) — não existe o conceito
+de "todo segmento X nasce com as features Y/Z ativadas automaticamente".
+
+O que precisaria ser construído para o pedido do dono (features por
+segmento, não só por barbearia):
+  - Uma tabela nova, ex: SegmentoFeaturePadrao (segmento_id, feature_id,
+    ativo_por_padrao) — MESMO padrão que já existe para "feature nova ativa
+    por padrão pra quem já existe" (FeatureMetadata.ativo_por_padrao,
+    models:713, mecanismo do Script 18 — reaproveitável como referência de
+    como já se resolveu um problema parecido).
+  - Lógica em criar_barbearia (super/barbearias.py:178-183, hoje usa só
+    `fm.ativo_por_padrao` global) para, quando a barbearia tiver um
+    segmento_id, também consultar essa tabela nova e aplicar os padrões
+    daquele segmento por cima do padrão global.
+  - Decisão de produto: o que acontece se o super mudar o segmento de uma
+    barbearia JÁ EXISTENTE (endpoint PATCH /api/v1/super/barbearias/<id>/
+    segmento, super/barbearias.py:705, já existe e funciona hoje só pra
+    rótulos) — deveria reajustar as features também? Hoje NÃO reajusta
+    (confirmado lendo o código do endpoint: só grava b.segmento_id, não
+    toca FeatureBarbearia). Ver Parte F, pergunta em aberto.
+
+
+════════════════════════════════════════════════════════════════════════════
+PARTE C — AGENDAMENTO MULTI-SEGMENTO (buffers, deslocamento, domiciliar)
+════════════════════════════════════════════════════════════════════════════
+LACUNA CONHECIDA — confirmando com precisão o que existe e o que não.
+
+--------------------------------------------------------------------------
+7. Lógica de slots/horários hoje
+--------------------------------------------------------------------------
+FUNÇÃO gerar_slots: app/utils/agenda.py:53
+  Assinatura: gerar_slots(resource_id: int, data, duracao_necessaria: int) -> list[str]
+  Recebe: resource_id (hoje sempre = barbeiro_id — comentário explícito no
+    topo do arquivo, linha 1-6, diz que é intencionalmente genérico para o
+    futuro poder trocar por "Sala, Equipamento etc." sem mudar a função),
+    uma data (date) e a duração necessária em minutos.
+  Retorna: lista de strings 'HH:MM' representando horários livres.
+  Considera (nesta ordem): ConfiguracaoAgenda do barbeiro (abertura/
+    fechamento/intervalo/loja_aberta), Agendamento existentes no dia,
+    HorarioBloqueado, PausaBarbeiro, e descarta horários já passados se a
+    data for hoje (usa hora de Brasília).
+
+DURAÇÃO DO SERVIÇO no cálculo do slot:
+  Servico.duracao_minutos EXISTE (models:202) e É RESPEITADA: em
+  _criar_agendamento_core (app/routes/pub/agendamento.py:208),
+  `duracao_total = sum(s.duracao_minutos for s, _ in servicos_obj)` soma a
+  duração de TODOS os serviços do agendamento (multi-serviço), e esse total
+  é o que entra em verificar_conflito()/gerar_slots() para reservar o
+  intervalo de tempo correto. Multi-serviço soma durações sequencialmente
+  (sem sobreposição) — não há paralelismo entre serviços do mesmo agendamento.
+
+BUFFER antes/depois do atendimento:
+  NÃO EXISTE. gerar_slots() (app/utils/agenda.py:98-135) monta o próximo
+  slot exatamente em `slot + intervalo` (ConfiguracaoAgenda.intervalo_minutos,
+  um valor fixo por barbeiro, ex: 15 ou 30 min) — não há campo nem lógica de
+  "buffer_antes_minutos"/"buffer_depois_minutos" em nenhum lugar (grep
+  confirmado em todo app/).
+
+TEMPO DE DESLOCAMENTO:
+  NÃO EXISTE. Nenhum campo, nenhuma função, nenhuma menção em código (grep
+  "deslocamento" em todo app/ → zero resultados).
+
+ATENDIMENTO DOMICILIAR vs NO ESTABELECIMENTO:
+  NÃO EXISTE. Nenhum campo em Servico nem em Agendamento distingue local do
+  atendimento. Todo agendamento é implicitamente "no estabelecimento" (o
+  próprio endpoint público é /b/<slug>/..., sempre ancorado numa Barbearia
+  com endereço fixo — Barbearia tem rua/numero/bairro/cidade/estado/cep,
+  models:38-44 — mas isso é o endereço DO ESTABELECIMENTO, não do cliente).
+
+TAXA DE DESLOCAMENTO:
+  NÃO EXISTE. Nenhum campo numérico correspondente em nenhum model.
+
+ENDEREÇO DO CLIENTE NO AGENDAMENTO:
+  NÃO EXISTE. Cliente (models:163) não tem endereço nenhum (rua/cidade/etc)
+  — só nome/telefone/email/foto/observacoes/data_nascimento. Agendamento
+  (models:340) também não tem nenhum campo de endereço.
+
+CAMPOS REAIS DE Agendamento (para referência rápida, já listados na Parte
+A.3 na íntegra): id, cliente_id, barbeiro_id, data_hora, duracao_minutos,
+status, valor_total, observacao, metodo_pagamento, criado_em, cupom_id,
+valor_desconto. NENHUM campo de local/endereço/taxa.
+
+CAMPOS REAIS DE Servico (idem): id, nome, descricao, duracao_minutos, preco,
+foto, ativo (+ barbearia_id via TenantMixin). NENHUM campo de tipo
+presencial/domiciliar.
+
+O QUE PRECISARIA SER CONSTRUÍDO (visão de escopo, sem decidir por você):
+  - Servico: campo tipo_atendimento ('presencial'|'domiciliar'|'ambos') ou
+    tabela separada de "modalidades de atendimento" se um serviço puder
+    oferecer as duas.
+  - Agendamento: campos endereco_atendimento_* (ou FK para uma tabela de
+    endereços do cliente, se ele puder ter mais de um) + valor_taxa_deslocamento.
+  - ConfiguracaoAgenda ou ConfiguracaoAgendamento: buffer_antes_minutos/
+    buffer_depois_minutos por barbeiro (ou por serviço — decisão de produto).
+  - gerar_slots() precisaria somar o buffer ao calcular slot_fim antes de
+    checar conflito, e possivelmente considerar tempo de deslocamento entre
+    dois atendimentos domiciliares consecutivos do mesmo barbeiro (isso é
+    bem mais complexo — depende de geolocalização, fora do escopo de uma
+    mudança simples de schema).
+
+
+════════════════════════════════════════════════════════════════════════════
+PARTE D — n8n / WEBHOOKS / NOTIFICAÇÕES — PRIORIDADE 2
+════════════════════════════════════════════════════════════════════════════
+
+--------------------------------------------------------------------------
+8. Integração externa/notificação hoje
+--------------------------------------------------------------------------
+MODELS de webhook/API key:
+  BarbeariaWebhookConfig  → NÃO EXISTE
+  ApiKey                  → NÃO EXISTE
+  Webhook                 → NÃO EXISTE
+  (grep "class .*(Webhook|ApiKey)" em app/models/__init__.py → zero resultados)
+
+MODEL Notificacao — EXISTE (schema completo na Parte A.3, models:857).
+  Criação: app/utils/notificacoes.py:55 (criar_notificacao) — função central,
+    única forma de criar uma Notificacao no código inteiro (grep confirma
+    que `Notificacao(` só é instanciada ali). Atalho legado:
+    app/utils/notificacoes.py:109 (notificar_cliente), que só chama
+    criar_notificacao por baixo com tipo='confirmacao'.
+  Leitura: 4 endpoints espelhados para cliente e barbeiro (mesmo padrão):
+    GET /api/v1/cliente/notificacoes                 → cliente/notificacoes.py:20
+    GET /api/v1/cliente/notificacoes/contador         → cliente/notificacoes.py:70
+    PATCH /api/v1/cliente/notificacoes/<id>/lida      → cliente/notificacoes.py:86
+    POST /api/v1/cliente/notificacoes/marcar-todas-lidas → cliente/notificacoes.py:105
+    (equivalentes em app/routes/barbeiro/notificacoes.py:13/61/75/92)
+  ⚠️ Gestor e Super NÃO têm endpoint de notificações in-app — só cliente e
+  barbeiro consomem essa tabela hoje (confirmado: nenhum blueprint gestor_*
+  ou super_* referencia Notificacao).
+
+ARQUITETURA DE PLUG-IN JÁ EXISTENTE (o ponto exato onde um canal 'webhook'
+seria plugado): app/utils/notificacoes.py:46-50, dict `_DESPACHANTES`:
+  {
+    'in_app':   _despachar_in_app    (linha 19 — entrega real, marca enviada=True)
+    'email':    _despachar_email     (linha 24 — STUB, só loga, nunca envia de verdade)
+    'web_push': _despachar_web_push  (linha 34 — STUB, idem)
+  }
+  O comentário no topo do arquivo (linhas 1-10) já documenta explicitamente
+  esse padrão: "Adicionar e-mail ou web_push = registrar função em
+  _DESPACHANTES — sem tocar schedulers ou rotas." Um canal 'webhook' (ou
+  'n8n') seguiria exatamente o mesmo contrato: uma função
+  `_despachar_webhook(notif)` registrada no dict, chamada automaticamente
+  por criar_notificacao() sempre que canal='webhook' for passado. HOJE
+  `_despachar_webhook` NÃO EXISTE — é o ponto de extensão mais natural.
+
+PONTOS DE EVENTO REAIS NO CÓDIGO — onde um webhook DEVERIA disparar:
+
+  ✅ JÁ EXISTE disparo de notificação (in_app) hoje:
+    Agendamento CRIADO (confirmação)
+      → app/routes/pub/agendamento.py:387-396, dentro de _criar_agendamento_core,
+        SÓ SE feature 'notificacoes' estiver ativa. Chama notificar_cliente().
+    Agendamento TRANSFERIDO (mural ou direto pelo gestor)
+      → app/routes/barbeiro/agendamentos.py:373 (pegar_agendamento)
+      → app/routes/gestor/agendamento.py:773 (transferir_agendamento)
+      → app/routes/gestor/profissionais.py:248 (editar_barbeiro, ramo
+        acao=transferir_mural, ao desativar um barbeiro com compromissos)
+    Lembrete de agendamento (cliente e barbeiro) — via scheduler, não evento
+      → app/utils/scheduler.py:104 (lembrete_cliente), :129 (lembrete_barbeiro)
+    Plano EXPIRADO — via scheduler, não evento
+      → app/utils/scheduler.py:201 (_expirar_planos)
+
+  ❌ NÃO EXISTE disparo de notificação/webhook hoje (mas a FUNÇÃO onde o
+  evento acontece já existe e é onde plugar o dispatcher depois):
+    Agendamento CONFIRMADO/APROVADO via PIX
+      → app/routes/gestor/agendamento.py:160-188 (aprovar_agendamento) —
+        SEM chamada a criar_notificacao/webhook hoje.
+      → app/routes/barbeiro/agendamentos.py:210-236 (aprovar_comprovante) —
+        idem, sem notificação.
+    Agendamento CANCELADO
+      → app/routes/cliente/agendamento.py:135-181 (cancelar_agendamento,
+        cliente cancela o próprio) — sem notificação.
+      → app/routes/gestor/agendamento.py:193-211 (cancelar_agendamento_gestor)
+        — sem notificação.
+      → app/routes/barbeiro/agendamentos.py:188-205 (cancelar_agendamento,
+        barbeiro cancela) — sem notificação.
+    Plano ATIVADO (aprovado pelo gestor — different de "expirado" acima)
+      → app/routes/gestor/planos.py:306-373 (aprovar_solicitacao) — sem
+        notificação ao cliente de que o plano foi liberado.
+    Venda CONCLUÍDA
+      → app/utils/vendas.py:13-93 (criar_venda_core, chamado por
+        gestor/vendas.py:63 e barbeiro/vendas.py:49) — sem notificação/evento.
+
+SCHEDULER (APScheduler) — app/utils/scheduler.py, registrado em
+app/__init__.py:283-285 (só inicia se DISABLE_SCHEDULER não estiver setado):
+  Job 'lembretes_agendamentos'         — interval 1 min  → scheduler.py:231-240 (_processar_lembretes)
+  Job 'limpeza_tokens_revogados'       — interval 24h    → scheduler.py:241-250 (_processar_limpeza_tokens_revogados)
+  Job 'expiracao_planos'               — cron diário 03:00 (Brasília) → scheduler.py:251-261 (_processar_expiracao_planos)
+  Todos registrados dentro de iniciar_scheduler() (scheduler.py:214-264).
+  NÃO EXISTE nenhum job de "disparar webhooks pendentes" ou fila de retry —
+  se um canal 'webhook' for adicionado, hoje ele rodaria SÍNCRONO dentro do
+  próprio request HTTP (dentro de criar_notificacao(), que roda no
+  request/response cycle) — não há fila assíncrona nem retry automático
+  para entregas que falhem, ao contrário do padrão de scheduler já usado
+  para outras rotinas periódicas.
+
+--------------------------------------------------------------------------
+9. Config — como secrets/config são lidos hoje
+--------------------------------------------------------------------------
+NÃO EXISTE arquivo config.py (confirmado — busca por esse nome não encontrou
+nada no repo). Toda configuração é via os.environ.get(...), carregado de um
+arquivo .env local (NUNCA commitado — ver .gitignore) através de
+python-dotenv (`load_dotenv()` em app/__init__.py:6-8, chamado ANTES de
+qualquer outro import do projeto).
+
+VARIÁVEIS DE AMBIENTE JÁ USADAS HOJE (arquivo:linha de cada leitura):
+  DATABASE_URL              → app/__init__.py:79
+  SECRET_KEY                → app/__init__.py:88
+  JWT_SECRET_KEY            → app/__init__.py:85
+  FLASK_ENV                 → app/__init__.py:104, :111 (liga cookies Secure em produção)
+  CLOUDINARY_CLOUD_NAME     → app/__init__.py:131
+  CLOUDINARY_API_KEY        → app/__init__.py:132
+  CLOUDINARY_API_SECRET     → app/__init__.py:133
+  DISABLE_SCHEDULER         → app/__init__.py:283 (e usado em testes/scripts desta sessão)
+  RATELIMIT_DEFAULT         → app/extensions.py:17
+  RATELIMIT_STORAGE_URI     → app/extensions.py:18 (default 'memory://' — ver DT-006 na memória do projeto, per-worker em produção)
+  RL_LOGIN                  → app/routes/views/auth.py:77, :510
+  RL_CADASTRO               → app/routes/views/auth.py:570
+  RL_CUPOM_VALIDAR          → app/routes/cliente/cupons.py:12
+  RL_PLANO_SOLICITAR        → app/routes/pub/planos.py:74
+  RL_SLOTS                  → app/routes/pub/agendamento.py:501
+  RL_AGENDAR                → app/routes/pub/agendamento.py:571
+  RL_COMPROVANTE            → app/routes/pub/agendamento.py:677
+  WERKZEUG_RUN_MAIN         → app/utils/scheduler.py:226 (interno do Flask/Werkzeug, não é config de negócio)
+  ADMIN_EMAIL               → seeds_prod.py:48 (fora de app/, script de seed de produção)
+  ADMIN_SENHA               → seeds_prod.py:49 (idem)
+
+Isso mostra onde plugar variáveis novas do tipo N8N_WEBHOOK_URL,
+N8N_WEBHOOK_SECRET, etc: o padrão estabelecido é sempre
+`os.environ.get('NOME_DA_VAR', <default opcional>)`, lido no momento em que
+o valor é necessário (não há um objeto Config central — é lido disperso,
+ponto a ponto, seguindo o padrão RL_* já usado para rate limiting). Um
+"BarbeariaWebhookConfig" por-tenant (banco de dados, não env var) seria mais
+adequado se cada barbearia precisar de uma URL de n8n diferente — hoje NADA
+disso existe, seria 100% novo.
+
+
+════════════════════════════════════════════════════════════════════════════
+PARTE E — FRONTEND (para recriar as páginas depois) — PRIORIDADE 3
+════════════════════════════════════════════════════════════════════════════
+
+--------------------------------------------------------------------------
+10. Todos os templates .html, agrupados por área
+--------------------------------------------------------------------------
+
+SUPER ADMIN (app/templates/super/, 10 arquivos):
+  base.html               251 linhas  (layout — extendido pelos 9 abaixo)
+  dashboard.html          105 linhas
+  barbearias.html         613 linhas
+  gestores.html            94 linhas
+  features.html           168 linhas
+  auditoria.html           98 linhas
+  relatorios.html         167 linhas
+  segmentos.html           73 linhas
+  segmento_rotulos.html   164 linhas
+  customizacao.html       552 linhas
+
+GESTOR (app/templates/gestor/, 16 arquivos):
+  base.html               587 linhas  (layout — extendido pelos 15 abaixo)
+  dashboard.html          291 linhas
+  barbeiros.html          444 linhas
+  servicos.html           147 linhas
+  produtos.html           526 linhas
+  vendas.html             251 linhas
+  agenda.html             457 linhas
+  transferencias.html     100 linhas
+  clientes.html           715 linhas  (maior template do projeto)
+  cupons.html             195 linhas
+  relatorios.html         380 linhas
+  planos.html             387 linhas
+  vip.html                256 linhas
+  pix_approval.html       201 linhas
+  esqueci_senha.html      143 linhas
+  config_pix.html         128 linhas
+
+BARBEIRO (app/templates/barbeiro/, 12 arquivos):
+  base.html               469 linhas  (layout — extendido pelos 11 abaixo)
+  agenda.html             821 linhas  (maior de todo o projeto)
+  agendamentos.html       378 linhas
+  caixa.html              368 linhas  (tela do módulo de caixa — código morto no backend, ver Parte A.2)
+  clientes.html           241 linhas
+  configuracoes.html      139 linhas
+  dashboard.html          216 linhas
+  disponiveis.html         88 linhas  (mural de transferência)
+  horario.html            239 linhas
+  perfil.html             151 linhas
+  produtos.html           205 linhas
+  redefinicoes.html       116 linhas
+
+CLIENTE / PÚBLICO (app/templates/cliente/ + pub/ + staff/, 11 arquivos):
+  cliente/base.html       138 linhas  ⚠️ órfão — ver item 14 (inconsistências)
+  cliente/app.html         19 linhas  (shell da SPA React — ESTE é o realmente usado)
+  cliente/entrar.html     244 linhas
+  cliente/cadastro.html   178 linhas
+  cliente/dashboard.html  170 linhas  ⚠️ órfão
+  cliente/agendar.html    306 linhas  ⚠️ órfão
+  cliente/beneficios.html 135 linhas  ⚠️ órfão
+  cliente/historico.html   93 linhas  ⚠️ órfão
+  cliente/perfil.html     165 linhas  ⚠️ órfão
+  pub/booking.html        755 linhas  (página pública de agendamento sem login)
+  staff/login.html        305 linhas  (login de gestor/barbeiro/super)
+
+Total: 49 templates Jinja (soma bate com a Parte A.1).
+
+
+--------------------------------------------------------------------------
+11. Para cada template: rota Flask que renderiza + perfil que acessa
+--------------------------------------------------------------------------
+Todos os render_template(...) do projeto inteiro estão em UM único arquivo:
+app/routes/views/auth.py (confirmado por grep — nenhum outro arquivo .py
+chama render_template). Guard de acesso: `session_required(*perfis)` (linha
+28-46, sessão Flask, não JWT) ou `cliente_session_required` (linha 49-61)
+ou nenhum (páginas públicas).
+
+  staff/login.html          ← GET /entrar                    (views/auth.py:66-71)   — público (redireciona se já logado)
+  gestor/dashboard.html     ← GET /gestor/dashboard           (:224-227) — session_required('gestor','super_admin')
+  gestor/barbeiros.html     ← GET /gestor/barbeiros           (:230-233) — idem
+  gestor/servicos.html      ← GET /gestor/servicos            (:236-239) — idem
+  gestor/produtos.html      ← GET /gestor/produtos            (:242-245) — idem
+  gestor/vendas.html        ← GET /gestor/vendas              (:248-251) — idem
+  gestor/agenda.html        ← GET /gestor/agenda              (:254-257) — idem
+  gestor/transferencias.html← GET /gestor/transferencias      (:260-263) — idem
+  gestor/clientes.html      ← GET /gestor/clientes            (:266-269) — idem
+  gestor/cupons.html        ← GET /gestor/cupons              (:272-275) — idem
+  gestor/relatorios.html    ← GET /gestor/relatorios          (:278-281) — idem
+  gestor/planos.html        ← GET /gestor/planos              (:284-287) — idem
+  gestor/vip.html           ← GET /gestor/vip                 (:290-293) — idem
+  gestor/pix_approval.html  ← GET /gestor/pix-approval        (:296-299) — idem
+  gestor/esqueci_senha.html ← GET /gestor/esqueci-senha        (:302-305) — idem
+  gestor/config_pix.html    ← GET /gestor/configuracoes/pix   (:308-311) — idem
+  barbeiro/dashboard.html   ← GET /barbeiro/dashboard          (:338-341) — session_required('barbeiro','super_admin')
+  barbeiro/agendamentos.html← GET /barbeiro/agendamentos       (:344-347) — idem
+  barbeiro/horario.html     ← GET /barbeiro/horario            (:350-353) — idem
+  barbeiro/clientes.html    ← GET /barbeiro/clientes           (:356-359) — idem
+  barbeiro/disponiveis.html ← GET /barbeiro/disponiveis        (:362-365) — idem
+  barbeiro/agenda.html      ← GET /barbeiro/agenda             (:368-371) — idem
+  barbeiro/perfil.html      ← GET /barbeiro/perfil             (:374-377) — idem
+  barbeiro/produtos.html    ← GET /barbeiro/produtos           (:380-383) — idem
+  barbeiro/caixa.html       ← GET /barbeiro/caixa/<int:agendamento_id> (:386-389) — idem (tela viva; backend caixa.py morto)
+  barbeiro/configuracoes.html← GET /barbeiro/configuracoes     (:392-395) — idem
+  barbeiro/redefinicoes.html← GET /barbeiro/redefinicoes       (:398-401) — idem
+  super/dashboard.html      ← GET /super/dashboard             (:417-420) — session_required('super_admin')
+  super/barbearias.html     ← GET /super/barbearias            (:423-426) — idem
+  super/gestores.html       ← GET /super/gestores              (:429-432) — idem
+  super/relatorios.html     ← GET /super/relatorios            (:435-438) — idem
+  super/features.html       ← GET /super/features              (:441-444) — idem
+  super/auditoria.html      ← GET /super/auditoria             (:447-450) — idem
+  super/segmentos.html      ← GET /super/segmentos             (:453-456) — idem
+  super/segmento_rotulos.html← GET /super/segmentos/<int:seg_id>/rotulos (:459-462) — idem
+  super/customizacao.html   ← GET /super/customizacao          (:465-468) — idem
+  cliente/entrar.html       ← GET /b/<slug>/entrar             (:492-506) — público (barbearia deve existir+ativa)
+  cliente/cadastro.html     ← GET /b/<slug>/cadastro           (:552-566) — público
+  cliente/app.html          ← GET /cliente/dashboard, /cliente/planos,
+                                /cliente/agendar, /cliente/beneficios,
+                                /cliente/historico, /cliente/perfil
+                                (:654-687, todas via helper _cliente_spa())
+                                — cliente_session_required (todas as 6 rotas
+                                renderizam o MESMO shell; a SPA React decide
+                                internamente qual "página" mostrar via rota
+                                client-side, não Flask)
+  pub/booking.html          ← GET /b/<slug>, /b/<slug>/        (:692-713) — público
+
+ÓRFÃOS — templates que NENHUMA rota Flask renderiza (grep exaustivo,
+zero render_template() aponta pra eles):
+  cliente/base.html, cliente/dashboard.html, cliente/agendar.html,
+  cliente/beneficios.html, cliente/historico.html, cliente/perfil.html
+  (Ver item 14 para a explicação: são a versão Jinja pré-React destas
+  telas, hoje mortas — 5 templates + o base.html que os 5 estendem.)
+
+
+--------------------------------------------------------------------------
+12. Assets JS/CSS
+--------------------------------------------------------------------------
+  app/static/js/bos.js              2.547 bytes  — expõe window.Bos (IIFE)
+    Usado por: TODOS os templates server-rendered de staff/gestor/barbeiro
+    (extends base.html de cada área). Fetch centralizado: função interna
+    `_fetch`/`_json` (bos.js:14-55) — monta URL como `${BASE}${path}` com
+    BASE='/api/v1' fixo (bos.js:12). Métodos: Bos.get/post/patch/put/delete/
+    upload/logout. Trata 401 automaticamente tentando renovar via
+    POST /entrar/renovar antes de desistir e redirecionar pro login
+    (window.BOS_LOGIN_URL || '/entrar').
+
+  app/static/css/style.css           9.008 bytes  — CSS global compartilhado
+    pelos templates server-rendered (staff/gestor/barbeiro/super/pub).
+
+  app/static/cliente_portal/index.js       211.718 bytes — build Vite/React
+    (minificado, não é código-fonte legível — o fonte real está em frontend/src/).
+  app/static/cliente_portal/assets/index.css  9.917 bytes — CSS gerado pelo build.
+  app/static/cliente_portal/index.html            — shell HTML gerado pelo build,
+    injetado dentro de cliente/app.html via <div id="root"> (padrão Vite SPA).
+
+  FONTE do frontend React: frontend/src/
+    api.js (50 linhas) — expõe `export const api` com api.get/post/patch,
+      api.pub.get/post, api.planos.listar/solicitar, api.logout. Fetch
+      centralizado na função `_req` (api.js:3-29). URLs montadas como
+      `/api/v1/cliente${path}` (fixo) ou `/api/v1/pub/${SLUG}${path}`
+      (SLUG vem de window.BOS_SLUG, injetado no HTML pelo template Flask).
+      Trata 401 renovando via /entrar/renovar, igual ao Bos.
+    pages/ (6 arquivos .jsx): Agendar.jsx (331 linhas), Dashboard.jsx (200),
+      Planos.jsx (257), Historico.jsx (171), Beneficios.jsx (178),
+      Perfil.jsx (144) — estas são as páginas REAIS que o cliente usa hoje
+      (React), enquanto os templates Jinja de mesmo nome (item 10, órfãos)
+      são a versão anterior nunca removida.
+    vite.config.js: outDir='../app/static/cliente_portal' — o build
+      (`npm run build` dentro de frontend/) precisa ser rodado manualmente
+      e o resultado commitado; não há build automático no deploy (Procfile
+      só roda migrations + gunicorn, confirmado em sessões anteriores).
+
+
+--------------------------------------------------------------------------
+13. Mapa de rotas da API — TODAS as 217 rotas
+--------------------------------------------------------------------------
+Extraído ao vivo de app.url_map (create_app()), não de leitura manual —
+fonte de verdade real do que o servidor responde. Agrupado por blueprint,
+com o padrão de permissão predominante anotado uma vez por grupo (exceções
+já detalhadas na Parte B/aqui quando relevante).
+
+── auth (prefix /api/v1/auth) — SEM decorator de perfil (checa g.user_id manualmente) ──
+POST /api/v1/auth/login              auth.login             (público)
+GET  /api/v1/auth/me                 auth.me                (requer g.user_id, checado manualmente)
+POST /api/v1/auth/refresh            auth.refresh            (@jwt_required(refresh=True))
+POST /api/v1/auth/trocar-senha       auth.trocar_senha       (requer g.user_id, checado manualmente)
+
+── gestor_agenda (prefix /api/v1/gestor) — @gestor_required em todas ──
+GET    /api/v1/gestor/agendamentos
+GET    /api/v1/gestor/agendamentos/<int:ag_id>
+PUT    /api/v1/gestor/agendamentos/<int:ag_id>/aprovar
+PUT    /api/v1/gestor/agendamentos/<int:ag_id>/cancelar
+POST   /api/v1/gestor/agendamentos/<int:ag_id>/transferir
+GET    /api/v1/gestor/agendamentos-sem-barbeiro
+GET    /api/v1/gestor/agenda/grade
+POST   /api/v1/gestor/agenda/agendamento-manual
+GET    /api/v1/gestor/agenda/bloqueios/mes
+POST   /api/v1/gestor/agenda/bloqueios
+DELETE /api/v1/gestor/agenda/bloqueios/<int:bloqueio_id>
+POST   /api/v1/gestor/barbeiros/<int:barbeiro_id>/bloqueios
+GET    /api/v1/gestor/agenda/solicitacoes-liberacao
+PUT    /api/v1/gestor/agenda/solicitacoes-liberacao/<int:solic_id>
+
+── gestor_profissionais (prefix /api/v1/gestor) — @gestor_required em todas ──
+GET/POST /api/v1/gestor/barbeiros
+GET/PATCH /api/v1/gestor/barbeiros/<int:barbeiro_id>
+GET/PUT  /api/v1/gestor/barbeiros/<int:barbeiro_id>/agenda
+POST     /api/v1/gestor/barbeiros/<int:barbeiro_id>/agenda/pausas
+DELETE   /api/v1/gestor/barbeiros/<int:barbeiro_id>/agenda/pausas/<int:pausa_id>
+POST     /api/v1/gestor/barbeiros/<int:barbeiro_id>/servicos
+DELETE   /api/v1/gestor/barbeiros/<int:barbeiro_id>/servicos/<int:servico_id>
+
+── gestor_catalogo (prefix /api/v1/gestor) — @gestor_required; feature_required('produtos_venda') SÓ em criar_produto/ajustar_estoque/criar/editar/desativar_categoria — ver Parte B ──
+GET/POST /api/v1/gestor/servicos
+GET/PATCH/DELETE /api/v1/gestor/servicos/<int:servico_id>
+GET/POST /api/v1/gestor/produtos/categorias
+PATCH/DELETE /api/v1/gestor/produtos/categorias/<int:categoria_id>
+GET/POST /api/v1/gestor/produtos
+GET/PATCH/DELETE /api/v1/gestor/produtos/<int:produto_id>
+POST /api/v1/gestor/produtos/<int:produto_id>/ajustar-estoque
+POST /api/v1/gestor/produtos/<int:produto_id>/foto
+
+── gestor_estoque (prefix /api/v1/gestor/estoque) — @gestor_required; movimentar_estoque também @feature_required('produtos_venda') ──
+POST /api/v1/gestor/estoque/movimentar
+GET  /api/v1/gestor/estoque/movimentacoes
+
+── gestor_vendas (prefix /api/v1/gestor/vendas) — @gestor_required + @feature_required('produtos_venda') em todas ──
+POST /api/v1/gestor/vendas
+GET  /api/v1/gestor/vendas
+POST /api/v1/gestor/vendas/<int:venda_id>/cancelar
+
+── gestor_planos (prefix /api/v1/gestor) — @gestor_required; feature_required('planos') só em criar/editar/desativar_plano — ver Parte B ──
+GET/POST /api/v1/gestor/planos
+GET/PATCH/DELETE /api/v1/gestor/planos/<int:plano_id>
+POST/DELETE /api/v1/gestor/planos/<int:plano_id>/servicos[/<int:servico_id>]
+GET /api/v1/gestor/planos/<int:plano_id>/assinaturas
+GET /api/v1/gestor/planos/solicitacoes
+PUT /api/v1/gestor/planos/solicitacoes/<int:sol_id>/aprovar
+PUT /api/v1/gestor/planos/solicitacoes/<int:sol_id>/rejeitar
+
+── gestor_cupons (prefix /api/v1/gestor) — @gestor_required + @feature_required('cupons') em TODAS (inclusive listagem) ──
+GET/POST /api/v1/gestor/cupons
+PATCH/DELETE /api/v1/gestor/cupons/<int:cupom_id>
+
+── vip (prefix /api/v1/gestor/vip) — @gestor_required; feature_required('vip_brindes') em todas EXCETO listar_niveis ──
+GET/POST /api/v1/gestor/vip/niveis
+PUT/DELETE /api/v1/gestor/vip/niveis/<int:nivel_id>
+PUT /api/v1/gestor/vip/niveis/<int:nivel_id>/modo-brinde
+
+── gestor_dashboard / gestor_relatorios / gestor_auditoria / gestor_clientes / gestor_barbearia / gestor_features (prefix /api/v1/gestor) — @gestor_required em todas ──
+GET /api/v1/gestor/dashboard
+GET /api/v1/gestor/relatorios/agendamentos[/excel|/pdf]
+GET /api/v1/gestor/relatorios/colunas
+GET /api/v1/gestor/auditoria
+GET/PATCH /api/v1/gestor/clientes[/<int:cliente_id>]
+GET/PATCH /api/v1/gestor/barbearia/pix ; POST /api/v1/gestor/barbearia/pix/testar
+GET /api/v1/gestor/barbearia/tema
+GET /api/v1/gestor/features
+GET /api/v1/gestor/historico-cliente/resumo (+ @feature_required('historico_cliente'))
+
+── barbeiro_* (prefix /api/v1/barbeiro[/vendas]) — @barbeiro_required em todas ──
+GET /api/v1/barbeiro/dashboard
+GET /api/v1/barbeiro/agendamentos ; GET .../agendamentos-disponiveis
+PATCH .../agendamentos/<id>/iniciar|concluir|cancelar|aprovar-comprovante
+POST  .../agendamentos/<id>/notas|pegar
+GET /api/v1/barbeiro/clientes[/<id>/historico|/notas] ; POST .../notas
+GET/PATCH /api/v1/barbeiro/horario ; POST/PATCH/DELETE .../pausas[/<id>]
+GET /api/v1/barbeiro/notificacoes[/contador] ; PATCH .../<id>/lida ; POST .../marcar-todas-lidas
+GET /api/v1/barbeiro/features ; GET /api/v1/barbeiro/produtos
+POST /api/v1/barbeiro/vendas  (+ @feature_required('produtos_venda'))
+
+── cliente_* (prefix /api/v1/cliente) — @cliente_required em todas ──
+GET/POST /api/v1/cliente/agendamentos ; POST .../<id>/cancelar
+GET /api/v1/cliente/dashboard
+GET/PATCH /api/v1/cliente/perfil ; GET /api/v1/cliente/vip
+GET /api/v1/cliente/planos[/<id>] ; POST .../<id>/cancelar ; GET .../solicitacoes
+GET /api/v1/cliente/notificacoes[/contador] ; PATCH .../<id>/lida ; POST .../marcar-todas-lidas
+POST /api/v1/cliente/cupons/validar
+
+── pub (prefix /api/v1/pub) — SEM decorator de auth (público por design) ──
+GET  /api/v1/pub/<slug>/servicos
+GET  /api/v1/pub/<slug>/barbeiros[/<int:barbeiro_id>/servicos|/slots]
+POST /api/v1/pub/<slug>/agendar
+POST /api/v1/pub/<slug>/agendamentos/<int:agendamento_id>/comprovante
+
+── pub_planos (rotas duplicadas /api/v1/pub/... e /pub/... — a segunda marcada DEPRECATED no próprio código) — público ──
+GET  /api/v1/pub/<slug>/planos           (+ alias GET /pub/<slug>/planos)
+POST /api/v1/pub/<slug>/planos/<id>/solicitar (+ alias POST /pub/<slug>/planos/<id>/solicitar)
+
+── super (prefix /api/v1/super) — @super_required em todas ──
+GET/POST /api/v1/super/barbearias ; GET/PATCH /api/v1/super/barbearias/<id>
+POST .../ativar|desativar
+GET/PUT .../features[/<nome>]  ; GET /api/v1/super/features (catálogo global)
+GET/PUT  .../customizacao ; POST/DELETE .../customizacao/imagens
+GET /api/v1/super/gestores ; GET /api/v1/super/relatorios ; GET /api/v1/super/auditoria
+GET /api/v1/super/dashboard
+POST /api/v1/super/scheduler/executar-lembretes (dispara o job manualmente, fora do agendamento)
+GET/PUT /api/v1/super/segmentos[/<id>/rotulos] ; POST /api/v1/super/segmentos/seed
+PATCH /api/v1/super/barbearias/<id>/segmento
+
+── views (sem prefix — páginas HTML server-rendered) ──
+Ver item 11 (mapa completo template↔rota↔perfil). Mais: POST /entrar,
+POST /entrar/renovar, POST /sair (auth staff); GET/POST /b/<slug>/entrar,
+GET/POST /b/<slug>/cadastro (auth cliente); GET /b/<slug>[/] (booking público).
+
+── outras ──
+GET /health                          health   (sem auth, @limiter.exempt)
+GET /static/<path:filename>          static   (Flask nativo)
+
+
+--------------------------------------------------------------------------
+14. Inconsistências reais encontradas
+--------------------------------------------------------------------------
+[1] 6 templates órfãos em app/templates/cliente/ (base.html, dashboard.html,
+    agendar.html, beneficios.html, historico.html, perfil.html) — nenhum é
+    alcançável por nenhuma rota Flask (só cliente/app.html, entrar.html e
+    cadastro.html são renderizados). São a versão Jinja pré-React destas
+    telas; a versão viva é a SPA React em frontend/src/pages/ (Agendar.jsx,
+    Dashboard.jsx, Beneficios.jsx, Historico.jsx, Perfil.jsx), compilada
+    para app/static/cliente_portal/ e servida dentro do shell cliente/app.html.
+    Nunca foram removidos (~1.100 linhas de HTML morto). Ver Parte F.
+
+[2] Blueprint 'caixa' (app/routes/caixa.py) nunca registrado em create_app()
+    — código morto confirmado (Parte A.2). A TELA barbeiro/caixa.html
+    (368 linhas) continua sendo renderizada normalmente por
+    GET /barbeiro/caixa/<int:agendamento_id> (views/auth.py:386-389) — ou
+    seja, a URL abre, mas qualquer chamada de API que a tela faça para
+    endpoints de caixa vai dar 404 (blueprint não montado). Tela viva
+    apontando para backend morto.
+
+[3] Feature 'pix_integrado' só é respeitada no FRONTEND (esconde 1 link de
+    nav em gestor/base.html:540) — o BACKEND não valida essa feature em
+    nenhum endpoint de aprovação PIX. Ver Parte B, item 5, para os outros
+    3 achados semelhantes (relatorios_avancados, agendamento_login,
+    fila_espera — features 100% decorativas, zero enforcement).
+
+[4] Sidebar do gestor (gestor/base.html) só esconde/mostra 3 dos 11 links
+    de feature (pix_integrado, cupons, produtos_venda) — os links de
+    Planos e VIP sempre aparecem mesmo com a feature desligada; o gestor
+    consegue LISTAR (não gateado) mas não CRIAR/EDITAR (403) — comportamento
+    inconsistente entre "o que a tela deixa entrar" e "o que a API permite".
+
+[5] gestor/cupons.py gateia até a LISTAGEM (GET) por feature_required('cupons')
+    — diferente do padrão usado em produtos/planos/vip, onde só escrita é
+    gateada. Não é um bug (é defensável — cupom desligado, nem mostra os
+    que existem), mas é uma inconsistência de padrão entre módulos que vale
+    a pena decidir conscientemente ao recriar as telas.
+
+[6] FilaEspera (tabela + feature 'fila_espera' no catálogo) existe só como
+    intenção — zero rotas, zero lógica. Se a tela de gestão de features
+    mostra essa opção como "liga/desliga" pro super admin, ligar não muda
+    nada no sistema (não há nada pra ligar).
+
+[7] app/templates/super/features.html duplica manualmente (linhas 78-93) a
+    lista/descrição/agrupamento das features que já existe em
+    app/seeds.py:FEATURES — sem nenhuma sincronização automática. Uma
+    feature nova authored em seeds.py não aparece organizada nessa tela até
+    alguém editar o HTML também.
+
+[8] Rotas "/pub/..." (sem /api/v1) para planos (pub_planos_bp) coexistem com
+    "/api/v1/pub/..." como alias — o próprio código marca a versão antiga
+    como "DEPRECATED: remover em v2, mantido para compatibilidade externa"
+    (app/routes/pub/planos.py:51 e :73). Não é bug, mas é uma rota dupla a
+    ter em mente ao mapear o contrato de API pro n8n (usar sempre a
+    variante /api/v1/pub/...).
+
+[9] Nenhuma inconsistência de "JS chama endpoint que não existe" foi
+    encontrada nesta varredura (os bugs históricos desse tipo — vip.html
+    chamando api.vip.* inexistente, barbeiro/produtos.html chamando
+    api.produtos.listar() inexistente — já foram corrigidos em blocos
+    anteriores da refatoração v1.1, conforme a memória do projeto). Não
+    foi feita uma varredura de todo texto JS embutido em cada um dos 49
+    templates linha a linha nesta sessão (seria um item à parte, MUITO
+    grande) — se quiser essa auditoria específica e exaustiva, é um pedido
+    separado.
+
+
+════════════════════════════════════════════════════════════════════════════
+PARTE F — SÍNTESE FINAL
+════════════════════════════════════════════════════════════════════════════
+
+--------------------------------------------------------------------------
+15. O QUE EXISTE vs O QUE FALTA — as 3 frentes
+--------------------------------------------------------------------------
+
+FRENTE 1 — Features ativa/inativa por SEGMENTO/BARBEARIA
+  EXISTE:
+    - FeatureMetadata/FeatureBarbearia: toggle por BARBEARIA individual,
+      funcional, com endpoint super (PUT .../features/<nome>) e tela HTML.
+    - 7 de 11 features realmente aplicadas no backend (cupons, planos,
+      vip_brindes, produtos_venda, comissao, notificacoes, historico_cliente
+      — este último só num endpoint de exemplo).
+    - Mecanismo de "feature nova ativa por padrão pra quem já existe"
+      (ativo_por_padrao) — reaproveitável como molde para features por
+      segmento.
+    - Segmento/SegmentoRotulo funcionando para VOCABULÁRIO (rótulos), 4
+      segmentos seedados.
+  FALTA:
+    - Qualquer relação entre Segmento e Feature (tabela nova necessária).
+    - Enforcement real de 4 features (relatorios_avancados, agendamento_login,
+      fila_espera, pix_integrado) — hoje são decoração ou parcialmente
+      wired só no frontend.
+    - Endpoint de features para o CLIENTE (não existe).
+    - Sincronizar a sidebar do gestor para esconder TODOS os links de
+      feature desligada (hoje só 3 de 11).
+    - Decisão de produto: mudar segmento de uma barbearia já existente
+      deveria reajustar features? (hoje não faz nada com FeatureBarbearia)
+
+FRENTE 2 — n8n/webhooks configurável via HTML
+  EXISTE:
+    - Arquitetura de notificação multi-canal já pronta para extensão
+      (_DESPACHANTES em app/utils/notificacoes.py) — webhook seria só mais
+      uma entrada no dict.
+    - Pontos de evento identificados e documentados (Parte D.8) para os 5
+      eventos de negócio pedidos (criado, aprovado, cancelado, plano
+      ativado, venda concluída) — 4 deles ainda sem NENHUM disparo de
+      notificação hoje (só "criado" e "transferido" disparam).
+    - Padrão de configuração via env var (RL_*, CLOUDINARY_*) que poderia
+      inspirar variáveis N8N_* globais — mas isso não serve se cada
+      barbearia precisar de uma URL própria.
+  FALTA (tudo — esta frente não tem NADA construído hoje):
+    - Model de configuração de webhook por barbearia (URL, secret/HMAC,
+      quais eventos disparar, ativo/inativo).
+    - Tela HTML (super ou gestor?) para o dono configurar isso —
+      "configurável via HTML" como pedido.
+    - Função `_despachar_webhook(notif)` real (requests.post com timeout,
+      assinatura HMAC do payload, log de sucesso/falha).
+    - Chamada de criar_notificacao(canal='webhook', ...) nos 4 pontos de
+      evento que hoje não notificam ninguém (aprovação PIX, cancelamento,
+      plano ativado, venda concluída) — E decidir se esses eventos também
+      devem gerar Notificacao in_app, ou só webhook.
+    - Fila/retry para entregas que falharem (hoje TUDO é síncrono no
+      request — um webhook lento ou fora do ar atrasaria a resposta HTTP
+      ao usuário final se implementado ingenuamente dentro do mesmo request).
+    - Endpoint(s) API para o super/gestor gerenciar a config de webhook
+      (CRUD), consumidos pela tela HTML nova.
+
+FRENTE 3 — Modelagem e recriação de TODAS as páginas frontend
+  EXISTE:
+    - Inventário completo dos 49 templates Jinja + 6 páginas React, com
+      linha de contagem, rota que renderiza, e perfil de acesso (Parte E).
+    - Mapa completo das 217 rotas de API que o frontend consome (Parte E.13)
+      — o contrato real, extraído ao vivo do servidor, não de leitura manual.
+    - 2 clientes HTTP JS diferentes e documentados (Bos para server-
+      rendered, api para a SPA React) com seus padrões de URL.
+  FALTA:
+    - Decisão de arquitetura: recriar tudo como SPA React (como já foi
+      feito para o cliente) ou manter o padrão server-rendered + Bos.js
+      para gestor/barbeiro/super? Hoje o projeto tem DOIS padrões
+      coexistindo — decidir antes de recriar evita um 3º padrão.
+    - Remoção (ou reaproveitamento consciente) dos 6 templates órfãos de
+      cliente/ antes de "recriar" — hoje eles confundem qualquer inventário
+      automático de "quais telas existem".
+    - Se a recriação for por SPA: replicar o mecanismo de proteção por
+      sessão/JWT que session_required()/cliente_session_required() dão
+      hoje nas páginas server-rendered.
+
+
+--------------------------------------------------------------------------
+16. Perguntas em aberto — só o dono pode decidir
+--------------------------------------------------------------------------
+  1. Segmento define TODAS as features padrão de uma barbearia nova, ou só
+     SUGERE (super admin ainda pode ligar/desligar manualmente depois)?
+  2. Ao trocar o segmento de uma barbearia JÁ EXISTENTE (endpoint já existe,
+     PATCH .../segmento), as features devem ser reajustadas automaticamente,
+     ou isso é sempre manual?
+  3. As 4 features hoje decorativas (relatorios_avancados, agendamento_login,
+     fila_espera, pix_integrado) devem ganhar enforcement real, ou ser
+     removidas do catálogo se não fazem mais parte do plano de produto?
+  4. Fila de espera (FilaEspera) — vale a pena construir a lógica de negócio
+     agora, já que a tabela e a feature já existem? Ou descartar a tabela?
+  5. Webhook por evento: TODOS os 5 eventos pedidos disparam pro MESMO
+     webhook/URL, ou o n8n precisa de URLs/rotas diferentes por tipo de
+     evento (um workflow n8n por evento)?
+  6. Webhook precisa de assinatura HMAC do payload (para o n8n verificar
+     autenticidade) ou confiar só em "URL secreta" é aceitável no primeiro
+     momento?
+  7. Falha de entrega de webhook: só logar e seguir (como hoje o e-mail/
+     web_push fazem, silenciosamente), ou precisa de fila de retry com
+     tentativas?
+  8. Módulo de caixa (app/routes/caixa.py, código morto + tela viva
+     barbeiro/caixa.html) — reconstruir como PDV de verdade no v2, ou
+     remover a tela e o model Atendimento/AtendimentoItem/Pagamento
+     associados? (Pendência já registrada em docs/Roadmap.md antes desta
+     sessão — não é uma pergunta nova, mas segue sem resposta.)
+  9. Templates órfãos de cliente/ (6 arquivos, ~1.100 linhas) — apagar
+     agora, ou manter como referência histórica até a Frente 3 (recriação
+     de páginas) decidir a arquitetura final?
+ 10. Frente 3: recriar TUDO como SPA (React ou outro framework), ou manter
+     o padrão híbrido atual (server-rendered para staff, SPA só para
+     cliente)? Essa decisão muda inteiramente o escopo de "recriação".
+ 11. gestor/relatorios ignora completamente a feature 'relatorios_avancados'
+     — isso significa que TODOS os gestores sempre tiveram acesso completo a
+     relatórios (a feature nunca funcionou), ou o plano original era outro
+     conjunto de relatórios "básicos" que nunca foi separado dos
+     "avançados"? Only o dono sabe a intenção original.

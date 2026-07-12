@@ -352,6 +352,10 @@ class Agendamento(TenantMixin, db.Model):
         ),
         db.CheckConstraint('valor_total >= 0', name='ck_agendamentos_valor_total_positivo'),
         db.CheckConstraint('valor_desconto >= 0', name='ck_agendamentos_valor_desconto_positivo'),
+        db.CheckConstraint(
+            "status_pagamento IN ('pendente', 'pago')",
+            name='ck_agendamentos_status_pagamento_valido',
+        ),
     )
 
     id               = db.Column(db.Integer, primary_key=True)
@@ -364,6 +368,9 @@ class Agendamento(TenantMixin, db.Model):
     valor_total      = db.Column(db.Numeric(10, 2), nullable=False, default=0)
     observacao       = db.Column(db.String(300))
     metodo_pagamento = db.Column(db.String(20), nullable=False, default='local')  # pix, local
+    # 'pendente' = ainda vai pagar (ex: metodo local, cobrado no atendimento);
+    # 'pago' = já recebido (ex: PIX aprovado antecipadamente). Ver app.constants.StatusPagamento.
+    status_pagamento = db.Column(db.String(20), nullable=False, default='pendente')
     criado_em        = db.Column(db.DateTime, default=_utcnow)
     # ── Cupons de desconto ────────────────────────────────────────────────────
     cupom_id         = db.Column(db.Integer, db.ForeignKey('cupons.id'), nullable=True, index=True)
@@ -1000,3 +1007,36 @@ class ItemCaixa(TenantMixin, db.Model):
     def total(self):
         """Valor final (com desconto)."""
         return round(self.subtotal - self.desconto_valor, 2)
+
+
+# ── Webhook n8n (Frente 2) ───────────────────────────────────────────────────
+# 1 URL única por barbearia (gestor configura, mesmo padrão de config_pix.html).
+# Token de autenticidade é a própria URL do n8n (opaca por padrão) — sem HMAC
+# nesta fase (decisão registrada). Sem fila de retry — falha só é logada.
+
+class BarbeariaWebhookConfig(db.Model):
+    """Configuração de webhook n8n — uma linha por barbearia."""
+    __tablename__ = 'barbearia_webhook_config'
+
+    id             = db.Column(db.Integer, primary_key=True)
+    barbearia_id   = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, unique=True)
+    webhook_url    = db.Column(db.String(500))
+    ativo          = db.Column(db.Boolean, nullable=False, default=False)
+    eventos_ativos = db.Column(db.JSON, nullable=False, default=list)
+    # ["agendamento_criado", "plano_ativado", ...] — subconjunto de TipoEventoWebhook.TODOS
+    criado_em      = db.Column(db.DateTime, default=_utcnow)
+    atualizado_em  = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class WebhookLog(db.Model):
+    """Auditoria de disparos — toda tentativa gera uma linha, sucesso ou falha."""
+    __tablename__ = 'webhook_log'
+
+    id            = db.Column(db.Integer, primary_key=True)
+    barbearia_id  = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, index=True)
+    tipo_evento   = db.Column(db.String(50), nullable=False)
+    payload       = db.Column(db.JSON, nullable=False)
+    http_status   = db.Column(db.Integer)
+    sucesso       = db.Column(db.Boolean, nullable=False, default=False)
+    erro_mensagem = db.Column(db.Text)
+    criado_em     = db.Column(db.DateTime, default=_utcnow, index=True)

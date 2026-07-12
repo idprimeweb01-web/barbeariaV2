@@ -283,6 +283,9 @@ def create_app(config=None):
     from .routes.barbeiro.caixa import barbeiro_caixa_bp
     app.register_blueprint(barbeiro_caixa_bp)
 
+    from .routes.gestor.webhook import gestor_webhook_bp
+    app.register_blueprint(gestor_webhook_bp)
+
     # ── Scheduler de lembretes ────────────────────────────────────────────────
     # Iniciado após todos os blueprints para garantir que os modelos estejam prontos.
     # Em testes unitários, passar DISABLE_SCHEDULER=1 no ambiente para não iniciar.

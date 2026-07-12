@@ -383,12 +383,6 @@ def barbeiro_produtos():
     return render_template('barbeiro/produtos.html', **_barbeiro_ctx())
 
 
-@views_bp.get('/barbeiro/caixa/<int:agendamento_id>')
-@session_required('barbeiro', 'super_admin')
-def barbeiro_caixa(agendamento_id):
-    return render_template('barbeiro/caixa.html', agendamento_id=agendamento_id, **_barbeiro_ctx())
-
-
 @views_bp.get('/barbeiro/configuracoes')
 @session_required('barbeiro', 'super_admin')
 def barbeiro_configuracoes():
@@ -699,6 +693,7 @@ def cliente_perfil():
 @views_bp.get('/b/<slug>/')
 def pub_booking(slug):
     from app.models import Barbearia, BarbeariaCustomizacao, ConfiguracaoAgendamento
+    from app.utils.features import feature_ativa
     b = Barbearia.query.filter_by(slug=slug, ativo=True).first()
     if not b:
         abort(404)
@@ -716,4 +711,5 @@ def pub_booking(slug):
         logo_url=custom.logo_url if custom else None,
         imagem_capa_url=custom.imagem_capa_url if custom else None,
         imagem_fundo_url=custom.imagem_boas_vindas_url if custom else None,
+        pix_ativo=feature_ativa(b.id, 'pix_integrado'),
     )
