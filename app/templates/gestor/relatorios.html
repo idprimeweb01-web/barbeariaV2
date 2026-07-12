@@ -179,6 +179,12 @@
     </div>
   </div>
 
+  <!-- Dívidas — não depende do filtro de período, é a situação atual -->
+  <div class="rel-table-wrap" style="margin-bottom:16px">
+    <div class="rel-table-title">💳 Clientes com Pagamento Pendente</div>
+    <table class="rel-table" id="tDividas"></table>
+  </div>
+
 </div>
 {% endblock %}
 
@@ -200,6 +206,7 @@
       });
     } catch {}
     carregar();
+    carregarDividas();
   })();
 
   function setTipo(t) {
@@ -366,6 +373,23 @@
 
     // Produtos — não disponível neste endpoint
     document.getElementById('tProdutos').innerHTML = `<tr><td colspan="2" class="rel-empty">Dados não disponíveis</td></tr>`;
+  }
+
+  // ── Dívidas (situação atual, independe do período selecionado) ─────
+  async function carregarDividas() {
+    const fmtR = v => 'R$ ' + Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+    try {
+      const dividas = await Bos.get('/gestor/relatorios/dividas');
+      document.getElementById('tDividas').innerHTML = dividas.length
+        ? dividas.map(d => `<tr>
+            <td><div style="font-weight:600">${esc(d.nome)}</div>
+                <div style="font-size:11px;color:#666">${d.qtd_agendamentos} atendimento${d.qtd_agendamentos !== 1 ? 's' : ''} pendente${d.qtd_agendamentos !== 1 ? 's' : ''}</div></td>
+            <td>${fmtR(d.valor_devido)}</td>
+          </tr>`).join('')
+        : `<tr><td colspan="2" class="rel-empty">Nenhum cliente com pagamento pendente 🎉</td></tr>`;
+    } catch (e) {
+      document.getElementById('tDividas').innerHTML = `<tr><td colspan="2" class="rel-empty">Erro ao carregar: ${esc(e.message)}</td></tr>`;
+    }
   }
 
   function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
