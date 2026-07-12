@@ -448,7 +448,10 @@
             </div>
           </div>
         </td>
-        <td style="font-size:13px;color:#888">${esc(c.telefone)}</td>
+        <td style="font-size:13px;color:#888">
+          ${esc(c.telefone)}
+          ${c.telefone ? `<a href="${Bos.wa(c.telefone, 'Olá ' + c.nome + '!')}" target="_blank" rel="noopener noreferrer" title="Chamar no WhatsApp" style="margin-left:6px;color:#25d366;text-decoration:none">📲</a>` : ''}
+        </td>
         <td style="font-size:12px;color:#666;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
           ${c.email ? esc(c.email) : '<span style="color:#333">—</span>'}
         </td>
@@ -576,7 +579,7 @@
         <div class="mp-section">Contato</div>
         <div class="mp-info-row">
           <span style="color:#555">Telefone</span>
-          <span>${esc(p.telefone)}</span>
+          <span>${esc(p.telefone)} ${p.telefone ? `<a href="${Bos.wa(p.telefone, 'Olá ' + p.nome + '!')}" target="_blank" rel="noopener noreferrer" title="Chamar no WhatsApp" style="margin-left:6px;color:#25d366;text-decoration:none">📲</a>` : ''}</span>
         </div>
         ${p.email ? `<div class="mp-info-row"><span style="color:#555">E-mail</span><span>${esc(p.email)}</span></div>` : ''}
         ${d.servico_mais_feito ? `

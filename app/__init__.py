@@ -286,6 +286,12 @@ def create_app(config=None):
     from .routes.gestor.webhook import gestor_webhook_bp
     app.register_blueprint(gestor_webhook_bp)
 
+    from .routes.gestor.solicitacoes_senha import gestor_solicitacoes_senha_bp
+    app.register_blueprint(gestor_solicitacoes_senha_bp)
+
+    from .routes.barbeiro.solicitacoes_senha import barbeiro_solicitacoes_senha_bp
+    app.register_blueprint(barbeiro_solicitacoes_senha_bp)
+
     # ── Scheduler de lembretes ────────────────────────────────────────────────
     # Iniciado após todos os blueprints para garantir que os modelos estejam prontos.
     # Em testes unitários, passar DISABLE_SCHEDULER=1 no ambiente para não iniciar.

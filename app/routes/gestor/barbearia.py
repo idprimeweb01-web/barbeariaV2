@@ -3,7 +3,7 @@ from flask import Blueprint, g, request, jsonify
 from app.extensions import db
 from app.models import Barbearia, BarbeariaCustomizacao
 from app.exceptions import APIError
-from app.decorators.auth import gestor_required
+from app.decorators.auth import gestor_required, _require
 from app.utils.db import commit_ou_falhar
 
 gestor_barbearia_bp = Blueprint('gestor_barbearia', __name__, url_prefix='/api/v1/gestor')
@@ -99,9 +99,11 @@ def testar_pix():
 
 
 # ── GET /api/v1/gestor/barbearia/tema ────────────────────────────────────────
+# Barbeiro também lê (não só gestor) — as telas de barbeiro/base.html
+# aplicam essas cores em runtime, igual ao gestor.
 
 @gestor_barbearia_bp.get('/barbearia/tema')
-@gestor_required
+@_require(['gestor', 'barbeiro'])
 def get_tema():
     b    = _get_barbearia()
     cust = BarbeariaCustomizacao.query.filter_by(barbearia_id=g.barbearia_id).first()

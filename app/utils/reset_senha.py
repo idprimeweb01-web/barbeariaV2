@@ -85,8 +85,9 @@ def _gerar_token_unico() -> str:
 
 
 def _obter_hierarquia(usuario: Usuario) -> list:
-    """Quem recebe o código pra encaminhar: cliente → gestor da barbearia →
-    super_admin; gestor/barbeiro → super_admin direto."""
+    """Quem recebe o código pra encaminhar: cliente → gestor + barbeiros da
+    barbearia (qualquer um pode repassar por WhatsApp); gestor/barbeiro →
+    super_admin direto. super_admin sempre entra como fallback."""
     hierarquia = []
 
     if usuario.perfil == 'cliente' and usuario.barbearia_id:
@@ -95,6 +96,10 @@ def _obter_hierarquia(usuario: Usuario) -> list:
         ).first()
         if gestor:
             hierarquia.append(gestor)
+        barbeiros = Usuario.query.filter_by(
+            barbearia_id=usuario.barbearia_id, perfil='barbeiro', ativo=True
+        ).all()
+        hierarquia.extend(barbeiros)
 
     super_admin = Usuario.query.filter_by(perfil='super_admin', ativo=True).first()
     if super_admin:

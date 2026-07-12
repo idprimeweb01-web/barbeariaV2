@@ -317,6 +317,12 @@ def gestor_config_webhook():
     return render_template('gestor/webhook.html', **_gestor_ctx())
 
 
+@views_bp.get('/gestor/solicitacoes-senha')
+@session_required('gestor', 'super_admin')
+def gestor_solicitacoes_senha():
+    return render_template('gestor/solicitacoes_senha.html', **_gestor_ctx())
+
+
 def _barbeiro_ctx():
     from app.models import BarbeariaCustomizacao
     uid    = session.get('user_id')
@@ -387,6 +393,18 @@ def barbeiro_perfil():
 @session_required('barbeiro', 'super_admin')
 def barbeiro_produtos():
     return render_template('barbeiro/produtos.html', **_barbeiro_ctx())
+
+
+@views_bp.get('/barbeiro/caixa')
+@session_required('barbeiro', 'super_admin')
+def barbeiro_caixa():
+    return render_template('barbeiro/caixa.html', **_barbeiro_ctx())
+
+
+@views_bp.get('/barbeiro/solicitacoes-senha')
+@session_required('barbeiro', 'super_admin')
+def barbeiro_solicitacoes_senha():
+    return render_template('barbeiro/solicitacoes_senha.html', **_barbeiro_ctx())
 
 
 @views_bp.get('/barbeiro/configuracoes')
@@ -487,11 +505,12 @@ def _cliente_ctx():
     b      = db.session.get(Barbearia, bid) if bid else None
     custom = BarbeariaCustomizacao.query.filter_by(barbearia_id=bid).first() if bid else None
     return {
-        'c_nome':   session.get('nome', 'Cliente'),
-        'c_email':  u.email if u else '',
-        'bk_slug':  b.slug if b else '',
-        'bk_nome':  (b.nome_exibicao or b.nome) if b else 'BarberOS',
-        'logo_url': custom.logo_url if custom else None,
+        'c_nome':      session.get('nome', 'Cliente'),
+        'c_email':     u.email if u else '',
+        'bk_slug':     b.slug if b else '',
+        'bk_nome':     (b.nome_exibicao or b.nome) if b else 'BarberOS',
+        'logo_url':    custom.logo_url if custom else None,
+        'bk_telefone': b.telefone_contato if b else None,
     }
 
 

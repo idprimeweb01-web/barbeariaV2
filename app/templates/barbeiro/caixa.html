@@ -1,0 +1,216 @@
+{% extends "barbeiro/base.html" %}
+{% block title %}Caixa do Dia{% endblock %}
+{% block breadcrumb %}
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Caixa do Dia</span>
+{% endblock %}
+
+{% block styles %}
+<style>
+.cx-total-card {
+  background: var(--bz-surface); border: 1px solid var(--bz-bd); border-radius: 12px;
+  padding: 18px 20px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;
+}
+.cx-total-label { font-size: 11px; color: var(--bz-t5); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+.cx-total-val { font-size: 26px; font-weight: 800; color: var(--cor-primaria); }
+.cx-fechado-tag { font-size: 11px; color: #f87171; font-weight: 700; background: rgba(220,38,38,.1); padding: 3px 10px; border-radius: 999px; }
+.cx-form-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 16px; }
+.cx-form-row .field { margin-bottom: 0; }
+@media (max-width: 900px) { .cx-form-row { grid-template-columns: 1fr 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cx-total-card">
+  <div>
+    <div class="cx-total-label">Caixa de hoje</div>
+    <div class="cx-total-val" id="cxTotal">R$ 0,00</div>
+  </div>
+  <div id="cxAcoes" style="display:flex;align-items:center;gap:10px"></div>
+</div>
+
+<!-- Recebimento de agendamentos -->
+<div class="section-header">
+  <div class="section-title">Agendamentos de hoje — pagamento pendente</div>
+</div>
+<div class="table-wrap" style="margin-bottom:24px">
+  <table class="data-table">
+    <thead><tr><th>HORA</th><th>CLIENTE</th><th>SERVIÇO</th><th>FORMA</th><th>VALOR</th><th></th></tr></thead>
+    <tbody id="tbodyAgendamentos"><tr><td colspan="6" class="empty-state"><p>Carregando…</p></td></tr></tbody>
+  </table>
+</div>
+
+<!-- Venda de produtos -->
+<div id="secaoVendas" style="display:none">
+  <div class="section-header">
+    <div class="section-title">Venda de produtos</div>
+  </div>
+  <div class="cx-form-row">
+    <div class="field"><label>Produto</label>
+      <select id="fProduto"></select>
+    </div>
+    <div class="field"><label>Qtd.</label>
+      <input type="number" id="fQtd" min="1" value="1">
+    </div>
+    <div class="field"><label>Desconto %</label>
+      <input type="number" id="fDesconto" min="0" max="100" value="0">
+    </div>
+    <div class="field"><label>Pagamento</label>
+      <select id="fForma">
+        <option value="dinheiro">Dinheiro</option>
+        <option value="pix">PIX</option>
+        <option value="cartao">Cartão</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" style="width:auto;padding:10px 18px" onclick="adicionarItem()">+ Adicionar</button>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>PRODUTO</th><th>QTD.</th><th>DESCONTO</th><th>PAGAMENTO</th><th>TOTAL</th><th></th></tr></thead>
+      <tbody id="tbodyItens"><tr><td colspan="6" class="empty-state"><p>Nenhum item ainda</p></td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _caixa = null;
+let _produtos = [];
+let _vendaAtiva = false;
+
+function fmtR(v) { return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }); }
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function init() {
+  const features = await Bos.get('/barbeiro/features').catch(() => []);
+  _vendaAtiva = (features || []).some(f => f.nome === 'produtos_venda' && f.ativo);
+  document.getElementById('secaoVendas').style.display = _vendaAtiva ? '' : 'none';
+
+  if (_vendaAtiva) {
+    _produtos = await Bos.get('/barbeiro/produtos').catch(() => []);
+    document.getElementById('fProduto').innerHTML = _produtos
+      .filter(p => p.ativo && p.quantidade_estoque > 0)
+      .map(p => `<option value="${p.id}">${esc(p.nome)} — ${fmtR(p.preco)}</option>`)
+      .join('') || '<option value="">Nenhum produto disponível</option>';
+  }
+
+  await carregarCaixa();
+  await carregarAgendamentos();
+}
+
+// ── Caixa (produtos) ─────────────────────────────────────────────────────────
+async function carregarCaixa() {
+  if (!_vendaAtiva) return;
+  _caixa = await Bos.get('/barbeiro/caixa').catch(() => null);
+  if (!_caixa) {
+    _caixa = await Bos.post('/barbeiro/caixa', {});
+  }
+  renderCaixa();
+}
+
+function renderCaixa() {
+  document.getElementById('cxTotal').textContent = fmtR(_caixa ? _caixa.total : 0);
+  const acoes = document.getElementById('cxAcoes');
+  if (!_vendaAtiva) { acoes.innerHTML = ''; }
+  else if (_caixa && _caixa.fechado_em) {
+    acoes.innerHTML = '<span class="cx-fechado-tag">Caixa fechado</span>';
+  } else if (_caixa) {
+    acoes.innerHTML = '<button class="btn btn-danger" style="width:auto;padding:8px 16px" onclick="fecharCaixa()">Fechar caixa</button>';
+  }
+
+  const tb = document.getElementById('tbodyItens');
+  const itens = (_caixa && _caixa.itens) || [];
+  if (!itens.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="empty-state"><p>Nenhum item ainda</p></td></tr>';
+    return;
+  }
+  tb.innerHTML = itens.map(i => `
+    <tr>
+      <td>${esc(i.produto_nome || '—')} <span style="color:var(--bz-t5);font-size:11px">×${i.quantidade}</span></td>
+      <td>${i.quantidade}</td>
+      <td>${i.desconto_percentual}%</td>
+      <td style="text-transform:capitalize">${esc(i.forma_pagamento)}</td>
+      <td style="font-weight:700;color:var(--cor-primaria)">${fmtR(i.total)}</td>
+      <td>${_caixa.fechado_em ? '' : `<button class="btn-icon danger" onclick="removerItem(${i.id})">Remover</button>`}</td>
+    </tr>
+  `).join('');
+}
+
+async function adicionarItem() {
+  const produto_id = parseInt(document.getElementById('fProduto').value);
+  const quantidade = parseInt(document.getElementById('fQtd').value);
+  const desconto_percentual = parseFloat(document.getElementById('fDesconto').value) || 0;
+  const forma_pagamento = document.getElementById('fForma').value;
+
+  if (!produto_id) { toast('Selecione um produto.', 'error'); return; }
+  if (!quantidade || quantidade <= 0) { toast('Quantidade inválida.', 'error'); return; }
+
+  try {
+    _caixa = await Bos.post(`/barbeiro/caixa/${_caixa.id}/itens`, {
+      produto_id, quantidade, desconto_percentual, forma_pagamento,
+    });
+    toast('Item adicionado!');
+    renderCaixa();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function removerItem(itemId) {
+  if (!confirm('Remover este item?')) return;
+  try {
+    await Bos.delete(`/barbeiro/caixa/itens/${itemId}`);
+    await carregarCaixa();
+    toast('Item removido.');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function fecharCaixa() {
+  if (!confirm('Fechar o caixa de hoje? Não será possível adicionar mais itens.')) return;
+  try {
+    _caixa = await Bos.patch(`/barbeiro/caixa/${_caixa.id}/fechar`);
+    toast('Caixa fechado.');
+    renderCaixa();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Agendamentos de hoje — recebimento ───────────────────────────────────────
+async function carregarAgendamentos() {
+  const hoje = new Date().toISOString().split('T')[0];
+  let ags = [];
+  try {
+    ags = await Bos.get('/barbeiro/agendamentos?data=' + hoje);
+  } catch (e) {
+    document.getElementById('tbodyAgendamentos').innerHTML =
+      `<tr><td colspan="6" class="empty-state"><p>Erro: ${esc(e.message)}</p></td></tr>`;
+    return;
+  }
+  const pendentes = ags.filter(a => a.status_pagamento === 'pendente' && a.status !== 'cancelado');
+  const tb = document.getElementById('tbodyAgendamentos');
+  if (!pendentes.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="empty-state"><p>Nenhum pagamento pendente hoje 🎉</p></td></tr>';
+    return;
+  }
+  tb.innerHTML = pendentes.map(ag => `
+    <tr>
+      <td><strong>${esc(ag.hora)}</strong></td>
+      <td>${esc(ag.cliente?.nome || '—')}</td>
+      <td>${esc((ag.servicos || []).map(s => s.nome).join(', ') || '—')}</td>
+      <td style="text-transform:capitalize">local</td>
+      <td style="font-weight:700">${fmtR(ag.valor_total)}</td>
+      <td><button class="btn btn-primary" style="width:auto;padding:6px 14px;font-size:12px" onclick="receberPagamento(${ag.id})">Receber</button></td>
+    </tr>
+  `).join('');
+}
+
+async function receberPagamento(agId) {
+  try {
+    await Bos.patch(`/barbeiro/agendamentos/${agId}/receber-pagamento`);
+    toast('Pagamento recebido!');
+    await carregarAgendamentos();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+init();
+</script>
+{% endblock %}

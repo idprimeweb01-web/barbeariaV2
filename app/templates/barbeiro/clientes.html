@@ -140,7 +140,10 @@ function renderTabela(lista) {
     return `
       <tr>
         <td><strong style="color:#ddd">${esc(c.nome)}</strong></td>
-        <td style="color:#777">${esc(c.telefone||'—')}</td>
+        <td style="color:#777">
+          ${esc(c.telefone||'—')}
+          ${c.telefone ? `<a href="${Bos.wa(c.telefone, 'Olá ' + c.nome + '!')}" target="_blank" rel="noopener noreferrer" title="Chamar no WhatsApp" style="margin-left:6px;color:#25d366;text-decoration:none">📲</a>` : ''}
+        </td>
         <td>${ultimos}</td>
         <td>${pref}</td>
         <td><span style="color:var(--cor-primaria);font-weight:700">${c.total_visitas}</span></td>

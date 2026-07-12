@@ -100,5 +100,18 @@ const Bos = (() => {
       } catch { /* silencioso */ }
       window.location.href = window.BOS_LOGIN_URL || '/entrar';
     },
+
+    /**
+     * Monta um link wa.me a partir de um telefone salvo no banco (só
+     * dígitos, DDD+número, sem DDI — ver app/utils/telefone.py). Assume
+     * Brasil (+55) quando o número não já vier com DDI (10-11 dígitos).
+     */
+    wa(telefone, mensagem) {
+      let d = String(telefone || '').replace(/\D/g, '');
+      if (!d) return null;
+      if (d.length <= 11) d = '55' + d;
+      const texto = mensagem ? `?text=${encodeURIComponent(mensagem)}` : '';
+      return `https://wa.me/${d}${texto}`;
+    },
   };
 })();

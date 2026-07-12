@@ -1,12 +1,14 @@
 import { useState, useCallback, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard, Star, Calendar, Gift, Clock, User, LogOut, Scissors
+  LayoutDashboard, Star, Calendar, Gift, Clock, User, LogOut, Scissors, MessageCircle
 } from 'lucide-react'
 import { api } from '../api'
+import { waLink } from '../utils/whatsapp'
 
 const NOME = window.BOS_USUARIO || 'Cliente'
 const BK_NOME = window.BOS_NOME || 'Barbearia'
+const TELEFONE_BARBEARIA = window.BOS_TELEFONE || ''
 
 // `feature: null` = sempre visível (funcionalidade nuclear, não é um
 // toggle do catálogo). Itens com `feature` só aparecem se a barbearia
@@ -101,7 +103,19 @@ export default function Layout({ children, title }) {
             </svg>
           </button>
           <span className="topbar-title">{title}</span>
-          <button className="btn-logout" onClick={handleLogout} title="Sair" style={{ marginLeft: 'auto' }}>
+          {TELEFONE_BARBEARIA && (
+            <a
+              href={waLink(TELEFONE_BARBEARIA, `Olá! Vim pelo app do ${BK_NOME}.`)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-logout"
+              title="Falar com a barbearia no WhatsApp"
+              style={{ marginLeft: 'auto', color: '#4ade80' }}
+            >
+              <MessageCircle size={16} />
+            </a>
+          )}
+          <button className="btn-logout" onClick={handleLogout} title="Sair" style={{ marginLeft: TELEFONE_BARBEARIA ? 0 : 'auto' }}>
             <LogOut size={16} />
           </button>
         </header>

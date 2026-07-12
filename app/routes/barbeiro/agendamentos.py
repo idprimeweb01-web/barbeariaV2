@@ -18,7 +18,7 @@ from app.utils.notificacoes import criar_notificacao
 from app.utils.webhooks import disparar_webhook
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.utils.db import commit_ou_falhar
-from app.constants import StatusAgendamento, StatusTransferencia, TipoEventoWebhook
+from app.constants import StatusAgendamento, StatusTransferencia, TipoEventoWebhook, StatusPagamento
 
 barbeiro_ag_bp = Blueprint('barbeiro_agendamentos', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -250,6 +250,25 @@ def aprovar_comprovante(ag_id):
     })
 
     return jsonify({'id': ag.id, 'status': StatusAgendamento.AGENDADO}), 200
+
+
+# ── PATCH receber-pagamento ───────────────────────────────────────────────────
+# Recebimento no caixa do dia: só marca o agendamento como pago, NÃO cria
+# ItemCaixa (agendamento e venda de produto são guardados de formas
+# diferentes — ver app/models BarbeiroCaixa/ItemCaixa).
+
+@barbeiro_ag_bp.patch('/agendamentos/<int:ag_id>/receber-pagamento')
+@barbeiro_required
+def receber_pagamento(ag_id):
+    b  = _get_barbeiro(g.user_id, g.barbearia_id)
+    ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id, barbeiro_id=b.id).first()
+    if not ag:
+        raise APIError('Agendamento não encontrado.', 404)
+    if ag.status_pagamento == StatusPagamento.PAGO:
+        raise APIError('Pagamento já foi recebido.', 422)
+    ag.status_pagamento = StatusPagamento.PAGO
+    commit_ou_falhar('barbeiro.agendamentos.receber_pagamento')
+    return jsonify({'id': ag.id, 'status_pagamento': ag.status_pagamento}), 200
 
 
 # ── POST notas (salva como ClienteNota) ───────────────────────────────────────
