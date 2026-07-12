@@ -1,0 +1,210 @@
+{% extends "gestor/base.html" %}
+{% block title %}Webhook / n8n{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Webhook / n8n</span>
+{% endblock %}
+
+{% block styles %}
+<style>
+.wh-container { max-width: 680px; }
+.wh-card { background:#242424; border:1px solid #2d2d2d; border-radius:10px; padding:24px; margin-bottom:24px; }
+.wh-eventos { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+.wh-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+.wh-teste-resultado { font-size: 12px; margin-top: 10px; padding: 8px 10px; border-radius: 6px; display: none; }
+.wh-teste-resultado.ok   { background: rgba(34,197,94,.1);  color: #4ade80; border: 1px solid rgba(34,197,94,.3);  display: block; }
+.wh-teste-resultado.erro { background: rgba(220,38,38,.1);  color: #f87171; border: 1px solid rgba(220,38,38,.3); display: block; }
+.wh-hint { font-size: 11px; color: #666; margin-top: 6px; }
+.pg-controls { display: flex; justify-content: center; gap: 10px; margin-top: 16px; align-items: center; font-size: 13px; color: #888; }
+.pg-controls button { background: none; border: 1px solid #2a2a2a; color: #ccc; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
+.pg-controls button:disabled { opacity: .4; cursor: not-allowed; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wh-container">
+
+  <div class="wh-card">
+    <div class="field">
+      <label>URL do Webhook (n8n ou qualquer endpoint HTTP)</label>
+      <input type="text" id="fUrl" placeholder="https://seu-n8n.exemplo.com/webhook/xxxxx">
+      <div class="wh-hint">Toda vez que um dos eventos abaixo acontecer, o sistema envia um POST com os dados em JSON para esta URL.</div>
+    </div>
+
+    <div class="field">
+      <label>Eventos que disparam o webhook</label>
+      <div class="wh-eventos" id="eventosBox"></div>
+    </div>
+
+    <div class="field">
+      <label class="toggle-label">
+        <input type="checkbox" id="fAtivo">
+        <span class="toggle-track"></span>
+        Webhook ativo
+      </label>
+      <div class="wh-hint">Precisa de uma URL salva antes de poder ativar.</div>
+    </div>
+
+    <div style="display:flex; gap:10px; align-items:flex-start;">
+      <button class="btn-icon" onclick="testar()" id="btnTestar" style="flex-shrink:0">Testar URL</button>
+    </div>
+    <div class="wh-teste-resultado" id="testeResultado"></div>
+
+    <div class="wh-actions">
+      <button class="btn-icon" id="btnSalvar" onclick="salvar()">Salvar</button>
+    </div>
+  </div>
+
+  <div class="section-header">
+    <span class="section-title">Últimos disparos</span>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th>Evento</th><th>Status HTTP</th><th>Resultado</th><th>Erro</th><th>Quando</th></tr>
+      </thead>
+      <tbody id="tbodyLogs">
+        <tr><td colspan="5" style="text-align:center;color:#555;padding:32px">Carregando…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pg-controls" id="paginacao" style="display:none">
+    <button id="btnAnterior" onclick="irPagina(-1)">&lt; Anterior</button>
+    <span id="paginaLabel">Página 1 de 1</span>
+    <button id="btnProxima" onclick="irPagina(1)">Próxima &gt;</button>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const EVENTO_LABEL = {
+  agendamento_criado:    'Agendamento criado',
+  agendamento_aprovado:  'Agendamento aprovado (PIX)',
+  agendamento_cancelado: 'Agendamento cancelado',
+  plano_ativado:         'Assinatura de plano ativada',
+  venda_concluida:       'Venda concluída',
+};
+
+let _eventosDisponiveis = [];
+let _paginaAtual  = 1;
+let _totalPaginas = 1;
+
+function eventosMarcados() {
+  return Array.from(document.querySelectorAll('#eventosBox input[type=checkbox]:checked')).map(el => el.value);
+}
+
+function renderEventos(ativos) {
+  const box = document.getElementById('eventosBox');
+  box.innerHTML = _eventosDisponiveis.map(ev => `
+    <label class="toggle-label" style="font-size:13px">
+      <input type="checkbox" value="${ev}" ${ativos.includes(ev) ? 'checked' : ''}>
+      <span class="toggle-track"></span>
+      ${EVENTO_LABEL[ev] || ev}
+    </label>
+  `).join('');
+}
+
+async function carregarConfig() {
+  try {
+    const c = await Bos.get('/gestor/webhook');
+    _eventosDisponiveis = c.eventos_disponiveis || [];
+    document.getElementById('fUrl').value = c.webhook_url || '';
+    document.getElementById('fAtivo').checked = !!c.ativo;
+    renderEventos(c.eventos_ativos || []);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function testar() {
+  const url = document.getElementById('fUrl').value.trim();
+  const box = document.getElementById('testeResultado');
+  const btn = document.getElementById('btnTestar');
+  if (!url) { toast('Informe a URL antes de testar.', 'error'); return; }
+  btn.disabled = true; btn.textContent = 'Testando…';
+  try {
+    const r = await Bos.post('/gestor/webhook/testar', { webhook_url: url });
+    box.className   = 'wh-teste-resultado ' + (r.sucesso ? 'ok' : 'erro');
+    box.textContent = r.sucesso
+      ? `✓ Endpoint respondeu HTTP ${r.http_status}.`
+      : `✕ ${r.erro || 'Endpoint não respondeu como esperado.'}`;
+  } catch (e) {
+    box.className   = 'wh-teste-resultado erro';
+    box.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Testar URL';
+  }
+}
+
+async function salvar() {
+  const webhook_url    = document.getElementById('fUrl').value.trim();
+  const eventos_ativos = eventosMarcados();
+  const ativo          = document.getElementById('fAtivo').checked;
+
+  const btn = document.getElementById('btnSalvar');
+  btn.disabled = true;
+  try {
+    await Bos.put('/gestor/webhook', { webhook_url, eventos_ativos, ativo });
+    toast('Webhook configurado com sucesso.', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+    document.getElementById('fAtivo').checked = !ativo;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function statusBadge(sucesso) {
+  return sucesso ? '<span class="badge-green">Sucesso</span>' : '<span class="badge-red">Falhou</span>';
+}
+
+function fmtData(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+async function carregarLogs() {
+  const tb = document.getElementById('tbodyLogs');
+  try {
+    const r = await Bos.get('/gestor/webhook/logs?' + new URLSearchParams({ page: _paginaAtual, per_page: 20 }));
+    _totalPaginas = r.pages || 1;
+    document.getElementById('paginaLabel').textContent = `Página ${r.page} de ${_totalPaginas}`;
+    document.getElementById('btnAnterior').disabled = r.page <= 1;
+    document.getElementById('btnProxima').disabled  = r.page >= _totalPaginas;
+    document.getElementById('paginacao').style.display = r.total > 0 ? 'flex' : 'none';
+
+    if (!r.dados.length) {
+      tb.innerHTML = '<tr><td colspan="5"><div class="empty-state"><p>Nenhum disparo registrado ainda.</p></div></td></tr>';
+      return;
+    }
+    tb.innerHTML = r.dados.map(l => `
+      <tr>
+        <td>${EVENTO_LABEL[l.tipo_evento] || esc(l.tipo_evento)}</td>
+        <td>${l.http_status ?? '—'}</td>
+        <td>${statusBadge(l.sucesso)}</td>
+        <td style="max-width:220px;color:#888;font-size:12px">${esc(l.erro_mensagem) || '—'}</td>
+        <td style="color:#888;font-size:12px">${fmtData(l.criado_em)}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#e06060;padding:32px">Erro ao carregar.</td></tr>';
+  }
+}
+
+function irPagina(delta) {
+  const nova = _paginaAtual + delta;
+  if (nova < 1 || nova > _totalPaginas) return;
+  _paginaAtual = nova;
+  carregarLogs();
+}
+
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+carregarConfig();
+carregarLogs();
+</script>
+{% endblock %}

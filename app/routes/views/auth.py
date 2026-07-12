@@ -311,6 +311,12 @@ def gestor_config_pix():
     return render_template('gestor/config_pix.html', **_gestor_ctx())
 
 
+@views_bp.get('/gestor/configuracoes/webhook')
+@session_required('gestor', 'super_admin')
+def gestor_config_webhook():
+    return render_template('gestor/webhook.html', **_gestor_ctx())
+
+
 def _barbeiro_ctx():
     from app.models import BarbeariaCustomizacao
     uid    = session.get('user_id')
