@@ -169,7 +169,7 @@ function renderTabela() {
       <td>${fotoEl(b.foto, b.nome)}</td>
       <td style="font-weight:600">${esc(b.nome)}</td>
       <td style="color:#888">${esc(b.email || '—')}</td>
-      <td>${esc(b.telefone)}</td>
+      <td>${esc(b.telefone)} ${b.telefone ? `<a href="${Bos.wa(b.telefone, 'Olá ' + b.nome + '!')}" target="_blank" rel="noopener noreferrer" title="Chamar no WhatsApp" style="margin-left:6px;color:#25d366;text-decoration:none">📲</a>` : ''}</td>
       <td>${b.comissao_percentual}%</td>
       <td>${b.ativo ? '<span class="badge-green">Ativo</span>' : '<span class="badge-gray">Inativo</span>'}</td>
       <td><div class="td-actions">

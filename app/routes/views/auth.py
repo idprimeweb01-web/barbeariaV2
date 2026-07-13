@@ -322,6 +322,12 @@ def gestor_solicitacoes_senha():
     return render_template('gestor/solicitacoes_senha.html', **_gestor_ctx())
 
 
+@views_bp.get('/gestor/auditoria')
+@session_required('gestor', 'super_admin')
+def gestor_auditoria():
+    return render_template('gestor/auditoria.html', **_gestor_ctx())
+
+
 def _barbeiro_ctx():
     from app.models import BarbeariaCustomizacao
     uid    = session.get('user_id')
@@ -374,12 +380,6 @@ def barbeiro_clientes():
 @session_required('barbeiro', 'super_admin')
 def barbeiro_disponiveis():
     return render_template('barbeiro/disponiveis.html', **_barbeiro_ctx())
-
-
-@views_bp.get('/barbeiro/produtos')
-@session_required('barbeiro', 'super_admin')
-def barbeiro_produtos():
-    return render_template('barbeiro/produtos.html', **_barbeiro_ctx())
 
 
 @views_bp.get('/barbeiro/caixa')
@@ -504,6 +504,7 @@ def _cliente_ctx():
         'bk_nome':     (b.nome_exibicao or b.nome) if b else 'BarberOS',
         'logo_url':    custom.logo_url if custom else None,
         'bk_telefone': b.telefone_contato if b else None,
+        'bk_cor_primaria': custom.cor_primaria if custom else None,
     }
 
 

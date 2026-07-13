@@ -236,7 +236,7 @@ function abrirDrawer(agId) {
     <div class="drawer-section">
       <div class="drawer-section-title">Cliente</div>
       <div class="drawer-row"><span class="drawer-row-key">Nome</span><span class="drawer-row-val">${esc(cli.nome||'—')}</span></div>
-      <div class="drawer-row"><span class="drawer-row-key">Telefone</span><span class="drawer-row-val">${esc(cli.telefone||'—')}</span></div>
+      <div class="drawer-row"><span class="drawer-row-key">Telefone</span><span class="drawer-row-val">${esc(cli.telefone||'—')} ${cli.telefone ? `<a href="${Bos.wa(cli.telefone, 'Olá ' + cli.nome + '!')}" target="_blank" rel="noopener noreferrer" title="Chamar no WhatsApp" style="margin-left:6px;color:#25d366;text-decoration:none">📲</a>` : ''}</span></div>
       <div class="drawer-row"><span class="drawer-row-key">Status</span><span>${BADGE[ag.status]||esc(ag.status)}</span></div>
     </div>
     <div class="drawer-section">

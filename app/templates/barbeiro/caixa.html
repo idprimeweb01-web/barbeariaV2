@@ -22,16 +22,29 @@
 .cx-resumo-label { font-size: 11px; color: var(--bz-t5); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
 .cx-resumo-val { font-size: 18px; font-weight: 800; color: var(--cor-primaria); }
 @media (max-width: 700px) { .cx-resumo { grid-template-columns: 1fr 1fr; } }
+
+.cx-venda-toolbar { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 14px; flex-wrap: wrap; }
+.cx-venda-toolbar .field { margin-bottom: 0; }
+.cx-busca { flex: 1; min-width: 180px; padding: 10px 12px; background: var(--bz-input); border: 1.5px solid var(--bz-bd2); border-radius: 8px; color: var(--bz-t1); font-family: inherit; font-size: 13px; outline: none; }
+.cx-busca:focus { border-color: var(--cor-primaria); }
+.cx-qtd-input { width: 56px; padding: 6px 8px; background: var(--bz-input); border: 1px solid var(--bz-bd2); border-radius: 6px; color: var(--bz-t1); font-family: inherit; font-size: 13px; text-align: center; }
+.badge-low  { background: rgba(220,38,38,.15); color: #f87171; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
+.badge-ok   { background: rgba(34,197,94,.1);  color: #4ade80; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
+.badge-zero { background: rgba(255,255,255,.06); color: var(--bz-t5); border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="cx-total-card">
   <div>
-    <div class="cx-total-label">Caixa de hoje</div>
+    <div class="cx-total-label" id="cxTotalLabel">Produtos vendidos hoje</div>
     <div class="cx-total-val" id="cxTotal">R$ 0,00</div>
+    <div style="font-size:11px;color:var(--bz-t5);margin-top:4px">Total do dia (produtos + atendimentos) está no resumo abaixo</div>
   </div>
-  <div id="cxAcoes" style="display:flex;align-items:center;gap:10px"></div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <input type="date" id="inputDataCaixa" onchange="mudarDataCaixa(this.value)">
+    <div id="cxAcoes" style="display:flex;align-items:center;gap:10px"></div>
+  </div>
 </div>
 
 <!-- Resumo por forma de pagamento (produtos + atendimentos recebidos hoje) -->
@@ -80,15 +93,10 @@
   <div class="section-header">
     <div class="section-title">Venda de produtos</div>
   </div>
-  <div class="cx-form-row">
-    <div class="field"><label>Produto</label>
-      <select id="fProduto"></select>
-    </div>
-    <div class="field"><label>Qtd.</label>
-      <input type="number" id="fQtd" min="1" value="1">
-    </div>
+  <div class="cx-venda-toolbar">
+    <input type="text" class="cx-busca" id="buscaProduto" placeholder="🔍 Buscar produto…" oninput="renderProdutos()">
     <div class="field"><label>Desconto %</label>
-      <input type="number" id="fDesconto" min="0" max="100" value="0">
+      <input type="number" class="cx-qtd-input" id="fDesconto" min="0" max="100" value="0" style="width:70px">
     </div>
     <div class="field"><label>Pagamento</label>
       <select id="fForma">
@@ -97,9 +105,18 @@
         <option value="cartao">Cartão</option>
       </select>
     </div>
-    <button class="btn btn-primary" style="width:auto;padding:10px 18px" onclick="adicionarItem()">+ Adicionar</button>
   </div>
 
+  <div class="table-wrap" style="margin-bottom:24px">
+    <table class="data-table">
+      <thead><tr><th>PRODUTO</th><th>PREÇO</th><th>ESTOQUE</th><th>QTD.</th><th></th></tr></thead>
+      <tbody id="tbodyProdutos"><tr><td colspan="5" class="empty-state"><p>Carregando…</p></td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="section-header">
+    <div class="section-title" id="itensTituloData">Itens vendidos hoje</div>
+  </div>
   <div class="table-wrap">
     <table class="data-table">
       <thead><tr><th>PRODUTO</th><th>QTD.</th><th>DESCONTO</th><th>PAGAMENTO</th><th>TOTAL</th><th></th></tr></thead>
@@ -116,41 +133,110 @@ let _produtos = [];
 let _vendaAtiva = false;
 let _agendamentosHoje = [];
 let _agReceber = null;
+let _dataHoje = null;
+let _dataAtual = null;
 
 function fmtR(v) { return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }); }
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 async function init() {
+  _dataHoje = _dataAtual = Bos.hojeBrasilia();
+  document.getElementById('inputDataCaixa').value = _dataAtual;
+  document.getElementById('inputDataCaixa').max   = _dataHoje;
+
   const features = await Bos.get('/barbeiro/features').catch(() => []);
   _vendaAtiva = (features || []).some(f => f.nome === 'produtos_venda' && f.ativo);
   document.getElementById('secaoVendas').style.display = _vendaAtiva ? '' : 'none';
 
   if (_vendaAtiva) {
     _produtos = await Bos.get('/barbeiro/produtos').catch(() => []);
-    document.getElementById('fProduto').innerHTML = _produtos
-      .filter(p => p.ativo && p.quantidade_estoque > 0)
-      .map(p => `<option value="${p.id}">${esc(p.nome)} — ${fmtR(p.preco)}</option>`)
-      .join('') || '<option value="">Nenhum produto disponível</option>';
+    renderProdutos();
   }
 
   await carregarCaixa();
   await carregarAgendamentos();
 }
 
+// ── Navegar pra um dia anterior — visão só-leitura do caixa daquele dia ─────
+async function mudarDataCaixa(data) {
+  _dataAtual = data;
+  await carregarCaixa();
+}
+
+// ── Tabela de produtos — busca + estoque + venda direta (1 clique) ──────────
+function estoqueBadge(p) {
+  if (p.quantidade_estoque === 0) return '<span class="badge-zero">Esgotado</span>';
+  if (p.quantidade_estoque < 3)   return `<span class="badge-low">${p.quantidade_estoque}</span>`;
+  return `<span class="badge-ok">${p.quantidade_estoque}</span>`;
+}
+
+function renderProdutos() {
+  const q = (document.getElementById('buscaProduto').value || '').trim().toLowerCase();
+  const tb = document.getElementById('tbodyProdutos');
+  const lista = _produtos.filter(p => p.ativo && (
+    !q || p.nome.toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q)
+  ));
+  if (!lista.length) {
+    tb.innerHTML = '<tr><td colspan="5" class="empty-state"><p>Nenhum produto encontrado</p></td></tr>';
+    return;
+  }
+  tb.innerHTML = lista.map(p => `
+    <tr style="${p.quantidade_estoque === 0 ? 'opacity:.5' : ''}">
+      <td style="font-weight:600">${esc(p.nome)}</td>
+      <td style="color:var(--cor-primaria);font-weight:700">${fmtR(p.preco)}</td>
+      <td>${estoqueBadge(p)}</td>
+      <td><input type="number" class="cx-qtd-input" id="qtd-${p.id}" min="1" value="1" ${p.quantidade_estoque === 0 ? 'disabled' : ''}></td>
+      <td>${p.quantidade_estoque > 0
+        ? `<button class="btn-icon" onclick="venderProduto(${p.id})">Vender</button>`
+        : ''}</td>
+    </tr>
+  `).join('');
+}
+
+async function venderProduto(produtoId) {
+  const quantidade = parseInt(document.getElementById(`qtd-${produtoId}`).value) || 1;
+  const desconto_percentual = parseFloat(document.getElementById('fDesconto').value) || 0;
+  const forma_pagamento = document.getElementById('fForma').value;
+  if (quantidade <= 0) { toast('Quantidade inválida.', 'error'); return; }
+
+  try {
+    _caixa = await Bos.post(`/barbeiro/caixa/${_caixa.id}/itens`, {
+      produto_id: produtoId, quantidade, desconto_percentual, forma_pagamento,
+    });
+    toast('Item vendido!');
+    _produtos = await Bos.get('/barbeiro/produtos').catch(() => _produtos);
+    renderProdutos();
+    renderCaixa();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 // ── Caixa (produtos) ─────────────────────────────────────────────────────────
 async function carregarCaixa() {
   if (!_vendaAtiva) return;
-  _caixa = await Bos.get('/barbeiro/caixa').catch(() => null);
-  if (!_caixa) {
+  const ehHoje = _dataAtual === _dataHoje;
+  _caixa = await Bos.get('/barbeiro/caixa?data=' + _dataAtual).catch(() => null);
+  if (!_caixa && ehHoje) {
     _caixa = await Bos.post('/barbeiro/caixa', {});
   }
+  document.getElementById('cxTotalLabel').textContent = ehHoje
+    ? 'Produtos vendidos hoje'
+    : 'Produtos vendidos em ' + _dataAtual.split('-').reverse().join('/');
+  document.getElementById('itensTituloData').textContent = ehHoje
+    ? 'Itens vendidos hoje'
+    : 'Itens vendidos em ' + _dataAtual.split('-').reverse().join('/');
+  // Dia passado: só consulta, não vende nem fecha por aqui.
+  const vendaBox = document.querySelector('.cx-venda-toolbar');
+  const tabelaProdutos = document.getElementById('tbodyProdutos').closest('.table-wrap');
+  if (vendaBox) vendaBox.style.display = ehHoje ? '' : 'none';
+  if (tabelaProdutos) tabelaProdutos.style.display = ehHoje ? '' : 'none';
   renderCaixa();
 }
 
 function renderCaixa() {
+  const ehHoje = _dataAtual === _dataHoje;
   document.getElementById('cxTotal').textContent = fmtR(_caixa ? _caixa.total : 0);
   const acoes = document.getElementById('cxAcoes');
-  if (!_vendaAtiva) { acoes.innerHTML = ''; }
+  if (!_vendaAtiva || !ehHoje) { acoes.innerHTML = ''; }
   else if (_caixa && _caixa.fechado_em) {
     acoes.innerHTML = '<span class="cx-fechado-tag">Caixa fechado</span>';
   } else if (_caixa) {
@@ -174,24 +260,6 @@ function renderCaixa() {
     </tr>
   `).join('');
   renderResumo();
-}
-
-async function adicionarItem() {
-  const produto_id = parseInt(document.getElementById('fProduto').value);
-  const quantidade = parseInt(document.getElementById('fQtd').value);
-  const desconto_percentual = parseFloat(document.getElementById('fDesconto').value) || 0;
-  const forma_pagamento = document.getElementById('fForma').value;
-
-  if (!produto_id) { toast('Selecione um produto.', 'error'); return; }
-  if (!quantidade || quantidade <= 0) { toast('Quantidade inválida.', 'error'); return; }
-
-  try {
-    _caixa = await Bos.post(`/barbeiro/caixa/${_caixa.id}/itens`, {
-      produto_id, quantidade, desconto_percentual, forma_pagamento,
-    });
-    toast('Item adicionado!');
-    renderCaixa();
-  } catch (e) { toast(e.message, 'error'); }
 }
 
 async function removerItem(itemId) {

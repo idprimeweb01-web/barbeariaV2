@@ -74,7 +74,7 @@ function renderTabela() {
     <tr>
       <td style="font-weight:600;color:#ddd">${esc(g.nome)}</td>
       <td style="color:#aaa">${esc(g.email || '—')}</td>
-      <td style="color:#aaa">${esc(g.telefone || '—')}</td>
+      <td style="color:#aaa">${esc(g.telefone || '—')} ${g.telefone ? `<a href="${Bos.wa(g.telefone, 'Olá ' + g.nome + '!')}" target="_blank" rel="noopener noreferrer" title="Chamar no WhatsApp" style="margin-left:6px;color:#25d366;text-decoration:none">📲</a>` : ''}</td>
       <td style="color:#aaa">
         ${g.bk_slug
           ? `<a href="/b/${esc(g.bk_slug)}" target="_blank" style="color:var(--cor-primaria);text-decoration:none">${esc(g.barbearia || '—')}</a>`

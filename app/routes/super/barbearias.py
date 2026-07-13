@@ -14,6 +14,7 @@ from app.exceptions import APIError
 from app.decorators.auth import super_required
 from app.utils import normalizar_telefone
 from app.utils.db import commit_ou_falhar
+from app.utils.auditoria import registrar_auditoria
 from app.constants import StatusAgendamento
 
 _TIPOS_IMAGEM = {'image/jpeg', 'image/jpg', 'image/png', 'image/webp'}
@@ -204,6 +205,11 @@ def criar_barbearia():
 
     commit_ou_falhar('super.barbearias.criar_barbearia')
 
+    registrar_auditoria(
+        g.user_id, barbearia.id, 'create', 'barbearia', barbearia.id,
+        f'Barbearia "{barbearia.nome}" criada (gestor: {gestor.nome}).',
+    )
+
     return jsonify({
         'mensagem': 'Barbearia criada com sucesso.',
         'barbearia': _fmt_barbearia(barbearia),
@@ -297,6 +303,9 @@ def editar_barbearia(barbearia_id):
         b.estado = v[:2] or None
 
     commit_ou_falhar('super.barbearias.editar_barbearia')
+
+    registrar_auditoria(g.user_id, b.id, 'edit', 'barbearia', b.id, 'Dados da barbearia editados.')
+
     return jsonify({'mensagem': 'Barbearia atualizada.', 'barbearia': _fmt_barbearia(b)}), 200
 
 
@@ -319,6 +328,8 @@ def desativar_barbearia(barbearia_id):
     })
     commit_ou_falhar('super.barbearias.desativar_barbearia')
 
+    registrar_auditoria(g.user_id, barbearia_id, 'edit', 'barbearia', barbearia_id, 'Barbearia desativada.')
+
     return jsonify({'mensagem': 'Barbearia desativada.', 'id': barbearia_id}), 200
 
 
@@ -335,6 +346,8 @@ def ativar_barbearia(barbearia_id):
     # Reativa apenas o gestor — barbeiros e clientes reativam via gestor
     Usuario.query.filter_by(barbearia_id=barbearia_id, perfil='gestor').update({'ativo': True})
     commit_ou_falhar('super.barbearias.ativar_barbearia')
+
+    registrar_auditoria(g.user_id, barbearia_id, 'edit', 'barbearia', barbearia_id, 'Barbearia reativada.')
 
     return jsonify({'mensagem': 'Barbearia reativada.', 'id': barbearia_id}), 200
 
@@ -372,6 +385,12 @@ def toggle_feature(barbearia_id, nome_feature):
     commit_ou_falhar('super.barbearias.toggle_feature')
 
     estado = 'ativada' if fb.ativo else 'desativada'
+
+    registrar_auditoria(
+        g.user_id, barbearia_id, 'edit', 'feature_barbearia', fb.id,
+        f'Feature "{nome_feature}" {estado}.',
+    )
+
     return jsonify({'feature': nome_feature, 'ativo': fb.ativo, 'mensagem': f'Feature {estado}.'}), 200
 
 
@@ -412,6 +431,9 @@ def editar_customizacao(barbearia_id):
         c.fonte = (dados['fonte'] or '').strip() or c.fonte
 
     commit_ou_falhar('super.barbearias.editar_customizacao')
+
+    registrar_auditoria(g.user_id, barbearia_id, 'edit', 'customizacao', c.id, 'Customização (tema/cores) editada.')
+
     return jsonify({'mensagem': 'Customização atualizada.', 'customizacao': _fmt_customizacao(c)}), 200
 
 

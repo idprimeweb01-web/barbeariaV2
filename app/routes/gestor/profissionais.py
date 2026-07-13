@@ -280,7 +280,7 @@ def editar_barbeiro(barbeiro_id):
         registrar_auditoria(
             usuario_id=g.user_id,
             barbearia_id=barbearia_id,
-            tipo_acao='edicao',
+            tipo_acao='edit',
             entidade='barbeiro',
             entidade_id=b.id,
             descricao=descricao,

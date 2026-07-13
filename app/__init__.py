@@ -274,9 +274,6 @@ def create_app(config=None):
     from .routes.gestor.vendas import gestor_vendas_bp
     app.register_blueprint(gestor_vendas_bp)
 
-    from .routes.barbeiro.vendas import barbeiro_vendas_bp
-    app.register_blueprint(barbeiro_vendas_bp)
-
     from .routes.barbeiro.produtos import barbeiro_produtos_bp
     app.register_blueprint(barbeiro_produtos_bp)
 

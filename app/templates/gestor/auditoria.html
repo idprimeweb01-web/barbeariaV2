@@ -1,11 +1,15 @@
-{% extends "super/base.html" %}
+{% extends "gestor/base.html" %}
 {% block title %}Auditoria{% endblock %}
-{% block page_title %}Auditoria e Logs{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Auditoria</span>
+{% endblock %}
 
 {% block styles %}
 <style>
 .aud-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 20px; }
-.aud-input { padding: 8px 12px; background: #181818; border: 1.5px solid #2a2a2a; border-radius: 8px; color: #fff; font-family: inherit; font-size: 13px; outline: none; }
+.aud-input { padding: 8px 12px; background: #1e1e1e; border: 1.5px solid #2d2d2d; border-radius: 8px; color: #fff; font-family: inherit; font-size: 13px; outline: none; }
 .aud-input:focus { border-color: var(--cor-primaria); }
 .btn-carregar { padding: 8px 18px; background: var(--cor-primaria); border: none; color: #fff; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
 .aud-pag { display: flex; justify-content: center; gap: 10px; margin-top: 16px; align-items: center; font-size: 13px; color: #888; }
@@ -28,10 +32,10 @@
 <div class="table-wrap">
   <table class="data-table">
     <thead>
-      <tr><th>Data/Hora</th><th>Usuário</th><th>Barbearia</th><th>Ação</th></tr>
+      <tr><th>Data/Hora</th><th>Usuário</th><th>Ação</th></tr>
     </thead>
     <tbody id="logsTbody">
-      <tr><td colspan="4" style="text-align:center;color:#555;padding:24px">Carregando…</td></tr>
+      <tr><td colspan="3" style="text-align:center;color:#555;padding:24px">Carregando…</td></tr>
     </tbody>
   </table>
 </div>
@@ -54,7 +58,7 @@ async function carregar() {
   if (tipo) params.append('tipo_acao', tipo);
 
   try {
-    const r = await Bos.get('/super/auditoria?' + params);
+    const r = await Bos.get('/gestor/auditoria?' + params);
     totalPaginas = r.pages;
     renderizar(r.registros);
     document.getElementById('paginaLabel').textContent = `Página ${r.page} de ${r.pages}`;
@@ -63,21 +67,20 @@ async function carregar() {
     document.getElementById('paginacao').style.display = r.total > 0 ? 'flex' : 'none';
   } catch(e) {
     document.getElementById('logsTbody').innerHTML =
-      `<tr><td colspan="4" style="text-align:center;color:#f87171;padding:24px">Erro: ${esc(e.message)}</td></tr>`;
+      `<tr><td colspan="3" style="text-align:center;color:#f87171;padding:24px">Erro: ${esc(e.message)}</td></tr>`;
   }
 }
 
 function renderizar(logs) {
   const tbody = document.getElementById('logsTbody');
   if (!logs.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#555;padding:24px">Nenhum registro encontrado.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#555;padding:24px">Nenhum registro encontrado.</td></tr>';
     return;
   }
   tbody.innerHTML = logs.map(l => `
     <tr>
       <td style="color:#888;white-space:nowrap">${esc(l.criado_em || '—')}</td>
       <td style="color:#ddd">${esc(l.usuario || '—')}</td>
-      <td style="color:#aaa">${esc(l.barbearia || '—')}</td>
       <td>${esc(l.tipo_acao)} — ${esc(l.entidade)} — ${esc(l.descricao)}</td>
     </tr>
   `).join('');
@@ -89,6 +92,8 @@ function irPagina(delta) {
   paginaAtual = nova;
   carregar();
 }
+
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 carregar();
 </script>

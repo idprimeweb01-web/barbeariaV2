@@ -778,7 +778,7 @@ def upload_comprovante(slug, agendamento_id):
         registrar_auditoria(
             usuario_id=None,
             barbearia_id=barbearia.id,
-            tipo_acao='edicao',
+            tipo_acao='edit',
             entidade='agendamento_solicitacao_pix',
             entidade_id=pix.id,
             descricao='Comprovante reenviado pelo cliente.',

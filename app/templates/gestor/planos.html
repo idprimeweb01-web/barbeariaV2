@@ -88,8 +88,8 @@
       <div class="check-list" id="fServicos"></div>
     </div>
     <div class="form-group" id="grupoBarbeiros" style="display:none">
-      <label class="form-label">Barbeiros que atendem este plano</label>
-      <div class="check-list" id="fBarbeiros"></div>
+      <label class="form-label">Barbeiro responsável por este plano</label>
+      <select id="fBarbeiros"><option value="">Qualquer barbeiro</option></select>
     </div>
     <div class="form-group">
       <label class="toggle-label">
@@ -124,7 +124,7 @@
 let planoEmEdicao = null;
 let servicosDisponiveis = [];
 let barbeirosDisponiveis = [];
-let barbeirosVinculadosOriginal = [];
+let barbeiroVinculadoOriginal = null;
 
 async function carregarServicos() {
   try { servicosDisponiveis = await Bos.get('/gestor/servicos'); } catch (e) { servicosDisponiveis = []; }
@@ -134,22 +134,17 @@ async function carregarBarbeiros() {
   try { barbeirosDisponiveis = await Bos.get('/gestor/barbeiros'); } catch (e) { barbeirosDisponiveis = []; }
 }
 
-function renderizarCheckboxBarbeiros(selecionados = []) {
-  const box = document.getElementById('fBarbeiros');
-  if (!barbeirosDisponiveis.length) {
-    box.innerHTML = '<div style="font-size:12px;color:#555;">Nenhum barbeiro cadastrado.</div>';
-    return;
-  }
-  box.innerHTML = barbeirosDisponiveis.map(b => `
-    <label class="check-item">
-      <input type="checkbox" value="${b.id}" ${selecionados.includes(b.id) ? 'checked' : ''}>
-      ${b.nome}
-    </label>
+function renderizarCheckboxBarbeiros(barbeiroIdAtual = null) {
+  const sel = document.getElementById('fBarbeiros');
+  sel.innerHTML = '<option value="">Qualquer barbeiro</option>' + barbeirosDisponiveis.map(b => `
+    <option value="${b.id}">${esc(b.nome)}</option>
   `).join('');
+  sel.value = barbeiroIdAtual || '';
 }
 
-function barbeirosSelecionados() {
-  return [...document.querySelectorAll('#fBarbeiros input[type=checkbox]:checked')].map(c => parseInt(c.value));
+function barbeiroSelecionado() {
+  const v = document.getElementById('fBarbeiros').value;
+  return v ? parseInt(v) : null;
 }
 
 function renderizarCheckboxServicos(servicosAtuais = []) {
@@ -261,8 +256,8 @@ function abrirModalEditar(id) {
   document.getElementById('fDescricao').value = p.descricao || '';
   document.getElementById('fAtivo').checked = p.ativo;
   renderizarCheckboxServicos(p.servicos || []);
-  barbeirosVinculadosOriginal = p.barbeiro_id ? [p.barbeiro_id] : [];
-  renderizarCheckboxBarbeiros(barbeirosVinculadosOriginal);
+  barbeiroVinculadoOriginal = p.barbeiro_id || null;
+  renderizarCheckboxBarbeiros(barbeiroVinculadoOriginal);
   document.getElementById('grupoBarbeiros').style.display = '';
   abrirModal('modalPlano');
 }
@@ -321,8 +316,7 @@ async function salvarPlano() {
 }
 
 async function salvarVinculosBarbeiro(planoId) {
-  const sel = barbeirosSelecionados();
-  await Bos.patch('/gestor/planos/' + planoId, { barbeiro_id: sel[0] || null });
+  await Bos.patch('/gestor/planos/' + planoId, { barbeiro_id: barbeiroSelecionado() });
 }
 
 async function toggleAtivo(id, ativoAtual) {
