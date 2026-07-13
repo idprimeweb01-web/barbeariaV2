@@ -292,6 +292,9 @@ def create_app(config=None):
     from .routes.barbeiro.solicitacoes_senha import barbeiro_solicitacoes_senha_bp
     app.register_blueprint(barbeiro_solicitacoes_senha_bp)
 
+    from .routes.super.solicitacoes_senha import super_solicitacoes_senha_bp
+    app.register_blueprint(super_solicitacoes_senha_bp)
+
     # ── Scheduler de lembretes ────────────────────────────────────────────────
     # Iniciado após todos os blueprints para garantir que os modelos estejam prontos.
     # Em testes unitários, passar DISABLE_SCHEDULER=1 no ambiente para não iniciar.

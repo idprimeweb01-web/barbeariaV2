@@ -37,6 +37,19 @@ export const api = {
   pub: {
     get:  (path) => _req('GET', `/api/v1/pub/${SLUG}${path}`),
     post: (path, body) => _req('POST', `/api/v1/pub/${SLUG}${path}`, body),
+    // Multipart — não passa por _req (Content-Type é definido pelo browser,
+    // com o boundary). Mesma rota pública usada pelo booking.html anônimo;
+    // não exige login, então funciona igual pra cliente autenticado.
+    uploadComprovante: async (agendamentoId, file) => {
+      const fd = new FormData()
+      fd.append('arquivo', file)
+      const resp = await fetch(`/api/v1/pub/${SLUG}/agendamentos/${agendamentoId}/comprovante`, {
+        method: 'POST', body: fd, credentials: 'same-origin',
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(data.erro || data.error || `Erro ${resp.status}`)
+      return data
+    },
   },
 
   planos: {

@@ -210,6 +210,11 @@ def cancelar_agendamento_gestor(ag_id):
     if ag.status in (StatusAgendamento.CANCELADO, StatusAgendamento.CONCLUIDO):
         raise APIError(f'Não é possível cancelar. Status atual: "{ag.status}".')
 
+    dados  = request.get_json(silent=True) or {}
+    motivo = (dados.get('motivo') or '').strip()
+    if motivo:
+        ag.observacao = motivo[:300]
+
     pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=ag.barbearia_id).first()
     if pix and pix.status == 'pendente':
         pix.status = 'rejeitado'
@@ -226,6 +231,38 @@ def cancelar_agendamento_gestor(ag_id):
     })
 
     return jsonify({'mensagem': f'{L("agendamento")} cancelado pelo gestor.', 'id': ag_id}), 200
+
+
+# ── PUT /api/v1/gestor/agendamentos/<id>/iniciar ──────────────────────────────
+# Mesma ação que o barbeiro tem na própria agenda (barbeiro/agendamentos.py) —
+# o gestor gerencia a agenda inteira da barbearia, não só a do barbeiro logado.
+
+@gestor_agenda_bp.put('/agendamentos/<int:ag_id>/iniciar')
+@gestor_required
+def iniciar_agendamento_gestor(ag_id):
+    ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id).first()
+    if not ag:
+        raise APIError(f'{L("agendamento")} não encontrado.', 404)
+    if ag.status != StatusAgendamento.AGENDADO:
+        raise APIError(f'Não é possível iniciar. Status atual: "{ag.status}".', 422)
+    ag.status = StatusAgendamento.EM_ATENDIMENTO
+    commit_ou_falhar('gestor.agendamento.iniciar_agendamento_gestor')
+    return jsonify({'id': ag.id, 'status': ag.status}), 200
+
+
+# ── PUT /api/v1/gestor/agendamentos/<id>/concluir ─────────────────────────────
+
+@gestor_agenda_bp.put('/agendamentos/<int:ag_id>/concluir')
+@gestor_required
+def concluir_agendamento_gestor(ag_id):
+    ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id).first()
+    if not ag:
+        raise APIError(f'{L("agendamento")} não encontrado.', 404)
+    if ag.status not in (StatusAgendamento.AGENDADO, StatusAgendamento.EM_ATENDIMENTO):
+        raise APIError(f'Não é possível concluir. Status atual: "{ag.status}".', 422)
+    ag.status = StatusAgendamento.CONCLUIDO
+    commit_ou_falhar('gestor.agendamento.concluir_agendamento_gestor')
+    return jsonify({'id': ag.id, 'status': ag.status}), 200
 
 
 # ══════════════════════════════════════════════════════════════════════════════

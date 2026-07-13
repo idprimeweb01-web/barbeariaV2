@@ -113,5 +113,18 @@ const Bos = (() => {
       const texto = mensagem ? `?text=${encodeURIComponent(mensagem)}` : '';
       return `https://wa.me/${d}${texto}`;
     },
+
+    /**
+     * "Hoje" em Brasília (UTC-3, sem horário de verão desde 2019) — não usa
+     * new Date().toISOString() puro, que reflete o fuso do navegador/SO e
+     * pode devolver o dia seguinte (ou anterior) perto da meia-noite,
+     * mesma classe de bug documentada como DT-001 no projeto.
+     */
+    hojeBrasilia() {
+      // Date.getTime() já é absoluto (epoch UTC) — não precisa (e não deve)
+      // somar getTimezoneOffset(), que só serve pra converter a LEITURA
+      // local de volta pra UTC. Só subtrai o offset fixo de Brasília.
+      return new Date(Date.now() - 3 * 3600000).toISOString().split('T')[0];
+    },
   };
 })();

@@ -10,7 +10,7 @@ from app.models import Usuario
 from app.exceptions import APIError
 from app.utils.auth import revogar_todos_tokens
 from app.utils.db import commit_ou_falhar
-from app.utils.reset_senha import gerar_codigo_recuperacao, validar_codigo_recuperacao
+from app.utils.reset_senha import gerar_codigo_recuperacao, validar_codigo_recuperacao_por_email
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/v1/auth')
 
@@ -132,7 +132,10 @@ def solicitar_reset_senha():
     if not email:
         raise APIError('"email" é obrigatório.')
 
-    gerar_codigo_recuperacao(email)
+    # Chamador é a página pública do cliente (/b/<slug>/esqueci-senha) —
+    # restringe a perfil cliente pra essa tela não virar um vetor de reset de
+    # conta de gestor/barbeiro/super_admin (essas usam o endpoint -staff abaixo).
+    gerar_codigo_recuperacao(email, perfis_permitidos=['cliente'])
     commit_ou_falhar('auth.solicitar_reset_senha')
 
     return jsonify({
@@ -141,9 +144,36 @@ def solicitar_reset_senha():
     }), 200
 
 
+# ── POST /api/v1/auth/solicitar-reset-senha-staff ─────────────────────────────
+# Mesma ideia, mas pra gestor/barbeiro — o código vai por notificação in-app
+# pro super_admin (ver _obter_hierarquia), que repassa por WhatsApp.
+
+@auth_bp.post('/solicitar-reset-senha-staff')
+@limiter.limit(os.environ.get('RL_RESET_SENHA', '5 per minute'))
+def solicitar_reset_senha_staff():
+    dados = request.get_json(silent=True)
+    if not dados:
+        raise APIError('Corpo da requisição inválido ou ausente.')
+
+    email = (dados.get('email') or '').strip().lower()
+    if not email:
+        raise APIError('"email" é obrigatório.')
+
+    gerar_codigo_recuperacao(email, perfis_permitidos=['gestor', 'barbeiro'])
+    commit_ou_falhar('auth.solicitar_reset_senha_staff')
+
+    return jsonify({
+        'mensagem': 'Se este e-mail estiver cadastrado, um código de recuperação '
+                     'foi enviado para quem pode te ajudar a redefinir a senha.',
+    }), 200
+
+
 # ── POST /api/v1/auth/confirmar-reset-senha ───────────────────────────────────
-# Sem login (o usuário perdeu a senha — é o ponto do fluxo). Token+código
-# validam a identidade; sucesso já devolve tokens novos (auto-login).
+# Sem login (o usuário perdeu a senha — é o ponto do fluxo). E-mail+código
+# validam a identidade — código é o que a hierarquia repassa por WhatsApp;
+# e-mail é o que o próprio usuário já sabe de cor. Sucesso já devolve
+# tokens novos (auto-login), embora o frontend do cliente hoje prefira
+# mandar pra tela de login normal em vez de auto-logar.
 
 @auth_bp.post('/confirmar-reset-senha')
 @limiter.limit(os.environ.get('RL_RESET_SENHA', '5 per minute'))
@@ -152,12 +182,12 @@ def confirmar_reset_senha():
     if not dados:
         raise APIError('Corpo da requisição inválido ou ausente.')
 
-    token  = (dados.get('token') or '').strip()
+    email  = (dados.get('email') or '').strip().lower()
     codigo = (dados.get('codigo') or '').strip()
-    if not token or not codigo:
-        raise APIError('Os campos "token" e "codigo" são obrigatórios.')
+    if not email or not codigo:
+        raise APIError('Os campos "email" e "codigo" são obrigatórios.')
 
-    usuario = validar_codigo_recuperacao(token, codigo)
+    usuario = validar_codigo_recuperacao_por_email(email, codigo)
     commit_ou_falhar('auth.confirmar_reset_senha')
 
     return jsonify({

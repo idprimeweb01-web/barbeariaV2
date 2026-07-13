@@ -464,7 +464,7 @@
           <div class="td-actions">
             <button class="btn-icon" onclick="verPerfil(${c.id})">Ver</button>
             <button class="btn-icon" onclick="verHistorico(${c.id},'${esc(c.nome).replace(/'/g,"\\'")}')">Histórico</button>
-            <button class="btn-icon" onclick="abrirEdicaoDirecta(${c.id},'${esc(c.nome).replace(/'/g,"\\'")}','${esc(c.email||'')}','')">Editar</button>
+            <button class="btn-icon" onclick="abrirEdicaoRapida(${c.id})">Editar</button>
             <button class="btn-icon danger" onclick="desativar(${c.id},'${esc(c.nome).replace(/'/g,"\\'")}')">Desativar</button>
           </div>
         </td>
@@ -628,6 +628,15 @@
     document.getElementById('eObs').value   = obs;
     abrirModal('modalEdicao');
   }
+  // Busca o perfil completo antes de abrir a edição — usar só os dados já
+  // renderizados na linha da tabela apagava observações (não aparecem ali).
+  async function abrirEdicaoRapida(id) {
+    try {
+      const d = await Bos.get('/gestor/clientes/' + id);
+      const p = d.dados_pessoais;
+      abrirEdicaoDirecta(id, p.nome, p.email || '', p.observacoes || '');
+    } catch (e) { toast(e.message, 'error'); }
+  }
   async function salvarEdicao(e) {
     e.preventDefault();
     if (!_editId) return;
@@ -683,7 +692,7 @@
     document.getElementById('histConteudo').style.display  = 'none';
     abrirModal('modalHistorico');
     try {
-      const r = await Bos.get('/gestor/clientes/' + id + '/perfil');
+      const r = await Bos.get('/gestor/clientes/' + id);
       document.getElementById('histLoading').style.display  = 'none';
       document.getElementById('histConteudo').style.display = '';
       document.getElementById('histVisitas').textContent = r.total_visitas ?? '—';

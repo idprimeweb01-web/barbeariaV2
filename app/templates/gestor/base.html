@@ -331,6 +331,7 @@
           <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
         </svg>
         Agenda
+        <span class="nav-badge" id="sidebar-badge-agenda" style="display:none">0</span>
       </a>
       <a href="/gestor/transferencias" class="nav-link" data-path="/gestor/transferencias">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -400,12 +401,11 @@
 
       <div class="nav-sep"></div>
 
-      <a href="/gestor/pix-approval" class="nav-link" data-path="/gestor/pix-approval" id="nav-pix" style="display:none">
+      <a href="/gestor/pix-approval" class="nav-link" data-path="/gestor/pix-approval" id="nav-planos-solicitacoes" style="display:none">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
         </svg>
-        Aprovar PIX
-        <span class="nav-badge" id="sidebar-badge" style="display:none">0</span>
+        Solicitações de Plano
       </a>
       <a href="/gestor/configuracoes/pix" class="nav-link" data-path="/gestor/configuracoes/pix">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -550,8 +550,11 @@
         Bos.get('/gestor/dashboard'),
         Bos.get('/gestor/features'),
       ]);
+      // pendentes_pix = agendamentos aguardando aprovação de comprovante PIX
+      // — aprovados linha-a-linha dentro da própria Agenda, não numa fila
+      // separada (a fila separada é de solicitação de PLANO, ver abaixo).
       const n = dash?.pendentes_pix || 0;
-      const badge = document.getElementById('sidebar-badge');
+      const badge = document.getElementById('sidebar-badge-agenda');
       if (n > 0 && badge) { badge.textContent = n; badge.style.display = ''; }
 
       const f = {};
@@ -561,17 +564,21 @@
       // Cada feature com tela própria de nav esconde o link até confirmar
       // que está ativa. Features sem tela de nav (comissao, notificacoes,
       // historico_cliente) não entram aqui — não há link a esconder.
+      // "Solicitações de Plano" (pix-approval.html) é sobre aprovação de
+      // ClientePlanoSolicitacao — pertence à feature "planos", não
+      // "pix_integrado" (nome antigo da rota é só histórico).
       const NAV_POR_FEATURE = {
-        pix_integrado:  'nav-pix',
-        cupons:         'nav-cupons',
-        produtos_venda: 'nav-vendas',
-        planos:         'nav-planos',
-        vip_brindes:    'nav-vip',
+        cupons:         ['nav-cupons'],
+        produtos_venda: ['nav-vendas'],
+        planos:         ['nav-planos', 'nav-planos-solicitacoes'],
+        vip_brindes:    ['nav-vip'],
       };
-      Object.entries(NAV_POR_FEATURE).forEach(([feature, navId]) => {
+      Object.entries(NAV_POR_FEATURE).forEach(([feature, navIds]) => {
         if (f[feature]) {
-          const el = document.getElementById(navId);
-          if (el) el.style.display = '';
+          navIds.forEach(navId => {
+            const el = document.getElementById(navId);
+            if (el) el.style.display = '';
+          });
         }
       });
     } catch {}

@@ -71,6 +71,11 @@ def entrar():
     return render_template('staff/login.html')
 
 
+@views_bp.get('/esqueci-senha')
+def staff_esqueci_senha():
+    return render_template('staff/esqueci_senha.html')
+
+
 # ── POST /entrar ──────────────────────────────────────────────────────────────
 
 @views_bp.post('/entrar')
@@ -299,12 +304,6 @@ def gestor_pix_approval():
     return render_template('gestor/pix_approval.html', **_gestor_ctx())
 
 
-@views_bp.get('/gestor/esqueci-senha')
-@session_required('gestor', 'super_admin')
-def gestor_esqueci_senha():
-    return render_template('gestor/esqueci_senha.html', **_gestor_ctx())
-
-
 @views_bp.get('/gestor/configuracoes/pix')
 @session_required('gestor', 'super_admin')
 def gestor_config_pix():
@@ -375,18 +374,6 @@ def barbeiro_clientes():
 @session_required('barbeiro', 'super_admin')
 def barbeiro_disponiveis():
     return render_template('barbeiro/disponiveis.html', **_barbeiro_ctx())
-
-
-@views_bp.get('/barbeiro/agenda')
-@session_required('barbeiro', 'super_admin')
-def barbeiro_agenda():
-    return render_template('barbeiro/agenda.html', **_barbeiro_ctx())
-
-
-@views_bp.get('/barbeiro/perfil')
-@session_required('barbeiro', 'super_admin')
-def barbeiro_perfil():
-    return render_template('barbeiro/perfil.html', **_barbeiro_ctx())
 
 
 @views_bp.get('/barbeiro/produtos')
@@ -468,6 +455,12 @@ def super_auditoria():
     return render_template('super/auditoria.html', **_super_ctx())
 
 
+@views_bp.get('/super/solicitacoes-senha')
+@session_required('super_admin')
+def super_solicitacoes_senha():
+    return render_template('super/solicitacoes_senha.html', **_super_ctx())
+
+
 @views_bp.get('/super/segmentos')
 @session_required('super_admin')
 def super_segmentos():
@@ -525,6 +518,21 @@ def cliente_entrar(slug):
     custom = BarbeariaCustomizacao.query.filter_by(barbearia_id=barbearia.id).first()
     return render_template(
         'cliente/entrar.html',
+        slug=slug,
+        bk_nome=barbearia.nome_exibicao or barbearia.nome,
+        logo_url=custom.logo_url if custom else None,
+    )
+
+
+@views_bp.get('/b/<slug>/esqueci-senha')
+def cliente_esqueci_senha(slug):
+    barbearia = Barbearia.query.filter_by(slug=slug, ativo=True).first()
+    if not barbearia:
+        abort(404)
+    from app.models import BarbeariaCustomizacao
+    custom = BarbeariaCustomizacao.query.filter_by(barbearia_id=barbearia.id).first()
+    return render_template(
+        'cliente/esqueci_senha.html',
         slug=slug,
         bk_nome=barbearia.nome_exibicao or barbearia.nome,
         logo_url=custom.logo_url if custom else None,

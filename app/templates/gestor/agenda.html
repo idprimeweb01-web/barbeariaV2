@@ -223,7 +223,7 @@
 
 {% block scripts %}
 <script>
-let _data    = new Date().toISOString().split('T')[0];
+let _data    = Bos.hojeBrasilia();
 let _barbs   = [];
 let _cancelId = null;
 let _pixId    = null;
@@ -311,6 +311,8 @@ function renderTabela(ags) {
     const val  = fmtR(ag.valor_total);
     const podeAprovar  = ['aguardando_aprovacao','aguardando_comprovante','aguardando_pagamento'].includes(ag.status);
     const podeCancelar = !['cancelado','concluido'].includes(ag.status);
+    const podeIniciar  = ag.status === 'agendado';
+    const podeConcluir = ag.status === 'agendado' || ag.status === 'em_atendimento';
 
     return `<tr>
       <td><span class="ag-hora">${hora}</span></td>
@@ -324,6 +326,8 @@ function renderTabela(ags) {
       <td>
         <div class="ag-acoes">
           ${podeAprovar ? `<button class="ag-btn pix" onclick="abrirPix(${ag.id},'${esc(cli).replace(/'/g,"\\'")}',${ag.valor_total})">✓ PIX</button>` : ''}
+          ${podeIniciar ? `<button class="ag-btn" onclick="iniciarAgendamento(${ag.id})">▶ Iniciar</button>` : ''}
+          ${podeConcluir ? `<button class="ag-btn" onclick="concluirAgendamento(${ag.id})">✓ Concluir</button>` : ''}
           ${podeCancelar ? `<button class="ag-btn cancel" onclick="abrirCancelar(${ag.id},'${esc(cli).replace(/'/g,"\\'")}','${esc(sv).replace(/'/g,"\\'")}')">✕ Cancelar</button>` : ''}
         </div>
       </td>
@@ -394,6 +398,22 @@ async function confirmarCancelar() {
     carregar();
   } catch(e) { toast(e.message, 'error'); }
   finally { btn.disabled = false; btn.textContent = 'Cancelar agendamento'; }
+}
+
+async function iniciarAgendamento(id) {
+  try {
+    await Bos.put('/gestor/agendamentos/' + id + '/iniciar');
+    toast('Atendimento iniciado.', 'success');
+    carregar();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function concluirAgendamento(id) {
+  try {
+    await Bos.put('/gestor/agendamentos/' + id + '/concluir');
+    toast('Atendimento concluído.', 'success');
+    carregar();
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 // ── Novo Agendamento ──────────────────────────────────────

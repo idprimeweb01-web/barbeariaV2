@@ -213,7 +213,7 @@
 
   // ── Init ────────────────────────────────────────────────
   (async () => {
-    document.getElementById('inputData').value = new Date().toISOString().split('T')[0];
+    document.getElementById('inputData').value = Bos.hojeBrasilia();
     try {
       const barbs = await Bos.get('/gestor/barbeiros?ativo=true');
       const sel   = document.getElementById('selBarbeiro');
@@ -259,7 +259,7 @@
 
   // ── Carregar dados ──────────────────────────────────────
   async function carregar() {
-    const dataStr = document.getElementById('inputData').value || new Date().toISOString().split('T')[0];
+    const dataStr = document.getElementById('inputData').value || Bos.hojeBrasilia();
     const { de, ate } = getRange(_tipo, dataStr);
     const params = new URLSearchParams({ de, ate });
 
@@ -483,7 +483,7 @@
   function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
   function exportar(fmt) {
-    const dataEl = document.getElementById('inputData').value || new Date().toISOString().split('T')[0];
+    const dataEl = document.getElementById('inputData').value || Bos.hojeBrasilia();
     const {de, ate} = getRange(_tipo, dataEl);
     const url = `/api/v1/gestor/relatorios/agendamentos/${fmt === 'pdf' ? 'pdf' : 'excel'}?de=${de}&ate=${ate}`;
     window.open(url, '_blank');

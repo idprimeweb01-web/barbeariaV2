@@ -1,0 +1,59 @@
+{% extends "super/base.html" %}
+{% block title %}Solicitações de Senha{% endblock %}
+{% block page_title %}Solicitações de Senha (Staff){% endblock %}
+
+{% block styles %}
+<style>
+.sol-card { background:#1e1e1e; border:1px solid #2a2a2a; border-radius:10px; padding:16px 18px; margin-bottom:12px; display:flex; align-items:center; gap:16px; }
+.sol-nome { font-weight:700; font-size:14px; }
+.sol-sub { font-size:12px; color:#666; margin-top:2px; }
+.sol-perfil { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:var(--cor-primaria); background:rgba(186,117,23,.12); border-radius:999px; padding:2px 8px; margin-left:8px; }
+.sol-codigo { font-family:monospace; font-size:20px; font-weight:800; color:var(--cor-primaria); letter-spacing:2px; background:#151515; border:1px solid #2a2a2a; border-radius:8px; padding:8px 14px; }
+.sol-wa { background:#25d366; color:#fff; border:none; border-radius:8px; padding:10px 16px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit; text-decoration:none; display:flex; align-items:center; gap:6px; white-space:nowrap; }
+.sol-wa:hover { opacity:.9; }
+</style>
+{% endblock %}
+
+{% block content %}
+<p style="font-size:13px;color:#888;margin-bottom:18px">
+  Gestores e barbeiros que esqueceram a senha. Clique em WhatsApp para enviar o código diretamente.
+</p>
+<div id="lista">
+  <div class="empty-state">Carregando…</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function carregar() {
+  const el = document.getElementById('lista');
+  try {
+    const lista = await Bos.get('/super/solicitacoes-senha');
+    if (!lista.length) {
+      el.innerHTML = '<div class="empty-state">Nenhuma solicitação pendente 🎉</div>';
+      return;
+    }
+    el.innerHTML = lista.map(s => {
+      const msg = `Olá ${s.nome}! Aqui está seu código para redefinir a senha: ${s.codigo}`;
+      const link = Bos.wa(s.telefone, msg);
+      return `
+        <div class="sol-card">
+          <div style="flex:1">
+            <div class="sol-nome">${esc(s.nome || '—')}<span class="sol-perfil">${esc(s.perfil)}</span></div>
+            <div class="sol-sub">${esc(s.telefone || 'sem telefone')} ${s.barbearia ? '· ' + esc(s.barbearia) : ''}</div>
+          </div>
+          <div class="sol-codigo">${esc(s.codigo)}</div>
+          ${link ? `<a class="sol-wa" href="${link}" target="_blank" rel="noopener noreferrer">📲 WhatsApp</a>` : ''}
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="empty-state">Erro: ${esc(e.message)}</div>`;
+  }
+}
+
+carregar();
+</script>
+{% endblock %}

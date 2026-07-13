@@ -47,14 +47,28 @@ def gerar_codigo_recuperacao(email: str, perfis_permitidos: list | None = None) 
     return usuario, solicitacao, codigo
 
 
-def validar_codigo_recuperacao(token: str, codigo: str) -> Usuario:
-    """Valida código de recuperação. Retorna usuário se OK, levanta APIError se inválido."""
-    solicitacao = SolicitacaoSenha.query.filter_by(token=token).first()
+def validar_codigo_recuperacao_por_email(email: str, codigo: str) -> Usuario:
+    """Valida código de recuperação localizando a solicitação pelo e-mail do
+    usuário (o que quem esqueceu a senha realmente tem em mãos) + código
+    (recebido por WhatsApp da hierarquia). Substitui o fluxo antigo por
+    token — o token nunca é exposto a ninguém fora do banco, então um
+    fluxo que dependesse dele era inalcançável na prática."""
+    # Sem filtro de perfil aqui — quem já restringe é o lado da solicitação
+    # (cliente via /solicitar-reset-senha, staff via /solicitar-reset-senha-staff);
+    # só existe uma SolicitacaoSenha pendente se um desses dois já validou o perfil.
+    usuario = Usuario.query.filter_by(email=email, ativo=True).first()
+    if not usuario:
+        raise APIError('Código inválido.', 401)  # mesma msg genérica — não confirma se o e-mail existe
 
+    solicitacao = (
+        SolicitacaoSenha.query
+        .filter_by(usuario_id=usuario.id, status='pendente')
+        .order_by(SolicitacaoSenha.criado_em.desc())
+        .first()
+    )
     if not solicitacao:
-        raise APIError('Token inválido.', 404)
-    if solicitacao.confirmado_em:
-        raise APIError('Código já utilizado.', 422)
+        raise APIError('Nenhuma solicitação de redefinição pendente para este e-mail.', 404)
+
     if dt.datetime.utcnow() > solicitacao.expira_em:
         raise APIError('Código expirado.', 422)
     if solicitacao.tentativas >= MAX_TENTATIVAS:
@@ -67,10 +81,6 @@ def validar_codigo_recuperacao(token: str, codigo: str) -> Usuario:
         # (a proteção contra força bruta ficaria só decorativa).
         db.session.commit()
         raise APIError('Código inválido.', 401)
-
-    usuario = db.session.get(Usuario, solicitacao.usuario_id)
-    if not usuario:
-        raise APIError('Usuário não encontrado.', 404)
 
     usuario.senha = generate_password_hash(codigo)
     solicitacao.confirmado_em = dt.datetime.utcnow()

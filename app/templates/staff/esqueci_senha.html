@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BarberOS — Esqueci minha senha</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    body {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100dvh; padding: 24px 20px;
+    }
+    .login-wrap { width: 100%; max-width: 420px; }
+    .logo-area { text-align: center; margin-bottom: 36px; }
+    .logo-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 64px; height: 64px; background: rgba(186,117,23,0.12);
+      border: 1.5px solid rgba(186,117,23,0.3); border-radius: 16px; margin-bottom: 16px;
+    }
+    .logo-area h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+    .logo-area h1 span { color: var(--cor-primaria); }
+    .passo-hint { font-size: 13px; color: var(--cor-texto-secundario); margin-bottom: 20px; line-height: 1.5; }
+    #msg-erro, #msg-ok { display: none; }
+    #msg-ok { background: rgba(34,197,94,.1); color: #4ade80; border: 1px solid rgba(34,197,94,.3); }
+  </style>
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="logo-area">
+    <div class="logo-icon">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#BA7517" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 4h18"/><path d="M6 4v2a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4"/><path d="M9 12v6"/><path d="M15 12v6"/><path d="M5 20h14"/><circle cx="12" cy="9" r="1"/>
+      </svg>
+    </div>
+    <h1>Barber<span>OS</span></h1>
+  </div>
+
+  <div class="card">
+    <div id="msg-erro" class="alert alert-error" role="alert"><span id="msg-erro-texto"></span></div>
+    <div id="msg-ok" class="alert" role="status"><span id="msg-ok-texto"></span></div>
+
+    <!-- Passo 1: informar e-mail -->
+    <div id="passo1">
+      <p class="passo-hint">Gestor ou barbeiro: informe o e-mail da sua conta. O código vai para o super admin da plataforma, que te repassa por WhatsApp.</p>
+      <form id="form-solicitar" novalidate>
+        <div class="field">
+          <label for="email1">E-mail</label>
+          <div class="input-wrap">
+            <input type="email" id="email1" name="email" placeholder="seu@email.com" autocomplete="email" required>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" id="btn-solicitar">
+          <span id="btn-solicitar-texto">ENVIAR CÓDIGO</span>
+          <span id="btn-solicitar-spinner" class="spinner" style="display:none"></span>
+        </button>
+      </form>
+    </div>
+
+    <!-- Passo 2: informar código recebido -->
+    <div id="passo2" style="display:none">
+      <p class="passo-hint">Digite o código de 8 dígitos recebido. Sua senha vai virar esse código — troque por outra depois de entrar.</p>
+      <form id="form-confirmar" novalidate>
+        <div class="field">
+          <label for="codigo">Código recebido</label>
+          <div class="input-wrap">
+            <input type="text" id="codigo" name="codigo" placeholder="00000000" maxlength="8" inputmode="numeric" autocomplete="one-time-code" required>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" id="btn-confirmar">
+          <span id="btn-confirmar-texto">CONFIRMAR E REDEFINIR</span>
+          <span id="btn-confirmar-spinner" class="spinner" style="display:none"></span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <p class="text-center text-muted mt-24" style="font-size:13px">
+    Lembrou a senha? <a href="/entrar" class="link-esqueci" style="font-weight:600">Voltar para o login</a>
+  </p>
+</div>
+
+<script>
+let _email = '';
+
+function mostrarErro(msg) {
+  document.getElementById('msg-ok').style.display = 'none';
+  document.getElementById('msg-erro-texto').textContent = msg;
+  document.getElementById('msg-erro').style.display = 'flex';
+}
+function mostrarOk(msg) {
+  document.getElementById('msg-erro').style.display = 'none';
+  document.getElementById('msg-ok-texto').textContent = msg;
+  document.getElementById('msg-ok').style.display = 'flex';
+}
+function ocultarMsgs() {
+  document.getElementById('msg-erro').style.display = 'none';
+  document.getElementById('msg-ok').style.display = 'none';
+}
+function setCarregando(btnPrefix, ativo) {
+  const btn = document.getElementById('btn-' + btnPrefix);
+  btn.disabled = ativo;
+  document.getElementById('btn-' + btnPrefix + '-texto').style.display   = ativo ? 'none' : '';
+  document.getElementById('btn-' + btnPrefix + '-spinner').style.display = ativo ? '' : 'none';
+}
+
+document.getElementById('form-solicitar').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  ocultarMsgs();
+  _email = document.getElementById('email1').value.trim();
+  if (!_email) { mostrarErro('Informe o e-mail.'); return; }
+
+  setCarregando('solicitar', true);
+  try {
+    const resp = await fetch('/api/v1/auth/solicitar-reset-senha-staff', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: _email }),
+    });
+    const dados = await resp.json();
+    if (!resp.ok) {
+      mostrarErro(dados.erro || 'Erro ao solicitar. Tente novamente.');
+      setCarregando('solicitar', false);
+      return;
+    }
+    mostrarOk(dados.mensagem || 'Código enviado! Peça o código ao super admin por WhatsApp.');
+    document.getElementById('passo1').style.display = 'none';
+    document.getElementById('passo2').style.display = '';
+  } catch {
+    mostrarErro('Sem conexão. Verifique sua internet e tente novamente.');
+  } finally {
+    setCarregando('solicitar', false);
+  }
+});
+
+document.getElementById('form-confirmar').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  ocultarMsgs();
+  const codigo = document.getElementById('codigo').value.trim();
+  if (!codigo) { mostrarErro('Informe o código recebido.'); return; }
+
+  setCarregando('confirmar', true);
+  try {
+    const resp = await fetch('/api/v1/auth/confirmar-reset-senha', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: _email, codigo }),
+    });
+    const dados = await resp.json();
+    if (!resp.ok) {
+      mostrarErro(dados.erro || 'Código inválido. Tente novamente.');
+      setCarregando('confirmar', false);
+      return;
+    }
+    mostrarOk('Senha redefinida! Sua nova senha é o código que você acabou de informar. Redirecionando para o login…');
+    setTimeout(() => { window.location.href = '/entrar'; }, 2200);
+  } catch {
+    mostrarErro('Sem conexão. Verifique sua internet e tente novamente.');
+    setCarregando('confirmar', false);
+  }
+});
+</script>
+
+</body>
+</html>

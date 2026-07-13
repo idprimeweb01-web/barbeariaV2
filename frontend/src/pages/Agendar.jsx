@@ -4,6 +4,7 @@ import { Calendar, User, Scissors, Clock, CheckCircle, AlertCircle } from 'lucid
 import Layout from '../components/Layout'
 import { showToast } from '../components/Layout'
 import PaymentBox from '../components/PaymentBox'
+import PixConfirmacao from '../components/PixConfirmacao'
 import { api } from '../api'
 
 const SLUG = window.BOS_SLUG || ''
@@ -12,12 +13,15 @@ function fmtMoeda(v) {
   return `R$ ${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
 }
 
+// "Hoje" em Brasília (UTC-3, sem horário de verão desde 2019) — não usa
+// new Date().toISOString() puro, que reflete o fuso do navegador/SO e pode
+// devolver o dia seguinte (ou anterior) perto da meia-noite (DT-001).
 function hoje() {
-  return new Date().toISOString().split('T')[0]
+  return new Date(Date.now() - 3 * 3600000).toISOString().split('T')[0]
 }
 
 export default function Agendar() {
-  const [step, setStep]             = useState(1) // 1=serviço, 2=barbeiro, 3=data/hora, 4=confirmar
+  const [step, setStep]             = useState(1) // 1=serviço, 2=barbeiro, 3=data/hora, 4=confirmar, 5=pix
   const [planoAtivo, setPlanoAtivo] = useState(null)
   const [features, setFeatures]     = useState([])
   const [servicos, setServicos]     = useState([])  // todos disponíveis
@@ -25,7 +29,7 @@ export default function Agendar() {
   const [slots, setSlots]           = useState([])
   const [motivoIndisponivel, setMotivoIndisponivel] = useState(null)
 
-  const [servicoSel, setServicoSel]   = useState(null)
+  const [servicosSel, setServicosSel] = useState([]) // multi-serviço
   const [barbeiroSel, setBarbeiroSel] = useState(null)
   const [dataSel, setDataSel]         = useState(hoje())
   const [horaSel, setHoraSel]         = useState(null)
@@ -36,7 +40,11 @@ export default function Agendar() {
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [agendando, setAgendando]       = useState(false)
   const [loading, setLoading]           = useState(true)
+  const [agendamentoCriado, setAgendamentoCriado] = useState(null) // {id, pix}
   const navigate = useNavigate()
+
+  const duracaoTotal = servicosSel.reduce((s, sv) => s + (sv.duracao_minutos || 30), 0)
+  const valorTotal   = servicosSel.reduce((s, sv) => s + Number(sv.preco || 0), 0)
 
   useEffect(() => {
     Promise.all([
@@ -61,14 +69,22 @@ export default function Agendar() {
     ? servicos.filter(s => idsLiberados.has(s.id))
     : servicos
 
-  // Ao selecionar serviço → buscar barbeiros
-  const onSelectServico = async (sv) => {
-    setServicoSel(sv)
+  // Alterna um serviço na seleção múltipla
+  const onToggleServico = (sv) => {
+    setServicosSel(prev =>
+      prev.some(s => s.id === sv.id) ? prev.filter(s => s.id !== sv.id) : [...prev, sv]
+    )
+  }
+
+  // Confirmar seleção de serviços → buscar barbeiros que atendem TODOS
+  const onConfirmarServicos = async () => {
+    if (!servicosSel.length) { showToast('Selecione ao menos um serviço.', 'error'); return }
     setBarbeiroSel(null)
     setHoraSel(null)
     setSlots([])
     try {
-      const lista = await api.pub.get(`/barbeiros?servico_ids=${sv.id}`)
+      const ids = servicosSel.map(s => s.id).join(',')
+      const lista = await api.pub.get(`/barbeiros?servico_ids=${ids}`)
       setBarbeiros(Array.isArray(lista) ? lista : [])
     } catch {
       setBarbeiros([])
@@ -76,21 +92,21 @@ export default function Agendar() {
     setStep(2)
   }
 
-  // Ao selecionar barbeiro → buscar slots
+  // Ao selecionar barbeiro → buscar slots (duração = soma dos serviços)
   useEffect(() => {
-    if (!barbeiroSel || !dataSel || !servicoSel) return
+    if (!barbeiroSel || !dataSel || !servicosSel.length) return
     setLoadingSlots(true)
     setSlots([])
     setMotivoIndisponivel(null)
     setHoraSel(null)
-    api.pub.get(`/barbeiros/${barbeiroSel.id}/slots?data=${dataSel}&duracao=${servicoSel.duracao_minutos || 30}`)
+    api.pub.get(`/barbeiros/${barbeiroSel.id}/slots?data=${dataSel}&duracao=${duracaoTotal}`)
       .then(r => {
         setSlots(Array.isArray(r?.slots) ? r.slots : [])
         setMotivoIndisponivel(r?.indisponivel ? r.motivo : null)
       })
       .catch(() => setSlots([]))
       .finally(() => setLoadingSlots(false))
-  }, [barbeiroSel, dataSel, servicoSel])
+  }, [barbeiroSel, dataSel, servicosSel])
 
   const onSelectBarbeiro = (br) => {
     setBarbeiroSel(br)
@@ -104,23 +120,28 @@ export default function Agendar() {
   }
 
   const handleAgendar = async () => {
-    if (!servicoSel || !barbeiroSel || !dataSel || !horaSel) {
+    if (!servicosSel.length || !barbeiroSel || !dataSel || !horaSel) {
       showToast('Preencha todos os campos', 'error')
       return
     }
     setAgendando(true)
     try {
       const dataHora = `${dataSel}T${horaSel}:00`
-      await api.post('/agendamentos', {
+      const resp = await api.post('/agendamentos', {
         barbeiro_id:      barbeiroSel.id,
         data_hora:        dataHora,
-        servicos:         [{ servico_id: servicoSel.id }],
+        servicos:         servicosSel.map(sv => ({ servico_id: sv.id })),
         metodo_pagamento: metodo,
         observacao:       obs || null,
         cupom_codigo:     cupom || null,
       })
-      showToast('Agendamento criado com sucesso!', 'success')
-      navigate('/cliente/historico')
+      if (resp?.pix?.codigo_pix) {
+        setAgendamentoCriado({ id: resp.id, pix: resp.pix })
+        setStep(5)
+      } else {
+        showToast('Agendamento criado com sucesso!', 'success')
+        navigate('/cliente/historico')
+      }
     } catch (e) {
       showToast(e.message, 'error')
     } finally {
@@ -158,20 +179,29 @@ export default function Agendar() {
       )}
 
       {/* Steps */}
-      <div className="steps">
-        {[['Serviço', Scissors], ['Barbeiro', User], ['Data & Hora', Calendar], ['Confirmar', CheckCircle]].map(([label, Icon], i) => (
-          <div key={label} className={`step ${step === i + 1 ? 'active' : ''}`} style={{ cursor: i + 1 < step ? 'pointer' : 'default' }} onClick={() => { if (i + 1 < step) setStep(i + 1) }}>
-            <div className="step-num">{i + 1}</div>
-            <Icon size={13} />
-            <span style={{ fontSize: 11 }}>{label}</span>
-          </div>
-        ))}
-      </div>
+      {step !== 5 && (
+        <div className="steps">
+          {[['Serviço', Scissors], ['Barbeiro', User], ['Data & Hora', Calendar], ['Confirmar', CheckCircle]].map(([label, Icon], i) => (
+            <div key={label} className={`step ${step === i + 1 ? 'active' : ''}`} style={{ cursor: i + 1 < step ? 'pointer' : 'default' }} onClick={() => { if (i + 1 < step) setStep(i + 1) }}>
+              <div className="step-num">{i + 1}</div>
+              <Icon size={13} />
+              <span style={{ fontSize: 11 }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
-      {/* Step 1 — Serviço */}
+      {/* Step 1 — Serviço(s) — multi-seleção */}
       {step === 1 && (
         <div>
-          <div className="section-header"><span className="section-title">Escolha o serviço</span></div>
+          <div className="section-header">
+            <span className="section-title">Escolha o(s) serviço(s)</span>
+            {servicosSel.length > 0 && (
+              <button className="btn btn-primary btn-sm" onClick={onConfirmarServicos}>
+                Continuar ({servicosSel.length}) →
+              </button>
+            )}
+          </div>
           {servicosFiltrados.length === 0 ? (
             <div className="card empty">
               <Scissors size={32} style={{ margin: '0 auto 10px', opacity: .3 }} />
@@ -179,20 +209,28 @@ export default function Agendar() {
             </div>
           ) : (
             <div className="grid-3">
-              {servicosFiltrados.map(sv => (
-                <div key={sv.id} className={`card`} style={{ cursor: 'pointer', transition: 'border-color .15s', borderColor: servicoSel?.id === sv.id ? 'var(--primary)' : 'var(--border)' }} onClick={() => onSelectServico(sv)}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                    <div style={{ background: 'rgba(245,158,11,.1)', borderRadius: 8, padding: 8 }}>
-                      <Scissors size={16} color="var(--primary)" />
+              {servicosFiltrados.map(sv => {
+                const selecionado = servicosSel.some(s => s.id === sv.id)
+                return (
+                  <div key={sv.id} className="card" style={{ cursor: 'pointer', transition: 'border-color .15s', borderColor: selecionado ? 'var(--primary)' : 'var(--border)', background: selecionado ? 'rgba(245,158,11,.05)' : undefined }} onClick={() => onToggleServico(sv)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                      <div style={{ background: selecionado ? 'var(--primary)' : 'rgba(245,158,11,.1)', borderRadius: 8, padding: 8, display: 'flex' }}>
+                        {selecionado ? <CheckCircle size={16} color="#1a1a1a" /> : <Scissors size={16} color="var(--primary)" />}
+                      </div>
+                      <span style={{ fontWeight: 600 }}>{sv.nome}</span>
                     </div>
-                    <span style={{ fontWeight: 600 }}>{sv.nome}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--muted)' }}>
+                      <span><Clock size={11} style={{ verticalAlign: 'middle', marginRight: 3 }} />{sv.duracao_minutos || 30} min</span>
+                      <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{fmtMoeda(sv.preco)}</span>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--muted)' }}>
-                    <span><Clock size={11} style={{ verticalAlign: 'middle', marginRight: 3 }} />{sv.duracao_minutos || 30} min</span>
-                    <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{fmtMoeda(sv.preco)}</span>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
+            </div>
+          )}
+          {servicosSel.length > 0 && (
+            <div className="card" style={{ marginTop: 16, fontSize: 12, color: 'var(--muted)' }}>
+              {servicosSel.length} serviço{servicosSel.length !== 1 ? 's' : ''} selecionado{servicosSel.length !== 1 ? 's' : ''} · {duracaoTotal} min · <strong style={{ color: 'var(--primary)' }}>{fmtMoeda(valorTotal)}</strong>
             </div>
           )}
         </div>
@@ -281,14 +319,22 @@ export default function Agendar() {
           </div>
 
           <div className="card" style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted2)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 6 }}>Serviço(s)</div>
+            <div style={{ marginBottom: 16 }}>
+              {servicosSel.map(sv => (
+                <div key={sv.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0' }}>
+                  <span>{sv.nome}</span>
+                  <span style={{ color: 'var(--muted)' }}>{fmtMoeda(sv.preco)}</span>
+                </div>
+              ))}
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               {[
-                ['Serviço', servicoSel?.nome],
                 ['Profissional', barbeiroSel?.nome || barbeiroSel?.usuario_nome],
                 ['Data', dataSel ? new Date(dataSel + 'T12:00:00').toLocaleDateString('pt-BR') : ''],
                 ['Hora', horaSel],
-                ['Valor', fmtMoeda(servicoSel?.preco)],
-                ['Duração', `${servicoSel?.duracao_minutos || 30} min`],
+                ['Valor total', fmtMoeda(valorTotal)],
+                ['Duração total', `${duracaoTotal} min`],
               ].map(([k, v]) => (
                 <div key={k}>
                   <div style={{ fontSize: 11, color: 'var(--muted2)', fontWeight: 700, textTransform: 'uppercase' }}>{k}</div>
@@ -321,6 +367,16 @@ export default function Agendar() {
             {agendando ? 'Agendando...' : 'Confirmar agendamento'}
           </button>
         </div>
+      )}
+
+      {/* Step 5 — PIX (só quando o agendamento foi criado com pagamento online) */}
+      {step === 5 && agendamentoCriado && (
+        <PixConfirmacao
+          agendamentoId={agendamentoCriado.id}
+          pix={agendamentoCriado.pix}
+          showToast={showToast}
+          onFinalizar={() => navigate('/cliente/historico')}
+        />
       )}
     </Layout>
   )

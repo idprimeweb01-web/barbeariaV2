@@ -365,7 +365,8 @@ const _ZONAS = {
 // ── Init ─────────────────────────────────────────────────────────
 async function carregar() {
   try {
-    _barbearias = await Bos.get('/super/barbearias');
+    const r = await Bos.get('/super/barbearias?per_page=100');
+    _barbearias = r.dados || [];
   } catch(e) {
     document.getElementById('loadingState').textContent = 'Erro: ' + e.message;
     return;

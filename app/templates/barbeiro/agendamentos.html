@@ -176,13 +176,13 @@ const BADGE = {
 };
 
 // ── Init ────────────────────────────────────────────────────────────────────
-document.getElementById('filtroData').value = new Date().toISOString().split('T')[0];
+document.getElementById('filtroData').value = Bos.hojeBrasilia();
 carregar();
 
 async function carregar() {
   const data   = document.getElementById('filtroData').value;
   const status = document.getElementById('filtroStatus').value;
-  let url = '/barbeiro/agendamentos?data=' + (data || new Date().toISOString().split('T')[0]);
+  let url = '/barbeiro/agendamentos?data=' + (data || Bos.hojeBrasilia());
   if (status) url += '&status=' + status;
 
   document.getElementById('tbody').innerHTML =

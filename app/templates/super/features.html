@@ -74,52 +74,61 @@
 
 {% block scripts %}
 <script>
-const FEATURES = [
-  { key: 'planos',               name: 'Planos de Assinatura',     desc: 'Clientes podem contratar planos mensais com serviços inclusos' },
-  { key: 'vip_brindes',          name: 'Programa VIP + Brindes',   desc: 'Clientes VIP recebem brinde ao renovar plano' },
-  { key: 'pix_integrado',        name: 'PIX Integrado',            desc: 'Gestor gerencia aprovação de pagamentos PIX no painel' },
-  { key: 'historico_cliente',    name: 'Histórico do Cliente',     desc: 'Clientes veem histórico completo de agendamentos' },
-  { key: 'cupons',               name: 'Sistema de Cupons',        desc: 'Criar e aplicar cupons de desconto' },
-  { key: 'comissao',             name: 'Controle de Comissão',     desc: 'Gerenciar comissões individuais dos barbeiros' },
-  { key: 'notificacoes',         name: 'Notificações Push',        desc: 'Enviar notificações automáticas para clientes' },
-];
+// Rótulo amigável — meramente cosmético. A LISTA de features vem sempre do
+// catálogo real (GET /super/features), nunca hardcoded: uma feature nova
+// adicionada em app/seeds.py aparece aqui automaticamente (com um rótulo
+// genérico) mesmo sem entrada neste dicionário.
+const ROTULOS = {
+  planos:               { name: 'Planos de Assinatura',   desc: 'Clientes podem contratar planos mensais com serviços inclusos', secao: 'CLIENTE — PLANOS' },
+  vip_brindes:          { name: 'Programa VIP + Brindes', desc: 'Clientes VIP recebem brinde ao renovar plano',                  secao: 'CLIENTE — PLANOS' },
+  pix_integrado:        { name: 'PIX Integrado',          desc: 'Gestor gerencia aprovação de pagamentos PIX no painel',         secao: 'CLIENTE — PLANOS' },
+  historico_cliente:    { name: 'Histórico do Cliente',   desc: 'Clientes veem histórico completo de agendamentos',              secao: 'CLIENTE — FUNCIONALIDADES' },
+  cupons:               { name: 'Sistema de Cupons',      desc: 'Criar e aplicar cupons de desconto',                            secao: 'CLIENTE — FUNCIONALIDADES' },
+  produtos_venda:       { name: 'Venda de Produtos',      desc: 'Venda avulsa de produtos com controle de estoque',              secao: 'CLIENTE — FUNCIONALIDADES' },
+  comissao:             { name: 'Controle de Comissão',   desc: 'Gerenciar comissões individuais dos barbeiros',                 secao: 'NEGÓCIO' },
+  notificacoes:         { name: 'Notificações Push',      desc: 'Enviar notificações automáticas para clientes',                 secao: 'NEGÓCIO' },
+};
 
-const SECTIONS = [
-  { title: 'CLIENTE — PLANOS',          keys: ['planos', 'vip_brindes', 'pix_integrado'] },
-  { title: 'CLIENTE — FUNCIONALIDADES', keys: ['historico_cliente', 'cupons'] },
-  { title: 'NEGÓCIO',                   keys: ['comissao', 'notificacoes'] },
-];
+let _catalogo = [];
 
 async function carregarBarbearias() {
   const select = document.getElementById('selectBarbearia');
   try {
-    const barbearias = await Bos.get('/super/barbearias');
+    const r = await Bos.get('/super/features');
+    _catalogo = r.catalogo || [];
+    const barbearias = r.barbearias || [];
     select.innerHTML = '<option value="">Selecione uma barbearia…</option>' +
-      barbearias.map(b => `<option value="${b.id}">${esc(b.nome_exibicao || b.nome)} (${esc(b.slug)})</option>`).join('');
+      barbearias.map(b => `<option value="${b.id}">${esc(b.nome)} (${esc(b.slug)})</option>`).join('');
   } catch (e) {
     toast(e.message, 'error');
   }
 }
 
-function linha(barbeariaId, f, ativo) {
+function linha(barbeariaId, key, ativo) {
+  const r = ROTULOS[key] || { name: key, desc: '' };
   return `
     <div class="feature-row">
       <div>
-        <div class="feature-name">${f.name}</div>
-        <div class="feature-desc">${f.desc}</div>
+        <div class="feature-name">${esc(r.name)}</div>
+        <div class="feature-desc">${esc(r.desc)}</div>
       </div>
-      <div class="toggle-row ${ativo ? 'active' : ''}" data-feature="${f.key}" style="display:flex;align-items:center;">
-        <div class="toggle-ios ${ativo ? 'active' : ''}" onclick="alternar(${barbeariaId}, '${f.key}')"></div>
+      <div class="toggle-row ${ativo ? 'active' : ''}" data-feature="${key}" style="display:flex;align-items:center;">
+        <div class="toggle-ios ${ativo ? 'active' : ''}" onclick="alternar(${barbeariaId}, '${key}')"></div>
         <div class="toggle-label">${ativo ? 'ativada' : 'inativa'}</div>
       </div>
     </div>`;
 }
 
 function renderizar(barbeariaId, estado) {
-  document.getElementById('featuresContainer').innerHTML = SECTIONS.map(s => `
+  const secoes = {};
+  _catalogo.forEach(key => {
+    const secao = (ROTULOS[key] || {}).secao || 'OUTRAS';
+    (secoes[secao] = secoes[secao] || []).push(key);
+  });
+  document.getElementById('featuresContainer').innerHTML = Object.entries(secoes).map(([titulo, keys]) => `
     <div class="feature-section">
-      <div class="feature-section-title">${s.title}</div>
-      ${FEATURES.filter(f => s.keys.includes(f.key)).map(f => linha(barbeariaId, f, !!estado[f.key])).join('')}
+      <div class="feature-section-title">${esc(titulo)}</div>
+      ${keys.map(key => linha(barbeariaId, key, !!estado[key])).join('')}
     </div>
   `).join('');
 }

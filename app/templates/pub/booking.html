@@ -308,6 +308,13 @@ const LS_TEL  = 'bk_tel_'  + SLUG;
 const LS_NOME = 'bk_nome_' + SLUG;
 const LS_ID   = 'bk_id_'   + SLUG;
 
+// "Hoje" em Brasília (UTC-3, sem horário de verão desde 2019) — não usa
+// new Date().toISOString() puro, que reflete o fuso do navegador/SO e pode
+// devolver o dia seguinte (ou anterior) perto da meia-noite (DT-001).
+function hojeBrasilia() {
+  return new Date(Date.now() - 3 * 3600000).toISOString().split('T')[0];
+}
+
 let _state = {
   step: 1,
   telefone: '', nome: '', email: '',
@@ -383,8 +390,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (t) document.getElementById('inpTel').value = t;
   if (n) document.getElementById('inpNome').value = n;
 
-  const today  = new Date().toISOString().split('T')[0];
-  const maxD   = new Date();
+  const today  = hojeBrasilia();
+  const maxD   = new Date(today + 'T12:00:00');
   maxD.setDate(maxD.getDate() + ANT_MAX);
   const inpD   = document.getElementById('inpData');
   inpD.min     = today;

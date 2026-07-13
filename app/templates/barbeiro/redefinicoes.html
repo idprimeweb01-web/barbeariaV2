@@ -48,10 +48,10 @@
 <!-- Esqueci senha -->
 <div class="rd-card">
   <div class="rd-title">Esqueci a senha</div>
-  <p style="font-size:13px;color:#666;margin-bottom:14px">
-    Clique abaixo para enviar uma solicitação de redefinição ao gestor.
+  <p style="font-size:13px;color:#666;margin-bottom:14px" id="esqueciHint">
+    Está logado mas quer redefinir mesmo assim (ex: vai perder o acesso em outro dispositivo)? O processo pede o código pelo super admin, que te repassa por WhatsApp.
   </p>
-  <button class="btn-full ghost" id="btnEsqueci" onclick="esqueceuSenha()">Enviar solicitação ao gestor</button>
+  <a class="btn-full ghost" id="btnEsqueci" href="/esqueci-senha" style="display:block;text-align:center;text-decoration:none;box-sizing:border-box">Ir para redefinição de senha</a>
 </div>
 
 <!-- Sair -->
@@ -105,12 +105,5 @@
     finally { btn.disabled = false; btn.textContent = 'Alterar senha'; }
   }
 
-  function esqueceuSenha() {
-    if (!_BARBEIRO_EMAIL) {
-      toast('Sem e-mail cadastrado. Fale com o gestor.', 'info');
-      return;
-    }
-    toast('Fale com o gestor para redefinir sua senha. E-mail cadastrado: ' + _BARBEIRO_EMAIL, 'info');
-  }
 </script>
 {% endblock %}

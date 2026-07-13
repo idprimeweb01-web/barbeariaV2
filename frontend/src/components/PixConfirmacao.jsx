@@ -1,0 +1,103 @@
+import { useState } from 'react'
+import { CheckCircle } from 'lucide-react'
+import { api } from '../api'
+
+// Tela pós-confirmação quando o agendamento foi criado com PIX: QR code,
+// código copia-e-cola, e upload do comprovante — mesma rota pública usada
+// pelo booking.html anônimo (não exige login, funciona igual autenticado).
+export default function PixConfirmacao({ agendamentoId, pix, onFinalizar, showToast }) {
+  const [arquivo, setArquivo] = useState(null)
+  const [preview, setPreview] = useState(null)
+  const [enviando, setEnviando] = useState(false)
+  const [enviado, setEnviado] = useState(false)
+
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pix.codigo_pix)}`
+
+  const handleArquivo = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setArquivo(file)
+    const reader = new FileReader()
+    reader.onload = (ev) => setPreview(ev.target.result)
+    reader.readAsDataURL(file)
+  }
+
+  const copiarCodigo = () => {
+    navigator.clipboard?.writeText(pix.codigo_pix)
+      .then(() => showToast('Código PIX copiado!', 'info'))
+  }
+
+  const enviarComprovante = async () => {
+    if (!arquivo) { showToast('Selecione uma imagem do comprovante.', 'error'); return }
+    setEnviando(true)
+    try {
+      await api.pub.uploadComprovante(agendamentoId, arquivo)
+      setEnviado(true)
+      showToast('Comprovante enviado!', 'success')
+    } catch (e) {
+      showToast(e.message, 'error')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div>
+      <div className="section-header">
+        <span className="section-title">Pagamento via PIX</span>
+      </div>
+
+      <div className="card" style={{ marginBottom: 20, textAlign: 'center' }}>
+        <img src={qrUrl} alt="QR Code PIX" style={{ borderRadius: 10, marginBottom: 14 }} />
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>Código copia-e-cola</div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center' }}>
+          <code style={{ fontSize: 12, background: 'var(--surface2)', padding: '8px 12px', borderRadius: 6, wordBreak: 'break-all', maxWidth: 280 }}>
+            {pix.codigo_pix}
+          </code>
+        </div>
+        <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={copiarCodigo}>Copiar código</button>
+      </div>
+
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>📸 Enviar comprovante do PIX</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+          Após pagar, envie o comprovante para agilizar a confirmação.
+        </div>
+
+        {enviado ? (
+          <div style={{ color: '#4ade80', fontSize: 13, fontWeight: 700, textAlign: 'center', padding: '10px 0' }}>
+            <CheckCircle size={18} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+            Comprovante enviado com sucesso!
+          </div>
+        ) : (
+          <>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+              border: '1.5px dashed var(--border)', borderRadius: 10, padding: 14,
+            }}>
+              <input type="file" accept="image/jpeg,image/png" style={{ display: 'none' }} onChange={handleArquivo} />
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                {arquivo ? arquivo.name : 'Selecionar imagem (JPEG/PNG, máx. 5 MB)'}
+              </span>
+            </label>
+            {preview && (
+              <img src={preview} alt="preview" style={{ width: '100%', borderRadius: 10, marginTop: 10, maxHeight: 200, objectFit: 'contain', border: '1px solid var(--border)' }} />
+            )}
+            <button
+              className="btn btn-primary"
+              style={{ width: '100%', marginTop: 12 }}
+              disabled={enviando}
+              onClick={enviarComprovante}
+            >
+              {enviando ? 'Enviando…' : 'Enviar comprovante'}
+            </button>
+          </>
+        )}
+      </div>
+
+      <button className="btn btn-ghost" style={{ width: '100%' }} onClick={onFinalizar}>
+        Ir para meus agendamentos
+      </button>
+    </div>
+  )
+}
