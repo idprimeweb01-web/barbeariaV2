@@ -18,7 +18,7 @@ from app.utils.notificacoes import criar_notificacao
 from app.utils.webhooks import disparar_webhook
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.utils.db import commit_ou_falhar
-from app.constants import StatusAgendamento, StatusTransferencia, TipoEventoWebhook, StatusPagamento
+from app.constants import StatusAgendamento, StatusTransferencia, TipoEventoWebhook, StatusPagamento, MetodoPagamentoVenda
 
 barbeiro_ag_bp = Blueprint('barbeiro_agendamentos', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -101,7 +101,9 @@ def _fmt_ag(ag, cli, historico, notas):
         'inicio':          ag.data_hora.isoformat(),
         'hora':            ag.data_hora.strftime('%H:%M'),
         'data':            ag.data_hora.strftime('%d/%m/%Y'),
+        'metodo_pagamento': ag.metodo_pagamento,
         'status_pagamento': ag.status_pagamento,
+        'forma_pagamento_recebido': ag.forma_pagamento_recebido,
         'observacao':      ag.observacao,
         'cliente': {'id': cli.id, 'nome': cli.nome, 'telefone': cli.telefone} if cli else None,
         'servicos':        servicos_info,
@@ -266,9 +268,22 @@ def receber_pagamento(ag_id):
         raise APIError('Agendamento não encontrado.', 404)
     if ag.status_pagamento == StatusPagamento.PAGO:
         raise APIError('Pagamento já foi recebido.', 422)
+
+    dados = request.get_json(silent=True) or {}
+    forma = (dados.get('forma_pagamento') or '').strip().lower()
+    if forma not in MetodoPagamentoVenda.TODOS:
+        raise APIError(
+            f'"forma_pagamento" é obrigatório e deve ser um de: {", ".join(sorted(MetodoPagamentoVenda.TODOS))}.', 422
+        )
+
     ag.status_pagamento = StatusPagamento.PAGO
+    ag.forma_pagamento_recebido = forma
     commit_ou_falhar('barbeiro.agendamentos.receber_pagamento')
-    return jsonify({'id': ag.id, 'status_pagamento': ag.status_pagamento}), 200
+    return jsonify({
+        'id': ag.id,
+        'status_pagamento': ag.status_pagamento,
+        'forma_pagamento_recebido': ag.forma_pagamento_recebido,
+    }), 200
 
 
 # ── POST notas (salva como ClienteNota) ───────────────────────────────────────

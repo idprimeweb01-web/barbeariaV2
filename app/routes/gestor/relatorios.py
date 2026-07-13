@@ -2,7 +2,10 @@ from datetime import date
 from flask import Blueprint, g, jsonify, request, send_file
 from sqlalchemy import func
 from app.extensions import db
-from app.models import Cliente, Agendamento
+from app.models import (
+    Cliente, Agendamento, Venda, VendaItem, Produto,
+    ItemCaixa, BarbeiroCaixa, Barbeiro, Usuario,
+)
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.labels import L
@@ -188,3 +191,177 @@ def relatorio_dividas():
         }
         for c in clientes_devedores
     ]), 200
+
+
+# ── Produtos vendidos (Venda avulsa + venda pela caixa do barbeiro) ───────────
+# São dois modelos de dados separados (ver app/models: Venda/VendaItem vs
+# BarbeiroCaixa/ItemCaixa) que nunca se cruzam em nenhum outro lugar — este
+# endpoint é o único ponto do sistema que soma os dois pra dar ao gestor uma
+# visão completa de "o que foi vendido", não importa por qual tela.
+
+@gestor_relatorios_bp.get('/relatorios/vendas-produtos')
+@gestor_required
+def relatorio_vendas_produtos():
+    _, de, ate = _parse_params()
+
+    produtos_map = {}   # produto_id -> {nome, quantidade, receita}
+    por_forma = {'dinheiro': 0.0, 'cartao': 0.0, 'pix': 0.0}
+
+    # ── Venda avulsa (gestor/PDV clássico) ────────────────────────────────────
+    itens_venda = (
+        db.session.query(VendaItem, Venda.metodo_pagamento)
+        .join(Venda, VendaItem.venda_id == Venda.id)
+        .filter(
+            Venda.barbearia_id == g.barbearia_id,
+            Venda.status == 'concluida',
+            db.func.date(Venda.criado_em) >= de,
+            db.func.date(Venda.criado_em) <= ate,
+        )
+        .all()
+    )
+    produto_ids = {vi.produto_id for vi, _ in itens_venda}
+
+    # ── Venda pela caixa diária do barbeiro ───────────────────────────────────
+    itens_caixa = (
+        db.session.query(ItemCaixa)
+        .join(BarbeiroCaixa, ItemCaixa.caixa_id == BarbeiroCaixa.id)
+        .filter(
+            ItemCaixa.barbearia_id == g.barbearia_id,
+            BarbeiroCaixa.data >= de,
+            BarbeiroCaixa.data <= ate,
+        )
+        .all()
+    )
+    produto_ids |= {i.produto_id for i in itens_caixa}
+
+    produtos = {p.id: p for p in Produto.query.filter(Produto.id.in_(produto_ids)).all()} if produto_ids else {}
+
+    for vi, metodo in itens_venda:
+        p = produtos.get(vi.produto_id)
+        nome = p.nome if p else f'Produto #{vi.produto_id}'
+        entry = produtos_map.setdefault(vi.produto_id, {'nome': nome, 'quantidade': 0, 'receita': 0.0})
+        receita_item = float(vi.preco_unitario) * vi.quantidade
+        entry['quantidade'] += vi.quantidade
+        entry['receita'] += receita_item
+        if metodo in por_forma:
+            por_forma[metodo] += receita_item
+
+    for i in itens_caixa:
+        p = produtos.get(i.produto_id)
+        nome = p.nome if p else f'Produto #{i.produto_id}'
+        entry = produtos_map.setdefault(i.produto_id, {'nome': nome, 'quantidade': 0, 'receita': 0.0})
+        entry['quantidade'] += i.quantidade
+        entry['receita'] += i.total
+        if i.forma_pagamento in por_forma:
+            por_forma[i.forma_pagamento] += i.total
+
+    produtos_lista = sorted(
+        [{'produto_id': pid, **v} for pid, v in produtos_map.items()],
+        key=lambda x: x['quantidade'], reverse=True,
+    )
+
+    return jsonify({
+        'periodo': f'{de.isoformat()} a {ate.isoformat()}',
+        'produtos': produtos_lista,
+        'por_forma_pagamento': {k: round(v, 2) for k, v in por_forma.items()},
+        'faturamento_total': round(sum(por_forma.values()), 2),
+    }), 200
+
+
+# ── Caixa por barbeiro (produtos + recebimento de agendamento) ───────────────
+# "Caixa" aqui é o conceito operacional (quanto cada barbeiro girou no dia),
+# não a tabela BarbeiroCaixa sozinha — soma as duas origens de dinheiro que
+# passam pela mão do barbeiro: venda de produto (ItemCaixa) e recebimento de
+# atendimento pago no local (Agendamento.forma_pagamento_recebido).
+
+@gestor_relatorios_bp.get('/relatorios/caixa')
+@gestor_required
+def relatorio_caixa():
+    _, de, ate = _parse_params()
+
+    def _zero():
+        return {'dinheiro': 0.0, 'cartao': 0.0, 'pix': 0.0, 'total': 0.0}
+
+    barbeiros = {
+        b.id: b for b in Barbeiro.query.filter_by(barbearia_id=g.barbearia_id).all()
+    }
+    usuarios = {
+        u.id: u for u in Usuario.query.filter(Usuario.id.in_(
+            {b.usuario_id for b in barbeiros.values()}
+        )).all()
+    } if barbeiros else {}
+
+    por_barbeiro = {
+        bid: {
+            'barbeiro_id': bid,
+            'nome': usuarios.get(b.usuario_id).nome if usuarios.get(b.usuario_id) else '—',
+            'produtos': _zero(),
+            'atendimentos': _zero(),
+        }
+        for bid, b in barbeiros.items()
+    }
+
+    # ── Produtos (ItemCaixa) ──────────────────────────────────────────────────
+    itens_caixa = (
+        db.session.query(ItemCaixa, BarbeiroCaixa.barbeiro_id)
+        .join(BarbeiroCaixa, ItemCaixa.caixa_id == BarbeiroCaixa.id)
+        .filter(
+            ItemCaixa.barbearia_id == g.barbearia_id,
+            BarbeiroCaixa.data >= de,
+            BarbeiroCaixa.data <= ate,
+        )
+        .all()
+    )
+    for item, bid in itens_caixa:
+        alvo = por_barbeiro.get(bid)
+        if not alvo or item.forma_pagamento not in alvo['produtos']:
+            continue
+        alvo['produtos'][item.forma_pagamento] += item.total
+        alvo['produtos']['total'] += item.total
+
+    # ── Atendimentos recebidos no local (Agendamento) ────────────────────────
+    ags_pagos = Agendamento.query.filter(
+        Agendamento.barbearia_id == g.barbearia_id,
+        Agendamento.status_pagamento == StatusPagamento.PAGO,
+        Agendamento.forma_pagamento_recebido.isnot(None),
+        db.func.date(Agendamento.data_hora) >= de,
+        db.func.date(Agendamento.data_hora) <= ate,
+    ).all()
+    for ag in ags_pagos:
+        alvo = por_barbeiro.get(ag.barbeiro_id)
+        if not alvo or ag.forma_pagamento_recebido not in alvo['atendimentos']:
+            continue
+        valor = float(ag.valor_total)
+        alvo['atendimentos'][ag.forma_pagamento_recebido] += valor
+        alvo['atendimentos']['total'] += valor
+
+    consolidado_produtos = _zero()
+    consolidado_atendimentos = _zero()
+    for v in por_barbeiro.values():
+        for k in consolidado_produtos:
+            consolidado_produtos[k] += v['produtos'][k]
+            consolidado_atendimentos[k] += v['atendimentos'][k]
+
+    por_forma_geral = {
+        forma: round(consolidado_produtos[forma] + consolidado_atendimentos[forma], 2)
+        for forma in ('dinheiro', 'cartao', 'pix')
+    }
+
+    # Origem local/online: todo produto vendido pela caixa é presencial;
+    # atendimento pago em 'pix' aqui é o recebido NO LOCAL via pix do
+    # barbeiro (forma_pagamento_recebido), não o pix pago online antes —
+    # esse já vem como 'pago' automaticamente e não passa por aqui.
+    resultado = {
+        'periodo': f'{de.isoformat()} a {ate.isoformat()}',
+        'por_barbeiro': sorted(
+            [v for v in por_barbeiro.values() if v['produtos']['total'] or v['atendimentos']['total']],
+            key=lambda x: x['produtos']['total'] + x['atendimentos']['total'], reverse=True,
+        ),
+        'consolidado': {
+            'produtos':     {k: round(v, 2) for k, v in consolidado_produtos.items()},
+            'atendimentos': {k: round(v, 2) for k, v in consolidado_atendimentos.items()},
+            'por_forma_pagamento': por_forma_geral,
+            'total_geral': round(sum(por_forma_geral.values()), 2),
+        },
+    }
+    return jsonify(resultado), 200

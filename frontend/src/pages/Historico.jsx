@@ -135,8 +135,13 @@ export default function Historico() {
                       {ag.barbeiro_nome || '—'}
                     </td>
                     <td style={{ fontWeight: 600 }}>{fmtMoeda(ag.valor_total || ag.valor)}</td>
-                    <td style={{ textTransform: 'capitalize', fontSize: 12, color: 'var(--muted)' }}>
-                      {ag.metodo_pagamento || '—'}
+                    <td style={{ fontSize: 12 }}>
+                      <div style={{ color: 'var(--muted)' }}>{ag.metodo_pagamento === 'pix' ? 'Online (PIX)' : 'Local'}</div>
+                      <div style={{ marginTop: 2 }}>
+                        {ag.status_pagamento === 'pago'
+                          ? <span className="badge badge-green">Pago</span>
+                          : <span className="badge badge-orange">Pendente</span>}
+                      </div>
                     </td>
                     <td>{statusBadge(ag.status)}</td>
                     <td>

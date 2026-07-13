@@ -76,6 +76,7 @@ def _fmt_ag_gestor(ag, clientes=None, barbeiros=None, pixes=None):
         'fim':              fim.isoformat(),
         'metodo_pagamento': ag.metodo_pagamento,
         'status_pagamento': ag.status_pagamento,
+        'forma_pagamento_recebido': ag.forma_pagamento_recebido,
         'observacao':       ag.observacao,
         'cliente':          {
             'id': cliente.id, 'nome': cliente.nome, 'telefone': cliente.telefone

@@ -82,6 +82,8 @@ def _fmt_agendamento(ag, servicos_info, barbeiro_nomes=None):
         'inicio':           ag.data_hora.isoformat(),
         'fim':              fim.isoformat(),
         'metodo_pagamento': ag.metodo_pagamento,
+        'status_pagamento': ag.status_pagamento,
+        'forma_pagamento_recebido': ag.forma_pagamento_recebido,
         'observacao':       ag.observacao,
         'barbeiro_id':      ag.barbeiro_id,
         'barbeiro_nome':    nome,
@@ -296,6 +298,7 @@ def _criar_agendamento_core(
         cupom_id=cupom.id if cupom else None,
         metodo_pagamento=metodo,
         status_pagamento=StatusPagamento.PENDENTE if metodo == MetodoPagamento.LOCAL else StatusPagamento.PAGO,
+        forma_pagamento_recebido='pix' if metodo == MetodoPagamento.PIX else None,
         observacao=observacao,
     )
     db.session.add(ag)

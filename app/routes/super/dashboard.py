@@ -1,11 +1,11 @@
 from flask import Blueprint, jsonify
 from sqlalchemy import func
 from app.extensions import db
-from app.models import Barbearia, Agendamento, Cliente, Usuario
+from app.models import Barbearia, Agendamento, Cliente, Usuario, Venda, VendaItem, ItemCaixa
 from app.decorators.auth import super_required
 from app.utils.tz import hoje_brasilia
 from app.labels import L
-from app.constants import StatusAgendamento
+from app.constants import StatusAgendamento, StatusPagamento
 
 super_dash_bp = Blueprint('super_dashboard', __name__, url_prefix='/api/v1/super')
 
@@ -75,7 +75,66 @@ def dashboard_super():
             L('receita').lower(): float(row.receita or 0),
         })
 
+    # ── Pagamentos do mês — TODAS as barbearias, sem filtro de tenant ────────
+    # 3 origens que nunca se cruzam em nenhum outro lugar do sistema:
+    # Agendamento (recebimento local + pix online), Venda (PDV do gestor),
+    # ItemCaixa (caixa diária do barbeiro).
+    por_forma = {'dinheiro': 0.0, 'cartao': 0.0, 'pix': 0.0}
+    por_origem = {'local': 0.0, 'online': 0.0}
+
+    ags_pagos_mes = [
+        ag for ag in ags_mes
+        if ag.status_pagamento == StatusPagamento.PAGO
+    ]
+    for ag in ags_pagos_mes:
+        valor = float(ag.valor_total)
+        if ag.metodo_pagamento == 'pix':
+            por_origem['online'] += valor
+        else:
+            por_origem['local'] += valor
+        if ag.forma_pagamento_recebido in por_forma:
+            por_forma[ag.forma_pagamento_recebido] += valor
+
+    vendas_mes = (
+        db.session.query(VendaItem, Venda.metodo_pagamento)
+        .join(Venda, VendaItem.venda_id == Venda.id)
+        .filter(
+            Venda.status == 'concluida',
+            db.extract('year',  Venda.criado_em) == ano,
+            db.extract('month', Venda.criado_em) == mes,
+        )
+        .all()
+    )
+    receita_vendas = 0.0
+    for vi, metodo in vendas_mes:
+        valor = float(vi.preco_unitario) * vi.quantidade
+        receita_vendas += valor
+        por_origem['local'] += valor
+        if metodo in por_forma:
+            por_forma[metodo] += valor
+
+    itens_caixa_mes = ItemCaixa.query.filter(
+        db.extract('year',  ItemCaixa.criado_em) == ano,
+        db.extract('month', ItemCaixa.criado_em) == mes,
+    ).all()
+    receita_caixa = 0.0
+    for item in itens_caixa_mes:
+        receita_caixa += item.total
+        por_origem['local'] += item.total
+        if item.forma_pagamento in por_forma:
+            por_forma[item.forma_pagamento] += item.total
+
+    pagamentos_mes = {
+        'atendimentos_recebidos': round(sum(float(ag.valor_total) for ag in ags_pagos_mes), 2),
+        'vendas_avulsas':         round(receita_vendas, 2),
+        'vendas_caixa':           round(receita_caixa, 2),
+        'por_forma_pagamento':    {k: round(v, 2) for k, v in por_forma.items()},
+        'por_origem':             {k: round(v, 2) for k, v in por_origem.items()},
+        'total_geral':            round(sum(por_origem.values()), 2),
+    }
+
     return jsonify({
+        'pagamentos_mes': pagamentos_mes,
         L('tenants').lower(): {
             'ativas':   total_barbearias_ativas,
             'inativas': total_barbearias_inativas,

@@ -356,6 +356,10 @@ class Agendamento(TenantMixin, db.Model):
             "status_pagamento IN ('pendente', 'pago')",
             name='ck_agendamentos_status_pagamento_valido',
         ),
+        db.CheckConstraint(
+            "forma_pagamento_recebido IN ('dinheiro', 'cartao', 'pix')",
+            name='ck_agendamentos_forma_pagamento_recebido_valida',
+        ),
     )
 
     id               = db.Column(db.Integer, primary_key=True)
@@ -371,6 +375,12 @@ class Agendamento(TenantMixin, db.Model):
     # 'pendente' = ainda vai pagar (ex: metodo local, cobrado no atendimento);
     # 'pago' = já recebido (ex: PIX aprovado antecipadamente). Ver app.constants.StatusPagamento.
     status_pagamento = db.Column(db.String(20), nullable=False, default='pendente')
+    # Forma real de recebimento (dinheiro/cartao/pix) — granularidade que
+    # metodo_pagamento (pix/local) não tem. NULL enquanto status_pagamento
+    # ainda é 'pendente'; preenchido automaticamente com 'pix' quando
+    # metodo_pagamento == 'pix' (pago online), ou escolhido pelo barbeiro no
+    # recebimento manual (PATCH .../receber-pagamento) quando 'local'.
+    forma_pagamento_recebido = db.Column(db.String(20), nullable=True)
     criado_em        = db.Column(db.DateTime, default=_utcnow)
     # ── Cupons de desconto ────────────────────────────────────────────────────
     cupom_id         = db.Column(db.Integer, db.ForeignKey('cupons.id'), nullable=True, index=True)

@@ -22,6 +22,9 @@ COLUNAS: OrderedDict = OrderedDict([
     ('valor_total', {'label': f'{L("receita")} (R$)', 'obrigatorio': True}),
     ('barbeiro',    {'label': L('profissional'),    'obrigatorio': False}),
     ('metodo',      {'label': 'Método Pagto.',      'obrigatorio': False}),
+    ('origem_pagamento', {'label': 'Origem Pagto.', 'obrigatorio': False}),
+    ('forma_pagamento',  {'label': 'Forma Pagto.',  'obrigatorio': False}),
+    ('status_pagamento', {'label': 'Status Pagto.', 'obrigatorio': False}),
     ('duracao',     {'label': 'Duração (min)',      'obrigatorio': False}),
     ('is_plano',    {'label': f'Via {L("plano")}', 'obrigatorio': False}),
 ])
@@ -122,6 +125,19 @@ def gerar_dados(barbearia_id: int, de: date, ate: date, colunas: list[str]) -> l
         if 'metodo' in colunas:
             linha['metodo'] = ag.metodo_pagamento or '—'
 
+        if 'origem_pagamento' in colunas:
+            # 'pix' = pago online via app antes do atendimento; qualquer
+            # outro valor (local, presencial — ver gestor/agendamento.py)
+            # = pago no local/balcão.
+            linha['origem_pagamento'] = 'Online' if ag.metodo_pagamento == 'pix' else 'Local'
+
+        if 'forma_pagamento' in colunas:
+            _FORMA_LABEL = {'dinheiro': 'Dinheiro', 'cartao': 'Cartão', 'pix': 'PIX'}
+            linha['forma_pagamento'] = _FORMA_LABEL.get(ag.forma_pagamento_recebido, '—')
+
+        if 'status_pagamento' in colunas:
+            linha['status_pagamento'] = 'Pago' if ag.status_pagamento == 'pago' else 'Pendente'
+
         if 'duracao' in colunas:
             linha['duracao'] = ag.duracao_minutos
 
@@ -202,6 +218,7 @@ def gerar_excel(
     larguras = {
         'data': 18, 'cliente': 25, 'servico': 35, 'status': 18,
         'valor_total': 16, 'barbeiro': 22, 'metodo': 15, 'duracao': 14, 'is_plano': 12,
+        'origem_pagamento': 14, 'forma_pagamento': 14, 'status_pagamento': 14,
     }
     for col_idx, col_key in enumerate(colunas, start=1):
         ws.column_dimensions[chr(64 + col_idx)].width = larguras.get(col_key, 15)
@@ -300,6 +317,7 @@ def gerar_pdf(
     larguras_pdf = {
         'data': 3.5, 'cliente': 4.5, 'servico': 6.0, 'status': 3.0,
         'valor_total': 3.0, 'barbeiro': 4.0, 'metodo': 2.5, 'duracao': 2.2, 'is_plano': 2.0,
+        'origem_pagamento': 2.5, 'forma_pagamento': 2.5, 'status_pagamento': 2.5,
     }
     col_widths = [larguras_pdf.get(k, 3.0) * cm for k in colunas]
 

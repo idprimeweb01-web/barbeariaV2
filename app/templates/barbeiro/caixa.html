@@ -17,6 +17,11 @@
 .cx-form-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 16px; }
 .cx-form-row .field { margin-bottom: 0; }
 @media (max-width: 900px) { .cx-form-row { grid-template-columns: 1fr 1fr; } }
+.cx-resumo { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+.cx-resumo-card { background: var(--bz-surface); border: 1px solid var(--bz-bd); border-radius: 10px; padding: 14px 16px; }
+.cx-resumo-label { font-size: 11px; color: var(--bz-t5); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+.cx-resumo-val { font-size: 18px; font-weight: 800; color: var(--cor-primaria); }
+@media (max-width: 700px) { .cx-resumo { grid-template-columns: 1fr 1fr; } }
 </style>
 {% endblock %}
 
@@ -29,15 +34,45 @@
   <div id="cxAcoes" style="display:flex;align-items:center;gap:10px"></div>
 </div>
 
+<!-- Resumo por forma de pagamento (produtos + atendimentos recebidos hoje) -->
+<div class="cx-resumo">
+  <div class="cx-resumo-card"><div class="cx-resumo-label">Dinheiro</div><div class="cx-resumo-val" id="rDinheiro">R$ 0,00</div></div>
+  <div class="cx-resumo-card"><div class="cx-resumo-label">Cartão</div><div class="cx-resumo-val" id="rCartao">R$ 0,00</div></div>
+  <div class="cx-resumo-card"><div class="cx-resumo-label">PIX</div><div class="cx-resumo-val" id="rPix">R$ 0,00</div></div>
+  <div class="cx-resumo-card"><div class="cx-resumo-label">Total do dia</div><div class="cx-resumo-val" id="rTotalDia">R$ 0,00</div></div>
+</div>
+
 <!-- Recebimento de agendamentos -->
 <div class="section-header">
   <div class="section-title">Agendamentos de hoje — pagamento pendente</div>
 </div>
 <div class="table-wrap" style="margin-bottom:24px">
   <table class="data-table">
-    <thead><tr><th>HORA</th><th>CLIENTE</th><th>SERVIÇO</th><th>FORMA</th><th>VALOR</th><th></th></tr></thead>
+    <thead><tr><th>HORA</th><th>CLIENTE</th><th>SERVIÇO</th><th>ORIGEM</th><th>VALOR</th><th></th></tr></thead>
     <tbody id="tbodyAgendamentos"><tr><td colspan="6" class="empty-state"><p>Carregando…</p></td></tr></tbody>
   </table>
+</div>
+
+<!-- Modal: forma de pagamento no recebimento -->
+<div class="modal-overlay" id="mReceber">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Receber pagamento</h3>
+      <button class="modal-close" onclick="fecharModal('mReceber')">✕</button>
+    </div>
+    <div class="field">
+      <label>Forma de pagamento</label>
+      <select id="receberForma">
+        <option value="dinheiro">Dinheiro</option>
+        <option value="cartao">Cartão</option>
+        <option value="pix">PIX</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="fecharModal('mReceber')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarRecebimento()">Confirmar recebimento</button>
+    </div>
+  </div>
 </div>
 
 <!-- Venda de produtos -->
@@ -79,6 +114,8 @@
 let _caixa = null;
 let _produtos = [];
 let _vendaAtiva = false;
+let _agendamentosHoje = [];
+let _agReceber = null;
 
 function fmtR(v) { return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }); }
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -136,6 +173,7 @@ function renderCaixa() {
       <td>${_caixa.fechado_em ? '' : `<button class="btn-icon danger" onclick="removerItem(${i.id})">Remover</button>`}</td>
     </tr>
   `).join('');
+  renderResumo();
 }
 
 async function adicionarItem() {
@@ -176,39 +214,71 @@ async function fecharCaixa() {
 
 // ── Agendamentos de hoje — recebimento ───────────────────────────────────────
 async function carregarAgendamentos() {
-  const hoje = new Date().toISOString().split('T')[0];
-  let ags = [];
+  // Sem "?data=" — deixa o backend usar hoje_brasilia() (o "hoje" do
+  // navegador via toISOString() é UTC e pode cair no dia errado).
   try {
-    ags = await Bos.get('/barbeiro/agendamentos?data=' + hoje);
+    _agendamentosHoje = await Bos.get('/barbeiro/agendamentos');
   } catch (e) {
+    _agendamentosHoje = [];
     document.getElementById('tbodyAgendamentos').innerHTML =
       `<tr><td colspan="6" class="empty-state"><p>Erro: ${esc(e.message)}</p></td></tr>`;
     return;
   }
-  const pendentes = ags.filter(a => a.status_pagamento === 'pendente' && a.status !== 'cancelado');
+  const pendentes = _agendamentosHoje.filter(a => a.status_pagamento === 'pendente' && a.status !== 'cancelado');
   const tb = document.getElementById('tbodyAgendamentos');
   if (!pendentes.length) {
     tb.innerHTML = '<tr><td colspan="6" class="empty-state"><p>Nenhum pagamento pendente hoje 🎉</p></td></tr>';
-    return;
+  } else {
+    tb.innerHTML = pendentes.map(ag => `
+      <tr>
+        <td><strong>${esc(ag.hora)}</strong></td>
+        <td>${esc(ag.cliente?.nome || '—')}</td>
+        <td>${esc((ag.servicos || []).map(s => s.nome).join(', ') || '—')}</td>
+        <td>${ag.metodo_pagamento === 'pix' ? 'Online (PIX)' : 'Local'}</td>
+        <td style="font-weight:700">${fmtR(ag.valor_total)}</td>
+        <td><button class="btn btn-primary" style="width:auto;padding:6px 14px;font-size:12px" onclick="abrirReceber(${ag.id})">Receber</button></td>
+      </tr>
+    `).join('');
   }
-  tb.innerHTML = pendentes.map(ag => `
-    <tr>
-      <td><strong>${esc(ag.hora)}</strong></td>
-      <td>${esc(ag.cliente?.nome || '—')}</td>
-      <td>${esc((ag.servicos || []).map(s => s.nome).join(', ') || '—')}</td>
-      <td style="text-transform:capitalize">local</td>
-      <td style="font-weight:700">${fmtR(ag.valor_total)}</td>
-      <td><button class="btn btn-primary" style="width:auto;padding:6px 14px;font-size:12px" onclick="receberPagamento(${ag.id})">Receber</button></td>
-    </tr>
-  `).join('');
+  renderResumo();
 }
 
-async function receberPagamento(agId) {
+function abrirReceber(agId) {
+  _agReceber = agId;
+  document.getElementById('receberForma').value = 'dinheiro';
+  abrirModal('mReceber');
+}
+
+async function confirmarRecebimento() {
+  if (!_agReceber) return;
+  const forma_pagamento = document.getElementById('receberForma').value;
   try {
-    await Bos.patch(`/barbeiro/agendamentos/${agId}/receber-pagamento`);
+    await Bos.patch(`/barbeiro/agendamentos/${_agReceber}/receber-pagamento`, { forma_pagamento });
     toast('Pagamento recebido!');
+    fecharModal('mReceber');
+    _agReceber = null;
     await carregarAgendamentos();
   } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Resumo do dia por forma de pagamento (produtos + atendimentos) ──────────
+function renderResumo() {
+  const totais = { dinheiro: 0, cartao: 0, pix: 0 };
+
+  ((_caixa && _caixa.itens) || []).forEach(i => {
+    if (totais[i.forma_pagamento] !== undefined) totais[i.forma_pagamento] += i.total;
+  });
+
+  _agendamentosHoje
+    .filter(a => a.status_pagamento === 'pago' && a.forma_pagamento_recebido)
+    .forEach(a => {
+      if (totais[a.forma_pagamento_recebido] !== undefined) totais[a.forma_pagamento_recebido] += a.valor_total;
+    });
+
+  document.getElementById('rDinheiro').textContent = fmtR(totais.dinheiro);
+  document.getElementById('rCartao').textContent   = fmtR(totais.cartao);
+  document.getElementById('rPix').textContent      = fmtR(totais.pix);
+  document.getElementById('rTotalDia').textContent = fmtR(totais.dinheiro + totais.cartao + totais.pix);
 }
 
 init();

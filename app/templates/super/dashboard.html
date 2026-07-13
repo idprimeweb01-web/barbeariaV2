@@ -30,6 +30,40 @@
     </div>
   </div>
 
+  <!-- Pagamentos no mês — todas as barbearias, sem filtro de tenant -->
+  <div class="section-header" style="margin-top:8px">
+    <span class="section-title" style="font-size:15px;font-weight:600;color:#777">Pagamentos no Mês (toda a plataforma)</span>
+  </div>
+  <div class="table-wrap" style="margin-bottom:20px">
+    <table class="data-table">
+      <thead>
+        <tr><th>Origem</th><th>Dinheiro</th><th>Cartão</th><th>PIX</th><th>Total</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Atendimentos recebidos</td>
+          <td colspan="3" style="color:#777">—</td>
+          <td style="font-weight:700" id="pAtendimentos">—</td>
+        </tr>
+        <tr>
+          <td>Vendas de produto (avulsa + caixa)</td>
+          <td colspan="3" style="color:#777">—</td>
+          <td style="font-weight:700" id="pProdutos">—</td>
+        </tr>
+        <tr style="border-top:2px solid #2a2a2a">
+          <td style="font-weight:700">Total por forma</td>
+          <td id="pDinheiro">—</td>
+          <td id="pCartao">—</td>
+          <td id="pPix">—</td>
+          <td style="font-weight:700;color:var(--cor-primaria)" id="pTotalGeral">—</td>
+        </tr>
+        <tr>
+          <td colspan="5" style="color:#777;font-size:12px" id="pOrigem">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
   <!-- Ranking por estabelecimento -->
   <div class="section-header" style="margin-top:8px">
     <span class="section-title" style="font-size:15px;font-weight:600;color:#777">Ranking do Mês</span>
@@ -79,6 +113,19 @@ async function carregar() {
       `${mes.concluidos || 0} concluídos · ${mes.cancelados || 0} cancelados`
     );
     document.getElementById('mReceita').textContent = fmt_brl(mes.receita_total);
+
+    const pagamentos = d['pagamentos_mes'] || {};
+    const forma  = pagamentos.por_forma_pagamento || {};
+    const origem = pagamentos.por_origem || {};
+    document.getElementById('pAtendimentos').textContent = fmt_brl(pagamentos.atendimentos_recebidos);
+    document.getElementById('pProdutos').textContent = fmt_brl((pagamentos.vendas_avulsas || 0) + (pagamentos.vendas_caixa || 0));
+    document.getElementById('pDinheiro').textContent = fmt_brl(forma.dinheiro);
+    document.getElementById('pCartao').textContent   = fmt_brl(forma.cartao);
+    document.getElementById('pPix').textContent      = fmt_brl(forma.pix);
+    document.getElementById('pTotalGeral').textContent = fmt_brl(pagamentos.total_geral);
+    document.getElementById('pOrigem').textContent = (
+      `Local (balcão): ${fmt_brl(origem.local)} · Online (PIX antecipado): ${fmt_brl(origem.online)}`
+    );
 
     const tb = document.getElementById('tbRanking');
     if (!ranking.length) {
