@@ -46,6 +46,35 @@
   </table>
 </div>
 
+<h3 style="margin:28px 0 12px;font-size:15px;color:#ccc">Clientes VIP</h3>
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Cliente</th><th>Nível atual</th><th>Meses consecutivos</th>
+        <th>Próxima renovação</th><th>Ações</th>
+      </tr>
+    </thead>
+    <tbody id="vipClientesTbody">
+      <tr><td colspan="5" style="text-align:center;color:#555;">Carregando…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Modal Histórico VIP do cliente -->
+<div class="modal-overlay" id="modalHistoricoVip">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="modalHistoricoVipTitulo">Histórico VIP</h3>
+      <button class="modal-close" onclick="fecharModal('modalHistoricoVip')">✕</button>
+    </div>
+    <div id="historicoVipBody"></div>
+    <div class="modal-footer">
+      <button class="btn-icon" onclick="fecharModal('modalHistoricoVip')">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Editar/Novo -->
 <div class="modal-overlay" id="modalVip">
   <div class="modal-box">
@@ -251,6 +280,56 @@ async function deletarNivel(id) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+async function carregarClientesVip() {
+  try {
+    const r = await Bos.get('/gestor/vip/clientes?per_page=100');
+    renderizarClientesVip(r.dados || []);
+  } catch (e) {
+    document.getElementById('vipClientesTbody').innerHTML =
+      `<tr><td colspan="5" style="text-align:center;color:#f87171;">Erro: ${e.message}</td></tr>`;
+  }
+}
+
+function renderizarClientesVip(lista) {
+  const tbody = document.getElementById('vipClientesTbody');
+  if (!lista.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#555;">Nenhum cliente VIP no momento.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = lista.map(c => `
+    <tr>
+      <td>${c.cliente_nome || '—'}</td>
+      <td>🏆 ${c.nivel_vip_atual}</td>
+      <td>${c.meses_consecutivos}</td>
+      <td>${c.data_proxima_renovacao ? c.data_proxima_renovacao.split('-').reverse().join('/') : '—'}</td>
+      <td class="td-actions">
+        <button class="btn-icon" title="Histórico" onclick="abrirHistoricoVip(${c.cliente_id}, '${(c.cliente_nome || '').replace(/'/g, "\\'")}')">📜</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function abrirHistoricoVip(clienteId, nome) {
+  document.getElementById('modalHistoricoVipTitulo').textContent = 'Histórico VIP — ' + nome;
+  document.getElementById('historicoVipBody').innerHTML = '<p style="color:#555">Carregando…</p>';
+  abrirModal('modalHistoricoVip');
+  try {
+    const r = await Bos.get('/gestor/vip/clientes/' + clienteId + '/historico?per_page=50');
+    const itens = r.dados || [];
+    document.getElementById('historicoVipBody').innerHTML = itens.length
+      ? itens.map(h => `
+          <div class="view-row">
+            <span>${h.criado_em ? new Date(h.criado_em).toLocaleDateString('pt-BR') : '—'}</span>
+            <span>${h.descricao || h.evento_tipo}</span>
+          </div>
+        `).join('')
+      : '<p style="color:#555">Sem histórico registrado.</p>';
+  } catch (e) {
+    document.getElementById('historicoVipBody').innerHTML = `<p style="color:#f87171">Erro: ${e.message}</p>`;
+  }
+}
+
 carregarNiveis();
+carregarClientesVip();
 </script>
 {% endblock %}
