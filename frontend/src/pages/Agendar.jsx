@@ -372,8 +372,8 @@ export default function Agendar() {
       {/* Step 5 — PIX (só quando o agendamento foi criado com pagamento online) */}
       {step === 5 && agendamentoCriado && (
         <PixConfirmacao
-          agendamentoId={agendamentoCriado.id}
-          pix={agendamentoCriado.pix}
+          codigo={agendamentoCriado.pix.codigo_pix}
+          uploadFn={(file) => api.pub.uploadComprovante(agendamentoCriado.id, file)}
           showToast={showToast}
           onFinalizar={() => navigate('/cliente/historico')}
         />

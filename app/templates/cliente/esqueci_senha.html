@@ -129,7 +129,7 @@ document.getElementById('form-solicitar').addEventListener('submit', async (e) =
     const resp = await fetch('/api/v1/auth/solicitar-reset-senha', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: _email }),
+      body: JSON.stringify({ email: _email, slug: {{ slug | tojson }} }),
     });
     const dados = await resp.json();
     if (!resp.ok) {
@@ -158,7 +158,7 @@ document.getElementById('form-confirmar').addEventListener('submit', async (e) =
     const resp = await fetch('/api/v1/auth/confirmar-reset-senha', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: _email, codigo }),
+      body: JSON.stringify({ email: _email, codigo, slug: {{ slug | tojson }} }),
     });
     const dados = await resp.json();
     if (!resp.ok) {

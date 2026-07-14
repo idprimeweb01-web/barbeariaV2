@@ -50,6 +50,16 @@ export const api = {
       if (!resp.ok) throw new Error(data.erro || data.error || `Erro ${resp.status}`)
       return data
     },
+    uploadComprovantePlano: async (solicitacaoId, file) => {
+      const fd = new FormData()
+      fd.append('arquivo', file)
+      const resp = await fetch(`/api/v1/pub/${SLUG}/planos/solicitacoes/${solicitacaoId}/comprovante`, {
+        method: 'POST', body: fd, credentials: 'same-origin',
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(data.erro || data.error || `Erro ${resp.status}`)
+      return data
+    },
   },
 
   planos: {

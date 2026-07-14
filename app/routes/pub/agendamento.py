@@ -79,6 +79,10 @@ def _fmt_agendamento(ag, servicos_info, barbeiro_nomes=None):
         'subtotal':         float(ag.valor_total) + float(ag.valor_desconto or 0),
         'cupom_id':         ag.cupom_id,
         'duracao_total':    ag.duracao_minutos,
+        # data_hora: nome que Dashboard.jsx e Historico.jsx (SPA do cliente)
+        # esperam — inicio/fim mantidos por compatibilidade com outros
+        # consumidores existentes deste mesmo formatador.
+        'data_hora':        ag.data_hora.isoformat(),
         'inicio':           ag.data_hora.isoformat(),
         'fim':              fim.isoformat(),
         'metodo_pagamento': ag.metodo_pagamento,

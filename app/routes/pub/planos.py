@@ -1,5 +1,7 @@
 import os
-from flask import Blueprint, request, g, jsonify
+import cloudinary
+import cloudinary.uploader
+from flask import Blueprint, request, g, jsonify, current_app
 from app.extensions import db, limiter
 from app.models import (
     Barbearia, Plano, PlanoServico, Servico, Barbeiro,
@@ -12,6 +14,7 @@ from app.utils.telefone import normalizar_telefone
 from app.labels import L
 from app.utils.db import commit_ou_falhar
 from app.constants import StatusSolicitacaoPlano
+from app.routes.pub.agendamento import _TIPOS_COMPROVANTE, _MAX_BYTES_COMP, _validar_magic_bytes
 
 pub_planos_bp = Blueprint('pub_planos', __name__)
 
@@ -194,3 +197,66 @@ def solicitar_assinatura(slug, plano_id):
         )
 
     return jsonify(resposta), 201
+
+
+# ── POST /api/v1/pub/<slug>/planos/solicitacoes/<id>/comprovante ─────────────
+# Mesmo padrão do comprovante de agendamento (pub/agendamento.py) — o campo
+# comprovante_url já existia no model ClientePlanoSolicitacao desde sempre,
+# mas nenhum endpoint jamais escreveu nele (achado em teste manual: cliente
+# solicitava plano via PIX e não tinha como enviar comprovante nenhum).
+
+@pub_planos_bp.post('/api/v1/pub/<string:slug>/planos/solicitacoes/<int:solicitacao_id>/comprovante')
+@limiter.limit(os.environ.get('RL_COMPROVANTE', '3 per minute'))
+def upload_comprovante_plano(slug, solicitacao_id):
+    b = _get_barbearia_ou_404(slug)
+
+    sol = ClientePlanoSolicitacao.query.filter_by(id=solicitacao_id, barbearia_id=b.id).first()
+    if not sol:
+        raise APIError('Solicitação não encontrada.', 404)
+
+    if sol.metodo_pagamento != 'pix':
+        raise APIError('Esta solicitação não é via PIX.', 400)
+    if sol.status != StatusSolicitacaoPlano.PENDENTE:
+        raise APIError('Não é possível enviar comprovante para esta solicitação.', 422)
+
+    if 'arquivo' not in request.files:
+        raise APIError('Campo "arquivo" é obrigatório.', 400)
+
+    arq = request.files['arquivo']
+    if not arq.filename:
+        raise APIError('Nenhum arquivo enviado.', 400)
+    if arq.mimetype not in _TIPOS_COMPROVANTE:
+        raise APIError('Tipo não permitido. Use JPEG ou PNG.', 400)
+    arq.seek(0, 2)
+    if arq.tell() > _MAX_BYTES_COMP:
+        raise APIError('Arquivo muito grande. Máximo 5 MB.', 400)
+    arq.seek(0)
+    _validar_magic_bytes(arq)
+
+    from datetime import datetime as _dt
+    now  = _dt.utcnow()
+    folder    = f'barbearia/{b.id}/comprovantes_plano/{now.strftime("%Y")}/{now.strftime("%m")}'
+    public_id = f'plano_sol_{solicitacao_id}'
+
+    try:
+        resultado = cloudinary.uploader.upload(
+            arq.stream,
+            folder=folder,
+            public_id=public_id,
+            overwrite=True,
+            unique_filename=False,
+            invalidate=True,
+            resource_type='image',
+        )
+    except Exception as exc:
+        current_app.logger.error(f'Cloudinary: falha ao enviar comprovante (solicitacao {solicitacao_id}): {exc}', exc_info=True)
+        raise APIError('Erro ao enviar comprovante. Tente novamente.', 502)
+
+    url = resultado.get('secure_url')
+    if not url:
+        raise APIError('Cloudinary não retornou URL.', 502)
+
+    sol.comprovante_url = url
+    commit_ou_falhar('pub.planos.upload_comprovante_plano')
+
+    return jsonify({'mensagem': 'Comprovante enviado com sucesso.', 'url': url}), 200

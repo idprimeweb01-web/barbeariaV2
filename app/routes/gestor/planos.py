@@ -314,6 +314,7 @@ def _fmt_solicitacao(s):
         'status':           s.status,
         'valor':            float(s.valor),
         'metodo_pagamento': s.metodo_pagamento,
+        'comprovante_url':  s.comprovante_url,
         'criado_em':        s.criado_em.isoformat() if s.criado_em else None,
         'aprovado_em':      s.aprovado_em.isoformat() if s.aprovado_em else None,
         'motivo_rejeicao':  s.motivo_rejeicao,

@@ -142,7 +142,9 @@ function renderizarSolicitacoes(solicitacoes) {
           <div class="pix-nome">${clienteNome} — ${planoNome}</div>
           <div class="pix-meta">#${s.id} • ${new Date(s.criado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</div>
           <div class="pix-valor">R$ ${parseFloat(s.valor).toFixed(2)}</div>
-          <span class="pix-comprovante" style="color:#fbbf24">💵 Pagamento via PIX</span>
+          ${s.comprovante_url
+            ? `<a class="pix-comprovante" href="${s.comprovante_url}" target="_blank" rel="noopener noreferrer" style="color:#4ade80;text-decoration:underline">📎 Ver comprovante</a>`
+            : `<span class="pix-comprovante" style="color:#fbbf24">💵 Pagamento via PIX (sem comprovante)</span>`}
         </div>
       </div>
       <div class="pix-actions">

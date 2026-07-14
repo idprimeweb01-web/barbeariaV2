@@ -6,7 +6,7 @@ from flask_jwt_extended import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from app.extensions import db, limiter
-from app.models import Usuario
+from app.models import Usuario, Barbearia
 from app.exceptions import APIError
 from app.utils.auth import revogar_todos_tokens
 from app.utils.db import commit_ou_falhar
@@ -129,13 +129,24 @@ def solicitar_reset_senha():
         raise APIError('Corpo da requisição inválido ou ausente.')
 
     email = (dados.get('email') or '').strip().lower()
+    slug  = (dados.get('slug') or '').strip().lower()
     if not email:
         raise APIError('"email" é obrigatório.')
+
+    # barbearia_id do slug: e-mail de cliente não é único entre tenants (cada
+    # barbearia tem sua própria base de clientes) — sem esse filtro, um e-mail
+    # cadastrado como cliente em duas barbearias diferentes resolve pro
+    # Usuario errado e o código vai pra hierarquia da barbearia errada.
+    barbearia_id = None
+    if slug:
+        barbearia = Barbearia.query.filter_by(slug=slug, ativo=True).first()
+        if barbearia:
+            barbearia_id = barbearia.id
 
     # Chamador é a página pública do cliente (/b/<slug>/esqueci-senha) —
     # restringe a perfil cliente pra essa tela não virar um vetor de reset de
     # conta de gestor/barbeiro/super_admin (essas usam o endpoint -staff abaixo).
-    gerar_codigo_recuperacao(email, perfis_permitidos=['cliente'])
+    gerar_codigo_recuperacao(email, perfis_permitidos=['cliente'], barbearia_id=barbearia_id)
     commit_ou_falhar('auth.solicitar_reset_senha')
 
     return jsonify({
@@ -184,10 +195,17 @@ def confirmar_reset_senha():
 
     email  = (dados.get('email') or '').strip().lower()
     codigo = (dados.get('codigo') or '').strip()
+    slug   = (dados.get('slug') or '').strip().lower()
     if not email or not codigo:
         raise APIError('Os campos "email" e "codigo" são obrigatórios.')
 
-    usuario = validar_codigo_recuperacao_por_email(email, codigo)
+    barbearia_id = None
+    if slug:
+        barbearia = Barbearia.query.filter_by(slug=slug, ativo=True).first()
+        if barbearia:
+            barbearia_id = barbearia.id
+
+    usuario = validar_codigo_recuperacao_por_email(email, codigo, barbearia_id=barbearia_id)
     commit_ou_falhar('auth.confirmar_reset_senha')
 
     return jsonify({

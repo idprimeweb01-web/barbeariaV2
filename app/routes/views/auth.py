@@ -67,8 +67,22 @@ def cliente_session_required(f):
 def entrar():
     if 'user_id' in session:
         perfil = session.get('perfil', '')
-        return redirect(_PERFIL_REDIRECT.get(perfil, '/entrar'))
+        destino = _PERFIL_REDIRECT.get(perfil)
+        if destino:
+            return redirect(destino)
+        # perfil não é de staff (ex: sessão de cliente ainda ativa no mesmo
+        # cookie) — sem isso, o fallback pro próprio '/entrar' cria um
+        # redirect loop infinito (achado em teste manual: centenas de 302
+        # em <1s até estourar o rate limit e travar a tela de login).
+        session.clear()
     return render_template('staff/login.html')
+
+
+@views_bp.get('/login')
+def login_alias():
+    """Alias de conveniência — /login é o caminho instintivo em inglês, mas
+    todo o resto do sistema usa rotas em português (/entrar)."""
+    return redirect('/entrar')
 
 
 @views_bp.get('/esqueci-senha')

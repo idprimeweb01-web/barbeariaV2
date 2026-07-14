@@ -4,6 +4,7 @@ import Layout from '../components/Layout'
 import { showToast } from '../components/Layout'
 import { FeatureGate } from '../components/FeatureGate'
 import { RecursoIndisponivel } from '../components/RecursoIndisponivel'
+import PixConfirmacao from '../components/PixConfirmacao'
 import { api } from '../api'
 
 function fmtData(iso) {
@@ -33,6 +34,7 @@ export default function Planos() {
   const [solicitando, setSolicitando]   = useState(null)
   const [metodo, setMetodo]             = useState('pix')
   const [features, setFeatures]         = useState([])
+  const [pixPendente, setPixPendente]   = useState(null) // { solicitacaoId, codigo } — solicitação via PIX aguardando comprovante
 
   useEffect(() => {
     Promise.all([
@@ -57,12 +59,14 @@ export default function Planos() {
     setSolicitando(plano.id)
     try {
       const res = await api.planos.solicitar(plano.id, { metodo_pagamento: metodo })
-      showToast(`Solicitação enviada! ${res.pix_info || ''}`, 'success')
       const sols = await api.get('/planos/solicitacoes')
       setSolicitacoes(Array.isArray(sols) ? sols : [])
       if (res.pix_copia_cola) {
-        navigator.clipboard?.writeText(res.pix_copia_cola)
-          .then(() => showToast('Código PIX copiado!', 'info'))
+        // Fica na tela em vez de só um toast — sem isso o cliente não tinha
+        // como pagar de fato (o código só ia pro clipboard e sumia).
+        setPixPendente({ solicitacaoId: res.solicitacao_id, codigo: res.pix_copia_cola })
+      } else {
+        showToast(`Solicitação enviada! ${res.pix_info || 'Aguarde a aprovação do estabelecimento.'}`, 'success')
       }
     } catch (e) {
       showToast(e.message, 'error')
@@ -86,6 +90,18 @@ export default function Planos() {
   if (loading) return (
     <Layout title="Meus Planos">
       <div className="loading"><div className="spinner" /></div>
+    </Layout>
+  )
+
+  if (pixPendente) return (
+    <Layout title="Meus Planos">
+      <PixConfirmacao
+        codigo={pixPendente.codigo}
+        uploadFn={(file) => api.pub.uploadComprovantePlano(pixPendente.solicitacaoId, file)}
+        showToast={showToast}
+        labelFinalizar="Voltar para meus planos"
+        onFinalizar={() => setPixPendente(null)}
+      />
     </Layout>
   )
 

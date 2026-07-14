@@ -18,10 +18,21 @@ EXPIRA_EM_HORAS = 72
 MAX_TENTATIVAS = 3
 
 
-def gerar_codigo_recuperacao(email: str, perfis_permitidos: list | None = None) -> tuple:
+def gerar_codigo_recuperacao(email: str, perfis_permitidos: list | None = None, barbearia_id: int | None = None) -> tuple:
     """Gera código de recuperação e notifica a hierarquia.
-    Retorna (usuario, solicitacao, codigo) se encontrar, senão (None, None, None)."""
-    usuario = Usuario.query.filter_by(email=email, ativo=True).first()
+    Retorna (usuario, solicitacao, codigo) se encontrar, senão (None, None, None).
+
+    barbearia_id: obrigatório na prática pro fluxo de cliente — e-mail de
+    cliente NÃO é único entre tenants (cada barbearia tem sua própria base
+    de clientes), então sem esse filtro um e-mail duplicado em duas
+    barbearias resolve pro Usuario errado (achado em teste manual: o
+    código foi pra hierarquia de uma barbearia enquanto o cliente testava
+    em outra). Não é necessário pro fluxo staff — e-mail de
+    gestor/barbeiro/super_admin é único globalmente (uq_usuario_email_staff)."""
+    query = Usuario.query.filter_by(email=email, ativo=True)
+    if barbearia_id is not None:
+        query = query.filter_by(barbearia_id=barbearia_id)
+    usuario = query.first()
 
     if not usuario:
         return None, None, None
@@ -47,16 +58,24 @@ def gerar_codigo_recuperacao(email: str, perfis_permitidos: list | None = None) 
     return usuario, solicitacao, codigo
 
 
-def validar_codigo_recuperacao_por_email(email: str, codigo: str) -> Usuario:
+def validar_codigo_recuperacao_por_email(email: str, codigo: str, barbearia_id: int | None = None) -> Usuario:
     """Valida código de recuperação localizando a solicitação pelo e-mail do
     usuário (o que quem esqueceu a senha realmente tem em mãos) + código
     (recebido por WhatsApp da hierarquia). Substitui o fluxo antigo por
     token — o token nunca é exposto a ninguém fora do banco, então um
-    fluxo que dependesse dele era inalcançável na prática."""
+    fluxo que dependesse dele era inalcançável na prática.
+
+    barbearia_id: mesmo motivo do gerar_codigo_recuperacao — sem isso, e-mail
+    de cliente duplicado entre tenants pode resolver pro Usuario errado e
+    achar "nenhuma solicitação pendente" mesmo com uma pendente de verdade
+    (só que presa no Usuario homônimo de outra barbearia)."""
     # Sem filtro de perfil aqui — quem já restringe é o lado da solicitação
     # (cliente via /solicitar-reset-senha, staff via /solicitar-reset-senha-staff);
     # só existe uma SolicitacaoSenha pendente se um desses dois já validou o perfil.
-    usuario = Usuario.query.filter_by(email=email, ativo=True).first()
+    query = Usuario.query.filter_by(email=email, ativo=True)
+    if barbearia_id is not None:
+        query = query.filter_by(barbearia_id=barbearia_id)
+    usuario = query.first()
     if not usuario:
         raise APIError('Código inválido.', 401)  # mesma msg genérica — não confirma se o e-mail existe
 

@@ -1,17 +1,17 @@
 import { useState } from 'react'
 import { CheckCircle } from 'lucide-react'
-import { api } from '../api'
 
-// Tela pós-confirmação quando o agendamento foi criado com PIX: QR code,
-// código copia-e-cola, e upload do comprovante — mesma rota pública usada
-// pelo booking.html anônimo (não exige login, funciona igual autenticado).
-export default function PixConfirmacao({ agendamentoId, pix, onFinalizar, showToast }) {
+// Tela pós-confirmação de pagamento via PIX: QR code, código copia-e-cola,
+// e upload do comprovante. Genérico o bastante pra servir tanto o booking
+// de agendamento quanto a assinatura de plano — cada chamador passa seu
+// próprio `codigo` (copia-e-cola) e `uploadFn` (como enviar o arquivo).
+export default function PixConfirmacao({ codigo, uploadFn, onFinalizar, showToast, labelFinalizar = 'Ir para meus agendamentos' }) {
   const [arquivo, setArquivo] = useState(null)
   const [preview, setPreview] = useState(null)
   const [enviando, setEnviando] = useState(false)
   const [enviado, setEnviado] = useState(false)
 
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pix.codigo_pix)}`
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(codigo)}`
 
   const handleArquivo = (e) => {
     const file = e.target.files?.[0]
@@ -23,7 +23,7 @@ export default function PixConfirmacao({ agendamentoId, pix, onFinalizar, showTo
   }
 
   const copiarCodigo = () => {
-    navigator.clipboard?.writeText(pix.codigo_pix)
+    navigator.clipboard?.writeText(codigo)
       .then(() => showToast('Código PIX copiado!', 'info'))
   }
 
@@ -31,7 +31,7 @@ export default function PixConfirmacao({ agendamentoId, pix, onFinalizar, showTo
     if (!arquivo) { showToast('Selecione uma imagem do comprovante.', 'error'); return }
     setEnviando(true)
     try {
-      await api.pub.uploadComprovante(agendamentoId, arquivo)
+      await uploadFn(arquivo)
       setEnviado(true)
       showToast('Comprovante enviado!', 'success')
     } catch (e) {
@@ -52,7 +52,7 @@ export default function PixConfirmacao({ agendamentoId, pix, onFinalizar, showTo
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>Código copia-e-cola</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center' }}>
           <code style={{ fontSize: 12, background: 'var(--surface2)', padding: '8px 12px', borderRadius: 6, wordBreak: 'break-all', maxWidth: 280 }}>
-            {pix.codigo_pix}
+            {codigo}
           </code>
         </div>
         <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={copiarCodigo}>Copiar código</button>
@@ -96,7 +96,7 @@ export default function PixConfirmacao({ agendamentoId, pix, onFinalizar, showTo
       </div>
 
       <button className="btn btn-ghost" style={{ width: '100%' }} onClick={onFinalizar}>
-        Ir para meus agendamentos
+        {labelFinalizar}
       </button>
     </div>
   )
