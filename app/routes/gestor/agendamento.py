@@ -36,8 +36,21 @@ def _fmt_ag_gestor(ag, clientes=None, barbeiros=None, pixes=None):
     aceitável, não é o padrão de loop que causa N+1.
     """
     fim = fim_agendamento(ag.data_hora, ag.duracao_minutos)
-    cliente = clientes.get(ag.cliente_id) if clientes is not None else db.session.get(Cliente, ag.cliente_id)
-    barbeiro = barbeiros.get(ag.barbeiro_id) if barbeiros is not None else db.session.get(Barbeiro, ag.barbeiro_id)
+    # DT-005: get pontual (sem clientes/barbeiros pré-carregados) valida o
+    # tenant explicitamente — defesa em profundidade contra um chamador
+    # futuro que passe um `ag` não filtrado por barbearia_id.
+    if clientes is not None:
+        cliente = clientes.get(ag.cliente_id)
+    else:
+        cliente = db.session.get(Cliente, ag.cliente_id)
+        if cliente is not None and cliente.barbearia_id != ag.barbearia_id:
+            cliente = None
+    if barbeiros is not None:
+        barbeiro = barbeiros.get(ag.barbeiro_id)
+    else:
+        barbeiro = db.session.get(Barbeiro, ag.barbeiro_id)
+        if barbeiro is not None and barbeiro.barbearia_id != ag.barbearia_id:
+            barbeiro = None
     barbeiro_nome = barbeiro.usuario.nome if barbeiro and barbeiro.usuario else None
 
     itens = ag.itens  # relationship (selectinload em lote quando a query de origem eager-carrega)

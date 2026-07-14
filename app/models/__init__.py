@@ -128,7 +128,7 @@ class TokenRevogado(db.Model):
 
     id           = db.Column(db.Integer, primary_key=True)
     jti          = db.Column(db.String(64), unique=True, nullable=False, index=True)
-    usuario_id   = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=True, index=True)
+    usuario_id   = db.Column(db.Integer, db.ForeignKey('usuarios.id', ondelete='SET NULL'), nullable=True, index=True)
     tipo         = db.Column(db.String(10))  # 'access' | 'refresh'
     revogado_em  = db.Column(db.DateTime, default=_utcnow)
     motivo       = db.Column(db.String(100))  # 'logout', 'usuario_desativado', 'tenant_desativado'
@@ -397,7 +397,7 @@ class AgendamentoServico(db.Model):
     __tablename__ = 'agendamento_servicos'
 
     id               = db.Column(db.Integer, primary_key=True)
-    agendamento_id   = db.Column(db.Integer, db.ForeignKey('agendamentos.id'), nullable=False, index=True)
+    agendamento_id   = db.Column(db.Integer, db.ForeignKey('agendamentos.id', ondelete='CASCADE'), nullable=False, index=True)
     servico_id       = db.Column(db.Integer, db.ForeignKey('servicos.id'), nullable=False)
     quantidade       = db.Column(db.Integer, nullable=False, default=1)
     preco_unitario   = db.Column(db.Numeric(10, 2), nullable=False)
@@ -414,7 +414,7 @@ class AgendamentoSolicitacaoPix(db.Model):
 
     id              = db.Column(db.Integer, primary_key=True)
     barbearia_id    = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, index=True)
-    agendamento_id  = db.Column(db.Integer, db.ForeignKey('agendamentos.id'), nullable=False, unique=True)
+    agendamento_id  = db.Column(db.Integer, db.ForeignKey('agendamentos.id', ondelete='CASCADE'), nullable=False, unique=True)
     comprovante_url = db.Column(db.String(255))
     status          = db.Column(db.String(20), nullable=False, default='pendente')  # pendente, aprovado, rejeitado
     motivo_rejeicao = db.Column(db.String(500))
@@ -790,7 +790,7 @@ class AuditoriaLog(db.Model):
     __tablename__ = 'auditoria_log'
 
     id           = db.Column(db.Integer, primary_key=True)
-    usuario_id   = db.Column(db.Integer, db.ForeignKey('usuarios.id'), index=True)
+    usuario_id   = db.Column(db.Integer, db.ForeignKey('usuarios.id', ondelete='SET NULL'), index=True)
     barbearia_id = db.Column(db.Integer, db.ForeignKey('barbearias.id'), index=True)
     tipo_acao    = db.Column(db.String(50), nullable=False)   # create, edit, delete, login
     entidade     = db.Column(db.String(100), nullable=False)

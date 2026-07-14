@@ -365,7 +365,7 @@
         </svg>
         Disponíveis p/ pegar
       </a>
-      <a href="/barbeiro/caixa" class="nav-link" data-path="/barbeiro/caixa">
+      <a href="/barbeiro/caixa" class="nav-link" data-path="/barbeiro/caixa" id="nav-caixa">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3H8a2 2 0 0 0-2 2v2h12V5a2 2 0 0 0-2-2z"/>
           <line x1="2" y1="12" x2="22" y2="12"/>
@@ -585,6 +585,20 @@
 
   atualizarContadorNotif();
   setInterval(atualizarContadorNotif, 30000);
+
+  // ── Nav por feature ─────────────────────────────────────────
+  // Único item da sidebar do barbeiro que depende de uma feature
+  // desativável hoje é "Caixa do Dia" (produtos_venda) — o resto do
+  // nav é núcleo do papel de barbeiro, não um recurso ligável.
+  (async function() {
+    try {
+      const features = await Bos.get('/barbeiro/features');
+      const produtosVenda = (features || []).find(f => f.nome === 'produtos_venda');
+      if (produtosVenda && !produtosVenda.ativo) {
+        document.getElementById('nav-caixa')?.remove();
+      }
+    } catch {}
+  })();
 
   // ── Tema ───────────────────────────────────────────────────
   (async function() {

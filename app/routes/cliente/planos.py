@@ -42,7 +42,15 @@ def _fmt_assinatura(cp, planos=None, servicos_por_plano=None, servicos_map=None,
     lote (Bloco 5.1) — quando None (chamada de item único: detalhar), cai em
     query pontual por assinatura, aceitável fora de um loop.
     """
-    plano = planos.get(cp.plano_id) if planos is not None else db.session.get(Plano, cp.plano_id)
+    # DT-005: get pontual (sem lookups pré-carregados) valida o tenant
+    # explicitamente — defesa em profundidade contra um chamador futuro
+    # que passe um `cp` não filtrado por barbearia_id.
+    if planos is not None:
+        plano = planos.get(cp.plano_id)
+    else:
+        plano = db.session.get(Plano, cp.plano_id)
+        if plano is not None and plano.barbearia_id != cp.barbearia_id:
+            plano = None
     if servicos_por_plano is not None:
         servicos_plano = servicos_por_plano.get(cp.plano_id, [])
     else:
@@ -50,7 +58,12 @@ def _fmt_assinatura(cp, planos=None, servicos_por_plano=None, servicos_map=None,
 
     servicos = []
     for ps in servicos_plano:
-        svc = servicos_map.get(ps.servico_id) if servicos_map is not None else db.session.get(Servico, ps.servico_id)
+        if servicos_map is not None:
+            svc = servicos_map.get(ps.servico_id)
+        else:
+            svc = db.session.get(Servico, ps.servico_id)
+            if svc is not None and svc.barbearia_id != cp.barbearia_id:
+                svc = None
         uso = usos.get((cp.id, ps.servico_id), 0) if usos is not None else _uso_mes_atual(cp.id, ps.servico_id)
         limite = limite_para_fora(ps.limite_uso_mensal)
         servicos.append({
