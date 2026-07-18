@@ -55,6 +55,18 @@
     .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
     .btn-ghost { padding: 12px 20px; background: none; border: 1.5px solid var(--border); border-radius: 10px; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
 
+    /* ── Login / Criar conta (step 1) ──────────────────── */
+    .s1-divider { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--muted); font-size: 12px; }
+    .s1-divider::before, .s1-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    .s1-auth-row { display: flex; gap: 10px; }
+    .s1-auth-btn {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      padding: 12px 14px; background: none; border: 1.5px solid var(--border); border-radius: 10px;
+      color: var(--muted); font-size: 14px; font-weight: 600; text-decoration: none;
+      box-sizing: border-box; transition: border-color .15s, color .15s;
+    }
+    .s1-auth-btn:hover { border-color: var(--cor); color: var(--cor); }
+
     /* ── Service / Barber select cards ─────────────────── */
     .sel-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
     .sel-item { background: #fff; border: 2px solid var(--border); border-radius: 10px; padding: 14px; cursor: pointer; transition: border-color .15s; display: flex; align-items: flex-start; gap: 12px; }
@@ -164,6 +176,12 @@
         <input type="email" id="inpEmail" placeholder="seu@email.com" autocomplete="email">
       </div>
       <button class="btn-primary" onclick="s1Proximo()">Próximo →</button>
+
+      <div class="s1-divider">já tem cadastro?</div>
+      <div class="s1-auth-row">
+        <a href="/b/{{ slug }}/entrar" class="s1-auth-btn">Entrar</a>
+        <a href="/b/{{ slug }}/cadastro" class="s1-auth-btn">Criar conta</a>
+      </div>
     </div>
   </div>
 
