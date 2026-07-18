@@ -372,6 +372,12 @@ def gestor_auditoria():
     return render_template('gestor/auditoria.html', **_gestor_ctx())
 
 
+@views_bp.get('/gestor/duvidas-cliente')
+@session_required('gestor', 'super_admin')
+def gestor_duvidas_cliente():
+    return render_template('gestor/duvidas_cliente.html', **_gestor_ctx())
+
+
 def _barbeiro_ctx():
     from app.models import BarbeariaCustomizacao
     uid    = session.get('user_id')
