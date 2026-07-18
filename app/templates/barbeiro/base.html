@@ -7,18 +7,20 @@
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/temas.css">
   <script>
-    (function(){try{var t=JSON.parse(localStorage.getItem('bos_tema'));if(t){var r=document.documentElement.style;if(t.cor_primaria)r.setProperty('--cor-primaria',t.cor_primaria);if(t.cor_fundo)r.setProperty('--cor-fundo',t.cor_fundo);if(t.cor_card)r.setProperty('--cor-card',t.cor_card);if(t.fonte)r.setProperty('--fonte',"'"+t.fonte+"', sans-serif");}}catch(e){}}());
+    (function(){try{var t=JSON.parse(localStorage.getItem('bos_tema'));if(t){var r=document.documentElement.style;if(t.cor_primaria)r.setProperty('--cor-primaria',t.cor_primaria);if(t.fonte)r.setProperty('--fonte',"'"+t.fonte+"', sans-serif");}}catch(e){}}());
   </script>
   {% block styles %}{% endblock %}
   <style>
     :root { --cor-primaria: #f39c12; --cor-primaria-hover: #e67e22; }
 
     /* ── Shell ──────────────────────────────────────────────── */
-    /* color aqui é necessário: style.css já define body{color:var(--cor-texto)}
-       fixo em #fff (sistema de token antigo, não participa dos temas) — sem
-       sobrescrever, qualquer elemento sem cor própria (ex: <td> puro) herdava
-       branco fixo e ficava invisível nos temas claros. */
-    body { display: flex; margin: 0; color: var(--text); }
+    /* color/background aqui são necessários: style.css já define
+       body{color:var(--cor-texto);background-color:var(--cor-fundo)} fixos em
+       #fff/#1a1a1a (sistema de token antigo, não participa dos temas) — sem
+       sobrescrever, .app-main (que não tem fundo próprio) mostrava sempre o
+       fundo escuro do body por baixo, e qualquer elemento sem cor própria
+       herdava branco fixo — invisível ou com fundo errado nos temas claros. */
+    body { display: flex; margin: 0; color: var(--text); background-color: var(--bg); }
     .app-shell { display: flex; width: 100%; min-height: 100vh; }
 
     /* ── Sidebar ─────────────────────────────────────────────── */
@@ -612,8 +614,6 @@
       if (!t) return;
       const r = document.documentElement.style;
       if (t.cor_primaria) r.setProperty('--cor-primaria', t.cor_primaria);
-      if (t.cor_fundo)    r.setProperty('--cor-fundo', t.cor_fundo);
-      if (t.cor_card)     r.setProperty('--cor-card', t.cor_card);
       if (t.fonte)        r.setProperty('--fonte', `'${t.fonte}', sans-serif`);
     }
     try { _apply(JSON.parse(localStorage.getItem(KEY))); } catch {}

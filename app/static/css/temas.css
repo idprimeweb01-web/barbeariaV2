@@ -12,6 +12,23 @@
  * templates, só centralizados.
  */
 
+/* Alias pro sistema de tokens antigo (style.css: --cor-fundo, --cor-card,
+ * --cor-borda, --cor-texto, --cor-texto-secundario) — várias páginas de
+ * gestor/barbeiro usam classes de lá (.card, .badge-gray, .text-muted,
+ * .btn-ghost, .field, .checkbox-wrap, .divider) que nunca foram convertidas
+ * pra var(--surface)/var(--border)/etc. Sem esse alias, essas classes
+ * ficavam presas na cor fixa antiga (sempre escura) em qualquer tema claro
+ * — achado em teste manual. custom properties resolvem no uso, então 1
+ * bloco aqui basta pros 5 temas, não precisa repetir por [data-tema=X].
+ */
+:root {
+  --cor-fundo:            var(--bg);
+  --cor-card:             var(--surface);
+  --cor-borda:            var(--border);
+  --cor-texto:            var(--text);
+  --cor-texto-secundario: var(--text-secundario, var(--muted));
+}
+
 :root,
 [data-tema="preto"] {
   --bg:          #1a1a1a;

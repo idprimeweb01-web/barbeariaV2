@@ -101,6 +101,10 @@ def testar_pix():
 # ── GET /api/v1/gestor/barbearia/tema ────────────────────────────────────────
 # Barbeiro também lê (não só gestor) — as telas de barbeiro/base.html
 # aplicam essas cores em runtime, igual ao gestor.
+# cor_fundo/cor_card removidos daqui (2026-07-18): eram do sistema de
+# customização granular antigo, nunca conectado à paleta de tema — o
+# JS que os consumia foi removido junto (era puro resíduo competindo
+# com [data-tema], achado em teste manual).
 
 @gestor_barbearia_bp.get('/barbearia/tema')
 @_require(['gestor', 'barbeiro'])
@@ -109,8 +113,6 @@ def get_tema():
     cust = BarbeariaCustomizacao.query.filter_by(barbearia_id=g.barbearia_id).first()
     return jsonify({
         'cor_primaria':  cust.cor_primaria  if cust else '#BA7517',
-        'cor_fundo':     cust.cor_secundaria if cust else '#1a1a1a',
-        'cor_card':      None,
         'fonte':         cust.fonte         if cust else 'Inter',
         'nome_exibicao': b.nome_exibicao or b.nome,
         'tema':          cust.tema if cust and cust.tema else None,
