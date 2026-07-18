@@ -14,7 +14,12 @@
     :root { --cor-primaria: #f39c12; --cor-primaria-hover: #e67e22; }
 
     /* ── Shell ──────────────────────────────────────────────── */
-    body { display: flex; margin: 0; }
+    /* color aqui é necessário: style.css já define body{color:var(--cor-texto)}
+       fixo em #fff (sistema de token antigo, não participa dos temas) — sem
+       sobrescrever, qualquer elemento sem cor própria (ex: <td> puro) herdava
+       branco fixo e ficava invisível nos temas claros (achado em teste manual
+       na tabela de Equipe). */
+    body { display: flex; margin: 0; color: var(--text); }
     .app-shell { display: flex; width: 100%; min-height: 100vh; }
 
     /* ── Sidebar ─────────────────────────────────────────────── */
