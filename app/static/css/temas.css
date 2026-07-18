@@ -50,25 +50,25 @@
 }
 
 [data-tema="azul_claro"] {
-  --bg:          #e2eff8;
+  --bg:          #d8ebf8;
   --surface:     #ffffff;
-  --surface2:    #cfe6f5;
-  --border:      #b8d9ec;
-  --text:        #14293a;
+  --surface2:    #a7d2f1;
+  --border:      #78b6e2;
+  --text:        #122d3f;
   --text-secundario: #234559;
-  --muted:       #3f5c70;
-  --muted2:      #6d8ba0;
-  --sidebar-bg:  #eaf4fb;
+  --muted:       #325a76;
+  --muted2:      #5082a5;
+  --sidebar-bg:  #ebf4fa;
 }
 
 [data-tema="verde_claro"] {
-  --bg:          #e2f2e6;
+  --bg:          #d4f2df;
   --surface:     #ffffff;
-  --surface2:    #cde9d4;
-  --border:      #b3ddbd;
-  --text:        #16301f;
+  --surface2:    #9ee5b8;
+  --border:      #6cd091;
+  --text:        #10371e;
   --text-secundario: #254a32;
-  --muted:       #3d6449;
-  --muted2:      #6b9678;
-  --sidebar-bg:  #eaf6ec;
+  --muted:       #2b6440;
+  --muted2:      #499766;
+  --sidebar-bg:  #e8f7ee;
 }
