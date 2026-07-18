@@ -4,8 +4,16 @@ from app.models.mixins import TenantMixin
 from app.utils.tz import naive_brasilia
 
 def _utcnow():
-    """Substitui datetime.utcnow() — retorna UTC timezone-aware."""
-    return datetime.now(timezone.utc)
+    """Substitui datetime.utcnow() — UTC, mas SEM tzinfo (naive).
+
+    Motivo: as colunas são TIMESTAMP WITHOUT TIME ZONE. Se o valor
+    entregue ao driver for tz-aware, o Postgres reconverte usando o
+    TimeZone da SESSÃO antes de gravar (aqui: America/Cuiabá, GMT-4) —
+    o valor persistido não é UTC nem Brasília de verdade, é deslocado
+    pelo offset da sessão (achado em teste manual: notificação criada
+    com "hora" 4h atrás do UTC real). Naive evita essa reconversão
+    silenciosa, mesmo padrão que naive_brasilia() já usa."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # ── Barbearia ──────────────────────────────────────────────────────────────────

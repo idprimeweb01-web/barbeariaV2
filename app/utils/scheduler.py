@@ -12,8 +12,8 @@ A antecedência é lida de ConfiguracaoAgendamento (A3: regras como config, nunc
 Deduplicação: uma notificação por (agendamento_id, tipo) — skip se já existe.
 """
 import logging
-from datetime import datetime, timedelta, timezone
-from app.utils.tz import naive_brasilia, hoje_brasilia, BRASILIA
+from datetime import timedelta
+from app.utils.tz import naive_brasilia, hoje_brasilia, BRASILIA, agora_utc
 from app.utils.db import commit_ou_falhar
 from app.constants import StatusAgendamento
 
@@ -157,7 +157,7 @@ def _limpar_tokens_revogados() -> None:
     from app.extensions import db
     from app.models import TokenRevogado
 
-    limite = datetime.now(timezone.utc) - timedelta(days=31)
+    limite = agora_utc() - timedelta(days=31)
     removidos = TokenRevogado.query.filter(TokenRevogado.revogado_em < limite).delete()
     commit_ou_falhar('utils.scheduler._limpar_tokens_revogados')
     if removidos:

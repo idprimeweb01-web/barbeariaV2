@@ -83,7 +83,18 @@ def _batch_notas(barbearia_id, cliente_ids):
     return out
 
 
-def _fmt_ag(ag, cli, historico, notas):
+def _batch_comprovantes(barbearia_id, agendamento_ids):
+    """{agendamento_id: comprovante_url} — evita N+1 pra listagens grandes."""
+    if not agendamento_ids:
+        return {}
+    pixes = AgendamentoSolicitacaoPix.query.filter(
+        AgendamentoSolicitacaoPix.barbearia_id == barbearia_id,
+        AgendamentoSolicitacaoPix.agendamento_id.in_(agendamento_ids),
+    ).all()
+    return {p.agendamento_id: p.comprovante_url for p in pixes if p.comprovante_url}
+
+
+def _fmt_ag(ag, cli, historico, notas, comprovante_url=None):
     servicos_info = [
         {
             'nome':            it.servico.nome if it.servico else None,
@@ -109,6 +120,7 @@ def _fmt_ag(ag, cli, historico, notas):
         'servicos':        servicos_info,
         'historico_cliente': historico,
         'notas_cliente':   notas,
+        'comprovante_url': comprovante_url,
     }
 
 
@@ -146,9 +158,11 @@ def listar_agendamentos():
     clientes = {c.id: c for c in Cliente.query.filter(Cliente.id.in_(cliente_ids)).all()}
     historico_map = _batch_historico(g.barbearia_id, cliente_ids)
     notas_map = _batch_notas(g.barbearia_id, cliente_ids)
+    comprovante_map = _batch_comprovantes(g.barbearia_id, [ag.id for ag in ags])
 
     return jsonify([
-        _fmt_ag(ag, clientes.get(ag.cliente_id), historico_map.get(ag.cliente_id, []), notas_map.get(ag.cliente_id, []))
+        _fmt_ag(ag, clientes.get(ag.cliente_id), historico_map.get(ag.cliente_id, []), notas_map.get(ag.cliente_id, []),
+                comprovante_map.get(ag.id))
         for ag in ags
     ]), 200
 

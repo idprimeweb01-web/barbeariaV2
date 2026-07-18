@@ -266,6 +266,18 @@ function abrirDrawer(agId) {
     </div>`;
   }
 
+  if (ag.status === 'aguardando_aprovacao' || ag.status === 'aguardando_comprovante') {
+    html += `<div class="drawer-section">
+      <div class="drawer-section-title">Comprovante PIX</div>
+      ${ag.comprovante_url
+        ? `<a href="${ag.comprovante_url}" target="_blank" rel="noopener noreferrer">
+             <img src="${ag.comprovante_url}" alt="Comprovante PIX" style="width:100%;border-radius:8px;border:1px solid var(--border);max-height:280px;object-fit:contain;background:var(--surface2)">
+           </a>
+           <div style="font-size:11px;color:var(--muted);margin-top:6px;text-align:center">Toque na imagem pra abrir em tamanho real</div>`
+        : `<div style="font-size:13px;color:#fbbf24">⚠ Cliente ainda não enviou o comprovante — confira antes de aprovar.</div>`}
+    </div>`;
+  }
+
   if (notas.length) {
     html += `<div class="drawer-section">
       <div class="drawer-section-title">Notas do cliente</div>

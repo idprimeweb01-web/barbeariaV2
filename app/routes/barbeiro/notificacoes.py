@@ -4,6 +4,7 @@ from app.models import Notificacao
 from app.exceptions import APIError
 from app.decorators.auth import barbeiro_required
 from app.utils.db import commit_ou_falhar
+from app.utils.tz import utc_naive_para_brasilia
 
 barbeiro_notif_bp = Blueprint('barbeiro_notificacoes', __name__, url_prefix='/api/v1/barbeiro')
 
@@ -114,5 +115,5 @@ def _fmt(n: Notificacao) -> dict:
         'corpo':          n.corpo,
         'lida':           n.lida,
         'agendamento_id': n.agendamento_id,
-        'criado_em':      n.criado_em.strftime('%d/%m/%Y %H:%M') if n.criado_em else None,
+        'criado_em':      utc_naive_para_brasilia(n.criado_em).strftime('%d/%m/%Y %H:%M') if n.criado_em else None,
     }

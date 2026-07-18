@@ -7,7 +7,7 @@ Bloco 1.2 — dois mecanismos complementares:
     desse timestamp deixa de ser aceito), usada quando o usuário é desativado,
     troca a senha, ou a barbearia inteira é desativada.
 """
-from datetime import datetime, timezone
+from app.utils.tz import agora_utc
 
 
 def revogar_todos_tokens(usuario, motivo: str) -> None:
@@ -17,4 +17,4 @@ def revogar_todos_tokens(usuario, motivo: str) -> None:
     a `token_valido_apos` passa a ser rejeitado em app/context.py.
     Não dá commit — quem chama decide o momento do commit.
     """
-    usuario.token_valido_apos = datetime.now(timezone.utc)
+    usuario.token_valido_apos = agora_utc()

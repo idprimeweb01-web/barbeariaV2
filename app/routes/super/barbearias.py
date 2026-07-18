@@ -1,5 +1,4 @@
 import os
-from datetime import datetime, timezone
 import cloudinary
 import cloudinary.uploader
 from flask import Blueprint, request, g, jsonify
@@ -13,6 +12,7 @@ from app.models import (
 from app.exceptions import APIError
 from app.decorators.auth import super_required
 from app.utils import normalizar_telefone
+from app.utils.tz import agora_utc
 from app.utils.db import commit_ou_falhar
 from app.utils.auditoria import registrar_auditoria
 from app.constants import StatusAgendamento
@@ -324,7 +324,7 @@ def desativar_barbearia(barbearia_id):
     # (gestores, barbeiros e clientes) — não apenas marcá-los como inativos.
     Usuario.query.filter_by(barbearia_id=barbearia_id).update({
         'ativo': False,
-        'token_valido_apos': datetime.now(timezone.utc),
+        'token_valido_apos': agora_utc(),
     })
     commit_ou_falhar('super.barbearias.desativar_barbearia')
 

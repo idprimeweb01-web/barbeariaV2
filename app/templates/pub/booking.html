@@ -239,8 +239,8 @@
   <!-- ── Sucesso ─────────────────────────────────────────────────── -->
   <div id="s6" class="s-panel">
     <div class="card">
-      <div class="success-icon">🎉</div>
-      <div class="success-title">Agendamento confirmado!</div>
+      <div class="success-icon" id="sucIcon">🎉</div>
+      <div class="success-title" id="sucTitle">Agendamento confirmado!</div>
       <div class="success-sub" id="sucSub"></div>
 
       <!-- PIX (condicional) -->
@@ -684,6 +684,11 @@ function enterSuccess(r) {
 
   const pixSec = document.getElementById('pixSection');
   if (r.pix?.codigo_pix) {
+    // Ainda falta pagar — "confirmado" aqui seria enganoso (achado em
+    // teste manual: cliente via "Agendamento confirmado!" e "pague via
+    // PIX" juntos, texto contraditório sobre o estado real da reserva).
+    document.getElementById('sucIcon').textContent = '⏳';
+    document.getElementById('sucTitle').textContent = 'Horário reservado — falta pagar';
     pixSec.style.display = '';
     const code = r.pix.codigo_pix;
     document.getElementById('pixCode').textContent = code;
@@ -693,6 +698,8 @@ function enterSuccess(r) {
     document.getElementById('comprovanteSection').style.display = '';
     document.getElementById('comprovanteSucesso').style.display = 'none';
   } else {
+    document.getElementById('sucIcon').textContent = '🎉';
+    document.getElementById('sucTitle').textContent = 'Agendamento confirmado!';
     pixSec.style.display = 'none';
   }
 }

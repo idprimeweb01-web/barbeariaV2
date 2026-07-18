@@ -21,10 +21,24 @@ def hoje_brasilia():
 
 
 def agora_utc() -> datetime:
-    """Datetime atual timezone-aware em UTC — para timestamps de auditoria."""
-    return datetime.now(UTC)
+    """Datetime atual em UTC, SEM tzinfo (naive) — para timestamps de
+    auditoria e comparação com colunas TIMESTAMP WITHOUT TIME ZONE.
+
+    Precisa ser naive pelo mesmo motivo do naive_brasilia(): se o valor
+    entregue ao driver for tz-aware, o Postgres reconverte usando o
+    TimeZone da SESSÃO (não necessariamente UTC) antes de gravar/comparar,
+    corrompendo o valor silenciosamente."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def naive_brasilia() -> datetime:
     """Datetime atual em Brasília sem tzinfo — para comparar com datetimes naive do banco."""
     return datetime.now(BRASILIA).replace(tzinfo=None)
+
+
+def utc_naive_para_brasilia(dt: datetime) -> datetime:
+    """Converte um datetime naive gravado como UTC (ex: Notificacao.criado_em)
+    para naive em Brasília, só pra EXIBIÇÃO — sem isso, uma tela que mostra
+    esse timestamp pro usuário final aparece 3h à frente do horário local
+    (achado em teste manual no sino de notificação do barbeiro)."""
+    return dt - timedelta(hours=3)
