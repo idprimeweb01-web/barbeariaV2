@@ -54,6 +54,9 @@
     .btn-primary:hover { opacity: .88; }
     .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
     .btn-ghost { padding: 12px 20px; background: none; border: 1.5px solid var(--border); border-radius: 10px; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .wizard-nav { display: flex; gap: 10px; }
+    .wizard-nav .btn-ghost { flex-shrink: 0; white-space: nowrap; }
+    .wizard-nav .btn-primary { flex: 1; width: auto; }
 
     /* ── Login / Criar conta (step 1) ──────────────────── */
     .s1-divider { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--muted); font-size: 12px; }
@@ -192,7 +195,10 @@
       <div class="card-sub">Escolha um ou mais serviços.</div>
       <div id="svLista" class="sel-list"><div class="loading">Carregando serviços…</div></div>
       <div class="sv-resumo" id="svResumo"></div>
-      <button class="btn-primary" onclick="s2Proximo()">Próximo →</button>
+      <div class="wizard-nav">
+        <button class="btn-ghost" onclick="goStep(1)">← Voltar</button>
+        <button class="btn-primary" onclick="s2Proximo()">Próximo →</button>
+      </div>
     </div>
   </div>
 
@@ -202,7 +208,10 @@
       <div class="card-title">Profissional</div>
       <div class="card-sub">Escolha quem vai te atender.</div>
       <div id="barLista" class="sel-list"><div class="loading">Carregando profissionais…</div></div>
-      <button class="btn-primary" onclick="s3Proximo()">Próximo →</button>
+      <div class="wizard-nav">
+        <button class="btn-ghost" onclick="goStep(2)">← Voltar</button>
+        <button class="btn-primary" onclick="s3Proximo()">Próximo →</button>
+      </div>
     </div>
   </div>
 
@@ -224,7 +233,10 @@
         <span style="color:var(--cor)">Tente outro dia.</span>
       </div>
       <div id="slotsLoading" style="display:none" class="loading">Buscando horários…</div>
-      <button class="btn-primary" style="margin-top:16px" onclick="s4Proximo()">Próximo →</button>
+      <div class="wizard-nav" style="margin-top:16px">
+        <button class="btn-ghost" onclick="goStep(3)">← Voltar</button>
+        <button class="btn-primary" onclick="s4Proximo()">Próximo →</button>
+      </div>
     </div>
   </div>
 
@@ -250,7 +262,10 @@
         </button>
         {% endif %}
       </div>
-      <button class="btn-primary" id="btnS5" onclick="confirmar()">Confirmar agendamento</button>
+      <div class="wizard-nav">
+        <button class="btn-ghost" onclick="goStep(4)">← Voltar</button>
+        <button class="btn-primary" id="btnS5" onclick="confirmar()">Confirmar agendamento</button>
+      </div>
     </div>
   </div>
 
