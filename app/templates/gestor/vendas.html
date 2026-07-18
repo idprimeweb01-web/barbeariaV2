@@ -8,15 +8,15 @@
 
 {% block styles %}
 <style>
-.item-venda-row { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid #1e1e1e; font-size: 13px; }
+.item-venda-row { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--surface2); font-size: 13px; }
 .item-venda-row:last-child { border-bottom: none; }
-.item-venda-nome { flex: 1; color: #ddd; }
-.item-venda-remove { background: none; border: none; color: #666; cursor: pointer; font-size: 16px; padding: 0 4px; }
+.item-venda-nome { flex: 1; color: var(--text); }
+.item-venda-remove { background: none; border: none; color: var(--muted2); cursor: pointer; font-size: 16px; padding: 0 4px; }
 .item-venda-remove:hover { color: #f87171; }
 .venda-total { font-size: 20px; font-weight: 700; color: var(--cor-primaria); text-align: right; margin: 14px 0; }
 .busca-produto-lista { position: relative; }
-.busca-resultados { position: absolute; top: 100%; left: 0; right: 0; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; max-height: 200px; overflow-y: auto; z-index: 10; }
-.busca-resultado-item { padding: 8px 12px; cursor: pointer; font-size: 13px; color: #ccc; }
+.busca-resultados { position: absolute; top: 100%; left: 0; right: 0; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; max-height: 200px; overflow-y: auto; z-index: 10; }
+.busca-resultado-item { padding: 8px 12px; cursor: pointer; font-size: 13px; color: var(--text-secundario); }
 .busca-resultado-item:hover { background: rgba(243,156,18,.08); }
 </style>
 {% endblock %}

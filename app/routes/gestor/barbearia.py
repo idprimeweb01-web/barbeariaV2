@@ -113,4 +113,30 @@ def get_tema():
         'cor_card':      None,
         'fonte':         cust.fonte         if cust else 'Inter',
         'nome_exibicao': b.nome_exibicao or b.nome,
+        'tema':          cust.tema if cust and cust.tema else None,
     }), 200
+
+
+# ── PATCH /api/v1/gestor/barbearia/tema ──────────────────────────────────────
+# Paleta (preto/branco/rosa/azul_claro/verde_claro) — só gestor decide,
+# some pra gestor/barbeiro/cliente do mesmo tenant (ver [data-tema] em
+# app/static/css/temas.css e frontend/src/styles/index.css).
+
+_TEMAS_VALIDOS = {'preto', 'branco', 'rosa', 'azul_claro', 'verde_claro'}
+
+
+@gestor_barbearia_bp.patch('/barbearia/tema')
+@gestor_required
+def salvar_tema():
+    dados = request.get_json(silent=True) or {}
+    tema = (dados.get('tema') or '').strip()
+    if tema not in _TEMAS_VALIDOS:
+        raise APIError(f'"tema" deve ser um de: {", ".join(sorted(_TEMAS_VALIDOS))}.', 422)
+
+    cust = BarbeariaCustomizacao.query.filter_by(barbearia_id=g.barbearia_id).first()
+    if not cust:
+        cust = BarbeariaCustomizacao(barbearia_id=g.barbearia_id)
+        db.session.add(cust)
+    cust.tema = tema
+    commit_ou_falhar('gestor.barbearia.salvar_tema')
+    return jsonify({'mensagem': 'Tema atualizado com sucesso.', 'tema': tema}), 200

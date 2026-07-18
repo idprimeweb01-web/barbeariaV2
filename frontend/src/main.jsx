@@ -11,6 +11,12 @@ if (window.BOS_COR_PRIMARIA) {
   document.documentElement.style.setProperty('--primary', window.BOS_COR_PRIMARIA)
 }
 
+// Paleta (preto/branco/rosa/azul_claro/verde_claro) — mesma escolhida pelo
+// gestor em /gestor/aparencia, aplicada aqui via [data-tema] (ver index.css).
+if (window.BOS_TEMA) {
+  document.documentElement.setAttribute('data-tema', window.BOS_TEMA)
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />

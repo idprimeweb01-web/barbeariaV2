@@ -12,24 +12,24 @@
   /* ── Filtros ──────────────────────────────────────────── */
   .rel-toolbar {
     display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-    margin-bottom: 20px; background: #242424; border: 1px solid #2d2d2d;
+    margin-bottom: 20px; background: var(--surface); border: 1px solid var(--border);
     border-radius: 10px; padding: 14px 16px;
   }
   .tipo-tabs { display: flex; gap: 4px; }
   .tipo-btn {
-    padding: 7px 16px; border-radius: 7px; border: 1.5px solid #333;
-    background: none; color: #666; font-size: 13px; font-weight: 600;
+    padding: 7px 16px; border-radius: 7px; border: 1.5px solid var(--border);
+    background: none; color: var(--muted2); font-size: 13px; font-weight: 600;
     cursor: pointer; font-family: inherit; transition: all .15s;
   }
   .tipo-btn.active { background: var(--cor-primaria); border-color: var(--cor-primaria); color: #fff; }
-  .tipo-btn:hover:not(.active) { border-color: #555; color: #aaa; }
+  .tipo-btn:hover:not(.active) { border-color: var(--muted2); color: var(--muted); }
   .rel-input {
-    padding: 8px 12px; background: #1e1e1e; border: 1.5px solid #333;
-    border-radius: 8px; color: #fff; font-family: inherit; font-size: 13px;
+    padding: 8px 12px; background: var(--surface2); border: 1.5px solid var(--border);
+    border-radius: 8px; color: var(--text); font-family: inherit; font-size: 13px;
     outline: none; transition: border-color .2s;
   }
   .rel-input:focus { border-color: var(--cor-primaria); }
-  .rel-label { font-size: 12px; color: #555; font-weight: 600; white-space: nowrap; }
+  .rel-label { font-size: 12px; color: var(--muted2); font-weight: 600; white-space: nowrap; }
   .btn-carregar {
     padding: 8px 18px; background: var(--cor-primaria); border: none; color: #fff;
     border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
@@ -39,27 +39,27 @@
 
   /* ── Cards de métricas ────────────────────────────────── */
   .rel-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px,1fr)); gap: 12px; margin-bottom: 20px; }
-  .rel-card { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; padding: 16px 18px; }
+  .rel-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
   .rel-card-icon { font-size: 20px; margin-bottom: 8px; }
-  .rel-card-label { font-size: 11px; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+  .rel-card-label { font-size: 11px; color: var(--muted2); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
   .rel-card-val { font-size: 26px; font-weight: 800; color: var(--cor-primaria); line-height: 1; }
-  .rel-card-sub { font-size: 12px; color: #555; margin-top: 4px; }
+  .rel-card-sub { font-size: 12px; color: var(--muted2); margin-top: 4px; }
   .var-pos { color: #4ade80; font-weight: 700; }
   .var-neg { color: #f87171; font-weight: 700; }
 
   /* ── Gráfico ──────────────────────────────────────────── */
-  .rel-chart-wrap { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; padding: 18px; margin-bottom: 20px; }
-  .rel-chart-title { font-size: 13px; font-weight: 700; color: #aaa; margin-bottom: 14px; }
+  .rel-chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 20px; }
+  .rel-chart-title { font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 14px; }
 
   /* ── Tabelas ──────────────────────────────────────────── */
   .rel-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
-  .rel-table-wrap { background: #242424; border: 1px solid #2d2d2d; border-radius: 10px; overflow: hidden; }
-  .rel-table-title { font-size: 12px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: .5px; padding: 12px 14px 8px; border-bottom: 1px solid #2d2d2d; }
+  .rel-table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .rel-table-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; padding: 12px 14px 8px; border-bottom: 1px solid var(--border); }
   .rel-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .rel-table td { padding: 9px 14px; border-bottom: 1px solid #252525; }
+  .rel-table td { padding: 9px 14px; border-bottom: 1px solid var(--sidebar-bg); }
   .rel-table tr:last-child td { border-bottom: none; }
   .rel-table td:last-child { text-align: right; color: var(--cor-primaria); font-weight: 700; }
-  .rel-empty { padding: 20px 14px; color: #444; font-size: 13px; }
+  .rel-empty { padding: 20px 14px; color: var(--border); font-size: 13px; }
 
   /* ── Alertas estoque ──────────────────────────────────── */
   .rel-alert { background: rgba(220,38,38,.07); border: 1px solid rgba(220,38,38,.2); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }

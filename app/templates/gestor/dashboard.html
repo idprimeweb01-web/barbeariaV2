@@ -15,8 +15,8 @@
   margin-bottom: 20px;
 }
 .kpi-card {
-  background: #232323;
-  border: 1px solid #2d2d2d;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 20px;
   display: flex;
@@ -26,7 +26,7 @@
 .kpi-label {
   font-size: 11px;
   font-weight: 700;
-  color: #555;
+  color: var(--muted2);
   text-transform: uppercase;
   letter-spacing: .5px;
 }
@@ -38,7 +38,7 @@
 }
 .kpi-sub {
   font-size: 12px;
-  color: #444;
+  color: var(--border);
 }
 
 /* Card Top Serviços inline */
@@ -47,9 +47,9 @@
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: #aaa;
+  color: var(--muted);
 }
-.kpi-list-row strong { color: #ddd; font-weight: 600; }
+.kpi-list-row strong { color: var(--text); font-weight: 600; }
 
 /* Card PIX */
 .kpi-pix { border-color: rgba(243,156,18,.3); }
@@ -77,15 +77,15 @@
   gap: 14px;
 }
 .info-card {
-  background: #232323;
-  border: 1px solid #2d2d2d;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 18px;
 }
 .info-title {
   font-size: 11px;
   font-weight: 700;
-  color: #555;
+  color: var(--muted2);
   text-transform: uppercase;
   letter-spacing: .4px;
   margin-bottom: 14px;
@@ -95,15 +95,15 @@
   justify-content: space-between;
   align-items: center;
   padding: 7px 0;
-  border-bottom: 1px solid #1e1e1e;
+  border-bottom: 1px solid var(--surface2);
   font-size: 13px;
 }
 .info-row:last-child { border-bottom: none; }
-.info-row-name { color: #bbb; }
+.info-row-name { color: var(--muted); }
 .info-row-val  { color: var(--cor-primaria); font-weight: 700; }
 .info-row-val.danger { color: #f87171; }
 
-.dash-loading { text-align: center; padding: 60px; color: #444; }
+.dash-loading { text-align: center; padding: 60px; color: var(--border); }
 
 @media (max-width: 680px) { .dash-row2 { grid-template-columns: 1fr; } }
 </style>

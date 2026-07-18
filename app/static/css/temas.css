@@ -1,0 +1,74 @@
+/*
+ * Sistema de temas — gestor, barbeiro e cliente (SPA) compartilham os
+ * mesmos nomes de variável (--bg, --surface, --surface2, --border,
+ * --text, --muted, --muted2, --sidebar-bg). O tema é lido do
+ * BarbeariaCustomizacao.tema do tenant e aplicado via atributo
+ * data-tema no <html>. --primaria/--primaria-hover NÃO mudam por
+ * tema — isso é a marca (BarbeariaCustomizacao.cor_primaria), livre
+ * pro gestor configurar independente da paleta escolhida aqui.
+ *
+ * "preto" é o tema histórico (o único que existia antes) — os valores
+ * abaixo são exatamente os hex que já estavam espalhados pelos
+ * templates, só centralizados.
+ */
+
+:root,
+[data-tema="preto"] {
+  --bg:          #1a1a1a;
+  --surface:     #242424;
+  --surface2:    #1e1e1e;
+  --border:      #2d2d2d;
+  --text:        #ddd;
+  --text-secundario: #ccc;
+  --muted:       #888;
+  --muted2:      #555;
+  --sidebar-bg:  #1c1c1c;
+}
+
+[data-tema="branco"] {
+  --bg:          #f2f2f3;
+  --surface:     #ffffff;
+  --surface2:    #f6f6f7;
+  --border:      #e3e3e5;
+  --text:        #1c1c1e;
+  --text-secundario: #3f3f42;
+  --muted:       #6b6b70;
+  --muted2:      #9a9a9e;
+  --sidebar-bg:  #ffffff;
+}
+
+[data-tema="rosa"] {
+  --bg:          #fdf2f6;
+  --surface:     #ffffff;
+  --surface2:    #fbe8f0;
+  --border:      #f3d1e0;
+  --text:        #3a1f2b;
+  --text-secundario: #5c3345;
+  --muted:       #8a5b70;
+  --muted2:      #b98aa0;
+  --sidebar-bg:  #fff5f9;
+}
+
+[data-tema="azul_claro"] {
+  --bg:          #eff6fb;
+  --surface:     #ffffff;
+  --surface2:    #e3f0f9;
+  --border:      #cfe4f2;
+  --text:        #1c3548;
+  --text-secundario: #33536b;
+  --muted:       #5b7d93;
+  --muted2:      #93b1c4;
+  --sidebar-bg:  #f2f9fd;
+}
+
+[data-tema="verde_claro"] {
+  --bg:          #f1f8f3;
+  --surface:     #ffffff;
+  --surface2:    #e6f4e9;
+  --border:      #d3ead9;
+  --text:        #1e3a26;
+  --text-secundario: #34573f;
+  --muted:       #5c8a68;
+  --muted2:      #96c1a2;
+  --sidebar-bg:  #f4faf5;
+}

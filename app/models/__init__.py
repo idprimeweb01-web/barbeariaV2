@@ -818,6 +818,12 @@ class BarbeariaCustomizacao(db.Model):
     imagem_capa_url            = db.Column(db.String(500))
     imagem_boas_vindas_url     = db.Column(db.String(500))
     fonte                      = db.Column(db.String(50), default='Inter')
+    # Preset de paleta pra gestor/barbeiro/cliente (CSS var overrides em
+    # [data-tema=X], ver app/static/css/temas.css) — independente de
+    # cor_primaria (a cor de destaque continua livre, o tema só muda
+    # fundo/superfície/texto). Valores: preto, branco, rosa, azul_claro,
+    # verde_claro.
+    tema                       = db.Column(db.String(20), default='preto')
     criado_em             = db.Column(db.DateTime, default=_utcnow)
     atualizado_em         = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 

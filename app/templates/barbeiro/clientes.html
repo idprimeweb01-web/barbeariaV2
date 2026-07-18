@@ -10,21 +10,21 @@
 .pref-chip {
   display: inline-block; background: rgba(243,156,18,.08);
   border: 1px solid rgba(243,156,18,.2); border-radius: 6px;
-  padding: 2px 7px; font-size: 11px; color: #aaa; max-width: 160px;
+  padding: 2px 7px; font-size: 11px; color: var(--muted); max-width: 160px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.hist-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #1e1e1e; font-size: 13px; }
+.hist-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--surface2); font-size: 13px; }
 .hist-row:last-child { border-bottom: none; }
-.hist-sv   { color: #ccc; }
+.hist-sv   { color: var(--text-secundario); }
 .hist-val  { color: var(--cor-primaria); font-weight: 700; flex-shrink: 0; }
 
 .nota-item { background: rgba(243,156,18,.06); border: 1px solid rgba(243,156,18,.15); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
 .nota-tipo { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--cor-primaria); margin-bottom: 3px; }
-.nota-txt  { font-size: 13px; color: #bbb; }
-.nota-data { font-size: 10px; color: #555; margin-top: 4px; }
+.nota-txt  { font-size: 13px; color: var(--muted); }
+.nota-data { font-size: 10px; color: var(--muted2); margin-top: 4px; }
 
-.tabs-modal { display: flex; gap: 2px; margin-bottom: 16px; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 4px; }
-.tab-modal { padding: 6px 16px; border-radius: 6px; border: none; background: none; color: #666; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
+.tabs-modal { display: flex; gap: 2px; margin-bottom: 16px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 4px; }
+.tab-modal { padding: 6px 16px; border-radius: 6px; border: none; background: none; color: var(--muted2); font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
 .tab-modal.active { background: var(--cor-primaria); color: #1a1a1a; }
 .tab-pane { display: none; }
 .tab-pane.active { display: block; }

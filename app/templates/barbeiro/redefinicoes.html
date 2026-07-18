@@ -3,14 +3,14 @@
 
 {% block styles %}
 <style>
-.rd-card { background: #242424; border: 1px solid #2d2d2d; border-radius: 12px; padding: 18px; margin-bottom: 12px; }
-.rd-title { font-size: 13px; font-weight: 700; color: #ccc; margin-bottom: 14px; }
+.rd-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 12px; }
+.rd-title { font-size: 13px; font-weight: 700; color: var(--text-secundario); margin-bottom: 14px; }
 .rd-field { margin-bottom: 12px; }
-.rd-field label { display: block; font-size: 11px; color: #666; font-weight: 700; margin-bottom: 5px; text-transform: uppercase; letter-spacing: .3px; }
+.rd-field label { display: block; font-size: 11px; color: var(--muted2); font-weight: 700; margin-bottom: 5px; text-transform: uppercase; letter-spacing: .3px; }
 .rd-field input {
-  width: 100%; padding: 12px 14px; background: #1e1e1e;
-  border: 1.5px solid #333; border-radius: 10px;
-  color: #fff; font-family: inherit; font-size: 15px; outline: none; transition: border-color .2s;
+  width: 100%; padding: 12px 14px; background: var(--surface2);
+  border: 1.5px solid var(--border); border-radius: 10px;
+  color: var(--text); font-family: inherit; font-size: 15px; outline: none; transition: border-color .2s;
 }
 .rd-field input:focus { border-color: var(--cor-primaria); }
 .btn-full {
@@ -19,7 +19,7 @@
   font-family: inherit; transition: all .15s; border: none;
 }
 .btn-full.gold { background: var(--cor-primaria); color: #fff; }
-.btn-full.ghost { background: none; border: 1px solid #333; color: #888; margin-top: 8px; }
+.btn-full.ghost { background: none; border: 1px solid var(--border); color: var(--muted); margin-top: 8px; }
 .btn-full.danger { background: rgba(220,38,38,.12); border: 1px solid rgba(220,38,38,.35); color: #f87171; margin-top: 8px; }
 .btn-full:disabled { opacity: .5; cursor: not-allowed; }
 </style>

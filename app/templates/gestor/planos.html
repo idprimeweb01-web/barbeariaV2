@@ -18,22 +18,22 @@
 
 .modal-box-lg { max-width: 560px; }
 .form-group { margin-bottom: 14px; }
-.form-label { display: block; font-size: 12px; color: #888; font-weight: 600; margin-bottom: 6px; }
+.form-label { display: block; font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
 .form-input, .form-textarea {
-  width: 100%; padding: 9px 12px; background: #1e1e1e; border: 1px solid #2d2d2d;
-  border-radius: 6px; color: #ddd; font-family: inherit; font-size: 13px;
+  width: 100%; padding: 9px 12px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font-family: inherit; font-size: 13px;
   outline: none; box-sizing: border-box; transition: border-color .2s;
 }
 .form-input:focus, .form-textarea:focus { border-color: var(--cor-primaria); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
-.servico-limite-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; color: #ccc; }
+.servico-limite-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; color: var(--text-secundario); }
 .servico-limite-row .nome-servico { flex: 1; display: flex; align-items: center; gap: 8px; }
 .servico-limite-row input[type=checkbox] { accent-color: var(--cor-primaria); width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
-.input-limite { width: 56px; padding: 5px 6px; background: #1e1e1e; border: 1px solid #2d2d2d; border-radius: 5px; color: #ddd; font-family: inherit; font-size: 12px; text-align: center; }
+.input-limite { width: 56px; padding: 5px 6px; background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; color: var(--text); font-family: inherit; font-size: 12px; text-align: center; }
 .input-limite:disabled { opacity: .4; }
-.limite-sufixo { font-size: 11px; color: #666; }
-.check-ilimitado { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; cursor: pointer; white-space: nowrap; }
+.limite-sufixo { font-size: 11px; color: var(--muted2); }
+.check-ilimitado { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .check-ilimitado input { accent-color: var(--cor-primaria); cursor: pointer; }
 </style>
 {% endblock %}

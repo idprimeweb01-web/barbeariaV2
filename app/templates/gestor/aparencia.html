@@ -1,0 +1,108 @@
+{% extends "gestor/base.html" %}
+{% block title %}Aparência{% endblock %}
+{% block page_title %}Aparência{% endblock %}
+
+{% block styles %}
+<style>
+.tema-container { max-width: 680px; }
+.tema-hint { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+.tema-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px; margin-bottom: 24px;
+}
+.tema-opcao {
+  border: 2px solid var(--border); border-radius: 12px; padding: 14px;
+  cursor: pointer; transition: border-color .15s; background: var(--surface);
+}
+.tema-opcao:hover { border-color: var(--muted); }
+.tema-opcao.selecionado { border-color: var(--cor-primaria); }
+.tema-swatch {
+  height: 56px; border-radius: 8px; margin-bottom: 10px;
+  display: flex; overflow: hidden; border: 1px solid rgba(0,0,0,.15);
+}
+.tema-swatch span { flex: 1; }
+.tema-nome { font-size: 13px; font-weight: 700; color: var(--text); text-align: center; }
+.tema-badge-seg {
+  display: inline-block; margin-top: 6px; font-size: 10px; font-weight: 700;
+  color: var(--cor-primaria); text-align: center; width: 100%;
+  text-transform: uppercase; letter-spacing: .3px;
+}
+.form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tema-container">
+  <p class="tema-hint">
+    Escolha a paleta de cores usada nas telas do gestor, dos funcionários e dos
+    clientes desta {{ L('tenant') | lower }}. A cor de destaque (botões, links)
+    continua a que você configurou em Personalização — o tema só muda o
+    fundo, os cartões e os textos.
+  </p>
+
+  <div class="tema-grid" id="temaGrid"></div>
+
+  <div class="form-actions">
+    <button class="btn-icon" id="btnSalvarTema" onclick="salvar()">Salvar</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TEMAS = [
+  { chave: 'preto',       nome: 'Preto',       cores: ['#1a1a1a', '#242424', '#2d2d2d'], segmento: 'barbearia' },
+  { chave: 'branco',      nome: 'Branco',      cores: ['#f2f2f3', '#ffffff', '#e3e3e5'], segmento: null },
+  { chave: 'rosa',        nome: 'Rosa',        cores: ['#fdf2f6', '#ffffff', '#f3d1e0'], segmento: 'salao' },
+  { chave: 'azul_claro',  nome: 'Azul claro',  cores: ['#eff6fb', '#ffffff', '#cfe4f2'], segmento: 'clinica' },
+  { chave: 'verde_claro', nome: 'Verde claro', cores: ['#f1f8f3', '#ffffff', '#d3ead9'], segmento: null },
+];
+const SEGMENTO_LABEL = { barbearia: 'Sugerido p/ Barbearia', salao: 'Sugerido p/ Salão', clinica: 'Sugerido p/ Clínica' };
+
+let _temaAtual = null;
+
+function renderGrid() {
+  document.getElementById('temaGrid').innerHTML = TEMAS.map(t => `
+    <div class="tema-opcao ${t.chave === _temaAtual ? 'selecionado' : ''}" onclick="selecionar('${t.chave}')">
+      <div class="tema-swatch">
+        ${t.cores.map(c => `<span style="background:${c}"></span>`).join('')}
+      </div>
+      <div class="tema-nome">${t.nome}</div>
+      ${t.segmento ? `<div class="tema-badge-seg">${SEGMENTO_LABEL[t.segmento]}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function selecionar(chave) {
+  _temaAtual = chave;
+  renderGrid();
+}
+
+async function carregar() {
+  try {
+    const c = await Bos.get('/gestor/barbearia/tema');
+    _temaAtual = c.tema || {{ tema | tojson }};
+    renderGrid();
+  } catch (e) {
+    _temaAtual = {{ tema | tojson }};
+    renderGrid();
+  }
+}
+
+async function salvar() {
+  const btn = document.getElementById('btnSalvarTema');
+  btn.disabled = true;
+  try {
+    await Bos.patch('/gestor/barbearia/tema', { tema: _temaAtual });
+    toast('Tema atualizado com sucesso.', 'success');
+    setTimeout(() => window.location.reload(), 600);
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+carregar();
+</script>
+{% endblock %}

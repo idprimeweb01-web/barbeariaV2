@@ -214,6 +214,29 @@ def sair():
     return resp
 
 
+# ── Tema (paleta gestor/barbeiro/cliente) ────────────────────────────────────
+# Sugestão por segmento quando o tenant ainda não escolheu um tema
+# explicitamente (BarbeariaCustomizacao.tema None) — gestor pode trocar
+# livremente depois em /gestor/aparencia.
+_TEMA_SUGERIDO_POR_SEGMENTO = {
+    'barbearia': 'preto',
+    'salao':     'rosa',
+    'manicure':  'branco',
+    'clinica':   'azul_claro',
+}
+
+
+def _resolver_tema(custom, barbearia):
+    if custom and custom.tema:
+        return custom.tema
+    if barbearia and barbearia.segmento_id:
+        from app.models import Segmento
+        seg = db.session.get(Segmento, barbearia.segmento_id)
+        if seg and seg.chave in _TEMA_SUGERIDO_POR_SEGMENTO:
+            return _TEMA_SUGERIDO_POR_SEGMENTO[seg.chave]
+    return 'preto'
+
+
 # ── Contexto compartilhado para área do gestor ───────────────────────────────
 
 def _gestor_ctx():
@@ -228,6 +251,7 @@ def _gestor_ctx():
         'bk_nome':         (b.nome_exibicao or b.nome) if b else 'BarberOS',
         'logo_url':        custom.logo_url if custom else None,
         'imagem_capa_url': custom.imagem_capa_url if custom else None,
+        'tema':            _resolver_tema(custom, b),
     }
 
 
@@ -330,6 +354,12 @@ def gestor_config_webhook():
     return render_template('gestor/webhook.html', **_gestor_ctx())
 
 
+@views_bp.get('/gestor/aparencia')
+@session_required('gestor', 'super_admin')
+def gestor_aparencia():
+    return render_template('gestor/aparencia.html', **_gestor_ctx())
+
+
 @views_bp.get('/gestor/solicitacoes-senha')
 @session_required('gestor', 'super_admin')
 def gestor_solicitacoes_senha():
@@ -356,6 +386,7 @@ def _barbeiro_ctx():
         'bk_nome':         (b.nome_exibicao or b.nome) if b else 'BarberOS',
         'logo_url':        custom.logo_url if custom else None,
         'imagem_capa_url': custom.imagem_capa_url if custom else None,
+        'tema':            _resolver_tema(custom, b),
     }
 
 
@@ -519,6 +550,7 @@ def _cliente_ctx():
         'logo_url':    custom.logo_url if custom else None,
         'bk_telefone': b.telefone_contato if b else None,
         'bk_cor_primaria': custom.cor_primaria if custom else None,
+        'bk_tema':     _resolver_tema(custom, b),
     }
 
 

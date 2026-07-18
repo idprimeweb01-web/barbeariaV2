@@ -8,27 +8,27 @@
 {% block styles %}
 <style>
 .horario-section {
-  background: #242424; border: 1px solid #2d2d2d; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
   padding: 22px; margin-bottom: 18px;
 }
 .hor-section-title {
-  font-size: 13px; font-weight: 700; color: #ccc; margin-bottom: 16px;
-  padding-bottom: 10px; border-bottom: 1px solid #2d2d2d;
+  font-size: 13px; font-weight: 700; color: var(--text-secundario); margin-bottom: 16px;
+  padding-bottom: 10px; border-bottom: 1px solid var(--border);
 }
-.hor-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #1e1e1e; font-size: 13px; }
+.hor-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--surface2); font-size: 13px; }
 .hor-row:last-child { border-bottom: none; }
 .hor-row-left { display: flex; flex-direction: column; gap: 2px; }
-.hor-row-title { color: #ddd; font-weight: 500; }
-.hor-row-sub   { color: #555; font-size: 11px; }
+.hor-row-title { color: var(--text); font-weight: 500; }
+.hor-row-sub   { color: var(--muted2); font-size: 11px; }
 
 .pausa-item {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 12px; background: #1e1e1e; border: 1px solid #2a2a2a;
+  padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border);
   border-radius: 8px; margin-bottom: 8px;
 }
 .pausa-info  { font-size: 13px; }
-.pausa-hora  { font-weight: 600; color: #ddd; }
-.pausa-descr { font-size: 11px; color: #666; margin-top: 2px; }
+.pausa-hora  { font-weight: 600; color: var(--text); }
+.pausa-descr { font-size: 11px; color: var(--muted2); margin-top: 2px; }
 .pausa-acoes { display: flex; gap: 6px; }
 
 .save-btn-row { display: flex; justify-content: flex-end; margin-top: 14px; }

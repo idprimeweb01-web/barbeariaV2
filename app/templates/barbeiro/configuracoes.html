@@ -3,20 +3,20 @@
 
 {% block styles %}
 <style>
-.cfg-card { background: #242424; border: 1px solid #2d2d2d; border-radius: 12px; padding: 18px; margin-bottom: 12px; }
-.cfg-title { font-size: 11px; color: #555; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 14px; }
+.cfg-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 12px; }
+.cfg-title { font-size: 11px; color: var(--muted2); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 14px; }
 .cfg-row {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 11px 0; border-bottom: 1px solid #2d2d2d;
+  padding: 11px 0; border-bottom: 1px solid var(--border);
 }
 .cfg-row:last-child { border-bottom: none; padding-bottom: 0; }
 .cfg-info {}
-.cfg-label { font-size: 14px; font-weight: 600; color: #ccc; }
-.cfg-desc  { font-size: 11px; color: #555; margin-top: 2px; }
+.cfg-label { font-size: 14px; font-weight: 600; color: var(--text-secundario); }
+.cfg-desc  { font-size: 11px; color: var(--muted2); margin-top: 2px; }
 .sw-label { display: flex; align-items: center; cursor: pointer; }
 .sw-label input { display: none; }
 .sw-track {
-  width: 42px; height: 24px; background: #444; border-radius: 24px;
+  width: 42px; height: 24px; background: var(--border); border-radius: 24px;
   position: relative; transition: background .2s; flex-shrink: 0;
 }
 .sw-track::after {
@@ -26,7 +26,7 @@
 }
 .sw-label input:checked + .sw-track { background: var(--cor-primaria); }
 .sw-label input:checked + .sw-track::after { transform: translateX(18px); }
-.cfg-version { text-align: center; font-size: 11px; color: #444; padding: 8px 0; }
+.cfg-version { text-align: center; font-size: 11px; color: var(--border); padding: 8px 0; }
 </style>
 {% endblock %}
 
@@ -46,16 +46,6 @@
     </label>
   </div>
 
-  <div class="cfg-row">
-    <div class="cfg-info">
-      <div class="cfg-label">Tema claro</div>
-      <div class="cfg-desc">Alterna entre tema escuro e claro</div>
-    </div>
-    <label class="sw-label">
-      <input type="checkbox" id="cfgTema" onchange="salvarTema(this.checked)">
-      <span class="sw-track"></span>
-    </label>
-  </div>
 </div>
 
 <div class="cfg-card">
@@ -93,12 +83,6 @@
 
 {% block scripts %}
 <script>
-  // ── Tema (chave direta: barberos_tema = 'claro' | 'escuro') ──
-  function salvarTema(claro) {
-    localStorage.setItem('barberos_tema', claro ? 'claro' : 'escuro');
-    document.documentElement.classList.toggle('light', claro);
-  }
-
   // ── Telefone (chave direta: barberos_mostrar_telefone) ────────
   function salvarTelefone(valor) {
     localStorage.setItem('barberos_mostrar_telefone', valor ? 'true' : 'false');
@@ -126,9 +110,6 @@
 
   // ── Init ──────────────────────────────────────────────────────
   (function() {
-    // Tema — chave direta
-    document.getElementById('cfgTema').checked = localStorage.getItem('barberos_tema') === 'claro';
-
     // Telefone — chave direta
     document.getElementById('cfgTel').checked = localStorage.getItem('barberos_mostrar_telefone') === 'true';
 

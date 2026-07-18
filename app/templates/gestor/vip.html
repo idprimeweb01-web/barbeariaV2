@@ -13,17 +13,17 @@
 .btn-primary:hover { background: #1d4ed8; }
 
 .form-group { margin-bottom: 14px; }
-.form-label { display: block; font-size: 12px; color: #888; font-weight: 600; margin-bottom: 6px; }
+.form-label { display: block; font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
 .form-input, .form-textarea, .form-select {
-  width: 100%; padding: 9px 12px; background: #1e1e1e; border: 1px solid #2d2d2d;
-  border-radius: 6px; color: #ddd; font-family: inherit; font-size: 13px;
+  width: 100%; padding: 9px 12px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font-family: inherit; font-size: 13px;
   outline: none; box-sizing: border-box; transition: border-color .2s;
 }
 .form-input:focus, .form-textarea:focus, .form-select:focus { border-color: var(--cor-primaria); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.view-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #2d2d2d; font-size: 13px; }
-.view-row span:first-child { color: #777; }
-.view-row span:last-child { color: #ddd; font-weight: 600; }
+.view-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.view-row span:first-child { color: var(--muted); }
+.view-row span:last-child { color: var(--text); font-weight: 600; }
 </style>
 {% endblock %}
 
