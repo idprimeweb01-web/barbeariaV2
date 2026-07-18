@@ -283,6 +283,9 @@ def create_app(config=None):
     from .routes.gestor.webhook import gestor_webhook_bp
     app.register_blueprint(gestor_webhook_bp)
 
+    from .routes.webhook_inbound import webhook_inbound_bp
+    app.register_blueprint(webhook_inbound_bp)
+
     from .routes.gestor.solicitacoes_senha import gestor_solicitacoes_senha_bp
     app.register_blueprint(gestor_solicitacoes_senha_bp)
 

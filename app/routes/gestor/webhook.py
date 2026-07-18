@@ -1,4 +1,5 @@
 import re
+import secrets
 from flask import Blueprint, request, g, jsonify
 from app.extensions import db
 from app.models import BarbeariaWebhookConfig, WebhookLog
@@ -29,6 +30,8 @@ def _fmt_config(config):
         'ativo':          config.ativo,
         'eventos_ativos': config.eventos_ativos or [],
         'eventos_disponiveis': sorted(TipoEventoWebhook.TODOS),
+        'permite_auto_aprovacao': config.permite_auto_aprovacao,
+        'webhook_secret': config.webhook_secret,
         'atualizado_em':  config.atualizado_em.isoformat() if config.atualizado_em else None,
     }
 
@@ -43,6 +46,7 @@ def get_webhook():
         return jsonify({
             'webhook_url': None, 'ativo': False, 'eventos_ativos': [],
             'eventos_disponiveis': sorted(TipoEventoWebhook.TODOS),
+            'permite_auto_aprovacao': False, 'webhook_secret': None,
             'atualizado_em': None,
         }), 200
     return jsonify(_fmt_config(config)), 200
@@ -78,8 +82,30 @@ def salvar_webhook():
             raise APIError('Configure uma "webhook_url" antes de ativar.', 422)
         config.ativo = dados['ativo']
 
+    if 'permite_auto_aprovacao' in dados:
+        if not isinstance(dados['permite_auto_aprovacao'], bool):
+            raise APIError('"permite_auto_aprovacao" deve ser booleano.', 422)
+        if dados['permite_auto_aprovacao'] and not config.webhook_secret:
+            # Gera na primeira vez que o gestor liga — evita uma etapa
+            # manual extra só pra conseguir ativar.
+            config.webhook_secret = secrets.token_hex(32)
+        config.permite_auto_aprovacao = dados['permite_auto_aprovacao']
+
     commit_ou_falhar('gestor.webhook.salvar_webhook')
     return jsonify({'mensagem': 'Webhook configurado com sucesso.', **_fmt_config(config)}), 200
+
+
+# ── POST /api/v1/gestor/webhook/secret/regenerar ─────────────────────────────
+# Gera um novo webhook_secret, invalidando o anterior — usar se suspeitar
+# que o secret vazou (ex: exposto num workflow n8n compartilhado sem querer).
+
+@gestor_webhook_bp.post('/secret/regenerar')
+@gestor_required
+def regenerar_secret():
+    config = _get_ou_criar_config(g.barbearia_id)
+    config.webhook_secret = secrets.token_hex(32)
+    commit_ou_falhar('gestor.webhook.regenerar_secret')
+    return jsonify({'mensagem': 'Novo secret gerado.', 'webhook_secret': config.webhook_secret}), 200
 
 
 # ── POST /api/v1/gestor/webhook/testar ────────────────────────────────────────

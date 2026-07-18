@@ -1048,6 +1048,13 @@ class BarbeariaWebhookConfig(db.Model):
     ativo          = db.Column(db.Boolean, nullable=False, default=False)
     eventos_ativos = db.Column(db.JSON, nullable=False, default=list)
     # ["agendamento_criado", "plano_ativado", ...] — subconjunto de TipoEventoWebhook.TODOS
+    # Gestor decide se a automação (n8n) pode aprovar o comprovante PIX
+    # sozinha, via callback autenticado com webhook_secret — ver
+    # app/routes/webhook_inbound.py. Default False: sem isso, qualquer
+    # automação existente continuaria só recebendo eventos (leitura), nunca
+    # agindo, até o gestor optar explicitamente por ligar.
+    permite_auto_aprovacao = db.Column(db.Boolean, nullable=False, default=False)
+    webhook_secret = db.Column(db.String(64))
     criado_em      = db.Column(db.DateTime, default=_utcnow)
     atualizado_em  = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
 

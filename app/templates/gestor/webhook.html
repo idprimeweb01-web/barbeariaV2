@@ -19,6 +19,8 @@
 .pg-controls { display: flex; justify-content: center; gap: 10px; margin-top: 16px; align-items: center; font-size: 13px; color: var(--muted); }
 .pg-controls button { background: none; border: 1px solid var(--border); color: var(--text-secundario); border-radius: 6px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
 .pg-controls button:disabled { opacity: .4; cursor: not-allowed; }
+.wh-secret-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.wh-secret-input { flex: 1; font-family: monospace; font-size: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; color: var(--text); }
 </style>
 {% endblock %}
 
@@ -56,6 +58,35 @@
     </div>
   </div>
 
+  <div class="wh-card">
+    <div class="field">
+      <label class="toggle-label">
+        <input type="checkbox" id="fAutoAprovacao" onchange="document.getElementById('secretBox').style.display = this.checked ? '' : 'none'">
+        <span class="toggle-track"></span>
+        Permitir que a automação aprove agendamentos automaticamente
+      </label>
+      <div class="wh-hint">
+        Quando o cliente envia o comprovante PIX, o evento "Comprovante enviado" dispara antes de qualquer
+        aprovação manual. Se isso estiver ligado, sua automação (n8n) pode chamar de volta o endpoint abaixo
+        pra aprovar sozinha — sem isso, só o gestor/funcionário aprova pela tela normal.
+      </div>
+    </div>
+
+    <div class="field" id="secretBox" style="display:none">
+      <label>Secret do webhook (envie como header <code>X-Webhook-Secret</code>)</label>
+      <div class="wh-secret-row">
+        <input type="text" class="wh-secret-input" id="fSecret" readonly>
+        <button class="btn-icon" onclick="copiarSecret()" style="flex-shrink:0">Copiar</button>
+        <button class="btn-icon" onclick="regenerarSecret()" style="flex-shrink:0">Gerar novo</button>
+      </div>
+      <div class="wh-hint">
+        Endpoint de aprovação: <code>POST /api/v1/webhook/agendamentos/&lt;id&gt;/aprovar</code> — o id vem no
+        payload do evento "Comprovante enviado" (campo <code>agendamento_id</code>). Gerar um novo secret
+        invalida o anterior imediatamente.
+      </div>
+    </div>
+  </div>
+
   <div class="section-header">
     <span class="section-title">Últimos disparos</span>
   </div>
@@ -86,6 +117,7 @@ const EVENTO_LABEL = {
   agendamento_cancelado: 'Agendamento cancelado',
   plano_ativado:         'Assinatura de plano ativada',
   venda_concluida:       'Venda concluída',
+  comprovante_enviado:   'Comprovante PIX enviado (antes da aprovação)',
 };
 
 let _eventosDisponiveis = [];
@@ -114,6 +146,27 @@ async function carregarConfig() {
     document.getElementById('fUrl').value = c.webhook_url || '';
     document.getElementById('fAtivo').checked = !!c.ativo;
     renderEventos(c.eventos_ativos || []);
+
+    document.getElementById('fAutoAprovacao').checked = !!c.permite_auto_aprovacao;
+    document.getElementById('fSecret').value = c.webhook_secret || '';
+    document.getElementById('secretBox').style.display = c.permite_auto_aprovacao ? '' : 'none';
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+function copiarSecret() {
+  const v = document.getElementById('fSecret').value;
+  if (!v) return;
+  navigator.clipboard?.writeText(v).then(() => toast('Secret copiado!', 'info'));
+}
+
+async function regenerarSecret() {
+  if (!confirm('Gerar um novo secret invalida o anterior imediatamente — a automação atual vai parar de funcionar até você atualizar lá também. Continuar?')) return;
+  try {
+    const r = await Bos.post('/gestor/webhook/secret/regenerar', {});
+    document.getElementById('fSecret').value = r.webhook_secret;
+    toast('Novo secret gerado.', 'success');
   } catch (e) {
     toast(e.message, 'error');
   }
@@ -140,14 +193,17 @@ async function testar() {
 }
 
 async function salvar() {
-  const webhook_url    = document.getElementById('fUrl').value.trim();
-  const eventos_ativos = eventosMarcados();
-  const ativo          = document.getElementById('fAtivo').checked;
+  const webhook_url          = document.getElementById('fUrl').value.trim();
+  const eventos_ativos       = eventosMarcados();
+  const ativo                = document.getElementById('fAtivo').checked;
+  const permite_auto_aprovacao = document.getElementById('fAutoAprovacao').checked;
 
   const btn = document.getElementById('btnSalvar');
   btn.disabled = true;
   try {
-    await Bos.put('/gestor/webhook', { webhook_url, eventos_ativos, ativo });
+    const r = await Bos.put('/gestor/webhook', { webhook_url, eventos_ativos, ativo, permite_auto_aprovacao });
+    document.getElementById('fSecret').value = r.webhook_secret || '';
+    document.getElementById('secretBox').style.display = r.permite_auto_aprovacao ? '' : 'none';
     toast('Webhook configurado com sucesso.', 'success');
   } catch (e) {
     toast(e.message, 'error');

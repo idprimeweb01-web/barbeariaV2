@@ -16,7 +16,7 @@ from app.models import (
     Barbearia, Barbeiro, Usuario, Cliente, Servico, BarbeiroServico,
     Agendamento, AgendamentoServico, AgendamentoSolicitacaoPix,
     ConfiguracaoAgendamento, ConfiguracaoAgenda, HorarioBloqueado,
-    ClientePlano, PlanoServico, ClientePlanoUso, Plano,
+    ClientePlano, PlanoServico, ClientePlanoUso, Plano, BarbeariaWebhookConfig,
 )
 from app.utils.planos import PLANO_LIMITE_ILIMITADO
 from app.exceptions import APIError
@@ -787,5 +787,25 @@ def upload_comprovante(slug, agendamento_id):
             entidade_id=pix.id,
             descricao='Comprovante reenviado pelo cliente.',
         )
+
+    # Webhook n8n — ponto onde uma automação pode agir sobre o comprovante
+    # ANTES de qualquer aprovação humana (ver TipoEventoWebhook.COMPROVANTE_ENVIADO).
+    # 'pode_aprovar_automaticamente' reflete a escolha do gestor em
+    # /gestor/configuracoes/webhook — a automação só deve chamar o callback
+    # de auto-aprovação se este campo vier true.
+    cli = db.session.get(Cliente, ag.cliente_id)
+    webhook_cfg = BarbeariaWebhookConfig.query.filter_by(barbearia_id=barbearia.id).first()
+    disparar_webhook(barbearia.id, TipoEventoWebhook.COMPROVANTE_ENVIADO, {
+        'agendamento_id': ag.id,
+        'cliente_id': ag.cliente_id,
+        'cliente_nome': cli.nome if cli else None,
+        'cliente_telefone': cli.telefone if cli else None,
+        'barbeiro_id': ag.barbeiro_id,
+        'data_hora': ag.data_hora.isoformat(),
+        'valor_total': float(ag.valor_total),
+        'comprovante_url': url,
+        'reenvio': reenvio,
+        'pode_aprovar_automaticamente': bool(webhook_cfg and webhook_cfg.permite_auto_aprovacao),
+    })
 
     return jsonify({'mensagem': 'Comprovante enviado com sucesso.', 'url': url, 'status': ag.status}), 200

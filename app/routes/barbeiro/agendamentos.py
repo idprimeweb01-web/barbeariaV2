@@ -12,8 +12,9 @@ from app.utils.features import feature_required
 from app.utils.agenda import (
     fim_agendamento, verificar_conflito, gerar_slots,
     servicos_do_agendamento, barbeiro_atende_todos_servicos, barbeiro_elegivel_para_transferencia,
+    aprovar_comprovante_pix,
 )
-from app.utils.cupons import incrementar_uso_cupom, decrementar_uso_cupom
+from app.utils.cupons import decrementar_uso_cupom
 from app.utils.notificacoes import criar_notificacao
 from app.utils.webhooks import disparar_webhook
 from app.utils.tz import hoje_brasilia, naive_brasilia
@@ -245,19 +246,8 @@ def aprovar_comprovante(ag_id):
     )
     if not ag:
         raise APIError('Agendamento não encontrado.', 404)
-    _aprovavel = {
-        StatusAgendamento.AGUARDANDO_APROVACAO, StatusAgendamento.AGUARDANDO_COMPROVANTE,
-        StatusAgendamento.AGUARDANDO_PAGAMENTO,
-    }
-    if ag.status not in _aprovavel:
-        raise APIError('Este agendamento já foi processado.', 409)
-    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=ag.barbearia_id).first()
-    if pix:
-        pix.status = 'aprovado'
-        pix.respondido_em = naive_brasilia()
-    if ag.cupom_id:
-        incrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
-    ag.status = StatusAgendamento.AGENDADO
+
+    aprovar_comprovante_pix(ag)
     commit_ou_falhar('barbeiro.agendamentos.aprovar_comprovante')
 
     disparar_webhook(ag.barbearia_id, TipoEventoWebhook.AGENDAMENTO_APROVADO, {

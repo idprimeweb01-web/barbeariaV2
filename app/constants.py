@@ -110,14 +110,20 @@ class TipoMovimentacaoEstoque:
 
 class TipoEventoWebhook:
     """Eventos de negócio que disparam webhook n8n (v1.2/Frente 2) —
-    1 URL única por barbearia, gestor escolhe quais destes 5 ficam ativos."""
+    1 URL única por barbearia, gestor escolhe quais destes ficam ativos."""
     AGENDAMENTO_CRIADO    = 'agendamento_criado'
     AGENDAMENTO_APROVADO  = 'agendamento_aprovado'
     AGENDAMENTO_CANCELADO = 'agendamento_cancelado'
     PLANO_ATIVADO         = 'plano_ativado'
     VENDA_CONCLUIDA       = 'venda_concluida'
+    # Dispara no upload do comprovante PIX, ANTES de qualquer aprovação
+    # humana — é o ponto onde uma automação (n8n) pode agir. Se o gestor
+    # ligou BarbeariaWebhookConfig.permite_auto_aprovacao, a automação pode
+    # chamar de volta POST /api/v1/webhook/agendamentos/<id>/aprovar
+    # (ver app/routes/webhook_inbound.py) pra aprovar sozinha.
+    COMPROVANTE_ENVIADO   = 'comprovante_enviado'
 
     TODOS = frozenset({
         AGENDAMENTO_CRIADO, AGENDAMENTO_APROVADO, AGENDAMENTO_CANCELADO,
-        PLANO_ATIVADO, VENDA_CONCLUIDA,
+        PLANO_ATIVADO, VENDA_CONCLUIDA, COMPROVANTE_ENVIADO,
     })

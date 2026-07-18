@@ -170,3 +170,31 @@ def barbeiro_elegivel_para_transferencia(barbeiro_id: int, agendamento) -> bool:
         return False
     slots_validos = gerar_slots(barbeiro_id, agendamento.data_hora.date(), agendamento.duracao_minutos)
     return agendamento.data_hora.strftime('%H:%M') in slots_validos
+
+
+_STATUS_APROVAVEL = {
+    StatusAgendamento.AGUARDANDO_APROVACAO, StatusAgendamento.AGUARDANDO_COMPROVANTE,
+    StatusAgendamento.AGUARDANDO_PAGAMENTO,
+}
+
+
+def aprovar_comprovante_pix(ag) -> None:
+    """Núcleo compartilhado de aprovação de comprovante PIX — usado por
+    gestor, barbeiro e (se o tenant permitir) pelo callback da automação
+    n8n. Só muda o estado em memória; commit e disparo de webhook ficam
+    a cargo de quem chama, cada um sabe seu próprio contexto de auditoria.
+    Levanta APIError se o agendamento não estiver num status aprovável."""
+    from app.exceptions import APIError
+    from app.models import AgendamentoSolicitacaoPix
+    from app.utils.cupons import incrementar_uso_cupom
+
+    if ag.status not in _STATUS_APROVAVEL:
+        raise APIError('Este agendamento já foi processado.', 409)
+
+    pix = AgendamentoSolicitacaoPix.query.filter_by(agendamento_id=ag.id, barbearia_id=ag.barbearia_id).first()
+    if pix:
+        pix.status = 'aprovado'
+        pix.respondido_em = naive_brasilia()
+    if ag.cupom_id:
+        incrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
+    ag.status = StatusAgendamento.AGENDADO
