@@ -56,6 +56,50 @@ const Bos = (() => {
 
   const JSON_H = { 'Content-Type': 'application/json' };
 
+  // ── Modal de confirmação padrão (UX-01) ──────────────────────────────────
+  // Substitui window.confirm() nativo, que cada tela reimplementava do seu
+  // jeito (ou usava o confirm() do navegador, sem estilo nem contexto).
+  // Auto-contido: injeta seu próprio CSS/DOM sob demanda, então funciona em
+  // qualquer página que já carregue bos.js, sem precisar editar o HTML dela.
+
+  function _escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  let _estiloConfirmarInjetado = false;
+  function _injetarEstiloConfirmar() {
+    if (_estiloConfirmarInjetado) return;
+    _estiloConfirmarInjetado = true;
+    const style = document.createElement('style');
+    style.textContent = `
+      .bos-confirm-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,.6);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 10000; padding: 16px;
+      }
+      .bos-confirm-box {
+        background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 12px;
+        padding: 22px; max-width: 380px; width: 100%;
+        box-shadow: 0 12px 40px rgba(0,0,0,.4);
+        font-family: inherit;
+      }
+      .bos-confirm-title { font-size: 15px; font-weight: 700; color: #eee; margin-bottom: 8px; }
+      .bos-confirm-msg { font-size: 13px; color: #aaa; line-height: 1.5; white-space: pre-line; margin-bottom: 20px; }
+      .bos-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+      .bos-confirm-btn {
+        padding: 9px 16px; border-radius: 8px; border: 1px solid #333;
+        background: none; color: #ccc; font-size: 13px; font-weight: 600;
+        cursor: pointer; font-family: inherit; transition: opacity .15s;
+      }
+      .bos-confirm-btn:hover { opacity: .8; }
+      .bos-confirm-btn.bos-confirm-perigo { background: #dc2626; border-color: #dc2626; color: #fff; }
+      .bos-confirm-btn.bos-confirm-ok { background: var(--cor-primaria, #f39c12); border-color: var(--cor-primaria, #f39c12); color: #fff; }
+    `;
+    document.head.appendChild(style);
+  }
+
   return {
     get(path) {
       return _json(`${BASE}${path}`);
@@ -92,6 +136,58 @@ const Bos = (() => {
     /** Multipart upload — não passa Content-Type (browser define o boundary). */
     upload(path, formData) {
       return _json(`${BASE}${path}`, { method: 'POST', body: formData });
+    },
+
+    /**
+     * Modal de confirmação padrão (substitui window.confirm nativo).
+     * Uso: if (!(await Bos.confirmar('Desativar "X"?'))) return;
+     * Também aceita objeto: Bos.confirmar({mensagem, titulo, textoConfirmar,
+     * textoCancelar, perigo}). `perigo` (default true) pinta o botão de
+     * confirmar em vermelho; use `perigo: false` para ações não-destrutivas.
+     * Mensagens com "\n\n" continuam quebrando linha (mesmo padrão do
+     * confirm() nativo que estava sendo usado antes).
+     */
+    confirmar(msgOuOpcoes) {
+      const opts = typeof msgOuOpcoes === 'string' ? { mensagem: msgOuOpcoes } : (msgOuOpcoes || {});
+      const {
+        titulo = 'Confirmar ação',
+        mensagem = '',
+        textoConfirmar = 'Confirmar',
+        textoCancelar = 'Cancelar',
+        perigo = true,
+      } = opts;
+
+      _injetarEstiloConfirmar();
+
+      return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'bos-confirm-overlay';
+        overlay.innerHTML = `
+          <div class="bos-confirm-box">
+            <div class="bos-confirm-title">${_escHtml(titulo)}</div>
+            <div class="bos-confirm-msg">${_escHtml(mensagem)}</div>
+            <div class="bos-confirm-actions">
+              <button type="button" class="bos-confirm-btn bos-confirm-cancelar">${_escHtml(textoCancelar)}</button>
+              <button type="button" class="bos-confirm-btn ${perigo ? 'bos-confirm-perigo' : 'bos-confirm-ok'}">${_escHtml(textoConfirmar)}</button>
+            </div>
+          </div>`;
+        document.body.appendChild(overlay);
+
+        const encerrar = (resultado) => {
+          document.removeEventListener('keydown', onKey);
+          overlay.remove();
+          resolve(resultado);
+        };
+        function onKey(e) {
+          if (e.key === 'Escape') encerrar(false);
+        }
+
+        overlay.querySelector('.bos-confirm-cancelar').addEventListener('click', () => encerrar(false));
+        overlay.querySelector(perigo ? '.bos-confirm-perigo' : '.bos-confirm-ok')
+          .addEventListener('click', () => encerrar(true));
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) encerrar(false); });
+        document.addEventListener('keydown', onKey);
+      });
     },
 
     async logout() {
