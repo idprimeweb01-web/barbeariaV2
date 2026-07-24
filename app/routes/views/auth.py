@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 from functools import wraps
 from flask import (
@@ -23,6 +24,7 @@ _PERFIL_REDIRECT = {
 }
 
 _COOKIE_OPTS = dict(httponly=True, samesite='Lax', path='/')
+_EMAIL_RE = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 
 
 def session_required(*perfis):
@@ -336,10 +338,25 @@ def gestor_vip():
     return render_template('gestor/vip.html', **_gestor_ctx())
 
 
+@views_bp.get('/gestor/solicitacoes-plano')
+@session_required('gestor', 'super_admin')
+def gestor_solicitacoes_plano():
+    return render_template('gestor/pix_approval.html', **_gestor_ctx())
+
+
 @views_bp.get('/gestor/pix-approval')
 @session_required('gestor', 'super_admin')
 def gestor_pix_approval():
-    return render_template('gestor/pix_approval.html', **_gestor_ctx())
+    # CONS-03: rota antiga — nome confundia "Solicitações de Plano" (menu)
+    # com aprovação de comprovante PIX de agendamento (outro fluxo).
+    # Mantido como redirect por um ciclo para não quebrar links salvos.
+    return redirect('/gestor/solicitacoes-plano')
+
+
+@views_bp.get('/gestor/compras-produto')
+@session_required('gestor', 'super_admin')
+def gestor_compras_produto():
+    return render_template('gestor/compras_produto.html', **_gestor_ctx())
 
 
 @views_bp.get('/gestor/configuracoes/pix')
@@ -354,10 +371,22 @@ def gestor_config_webhook():
     return render_template('gestor/webhook.html', **_gestor_ctx())
 
 
+@views_bp.get('/gestor/configuracoes/whatsapp-bot')
+@session_required('gestor', 'super_admin')
+def gestor_config_whatsapp_bot():
+    return render_template('gestor/whatsapp_bot.html', **_gestor_ctx())
+
+
 @views_bp.get('/gestor/aparencia')
 @session_required('gestor', 'super_admin')
 def gestor_aparencia():
     return render_template('gestor/aparencia.html', **_gestor_ctx())
+
+
+@views_bp.get('/gestor/perfil')
+@session_required('gestor', 'super_admin')
+def gestor_perfil():
+    return render_template('gestor/perfil.html', **_gestor_ctx())
 
 
 @views_bp.get('/gestor/solicitacoes-senha')
@@ -445,6 +474,12 @@ def barbeiro_solicitacoes_senha():
     return render_template('barbeiro/solicitacoes_senha.html', **_barbeiro_ctx())
 
 
+@views_bp.get('/barbeiro/duvidas-cliente')
+@session_required('barbeiro', 'super_admin')
+def barbeiro_duvidas_cliente():
+    return render_template('barbeiro/duvidas_cliente.html', **_barbeiro_ctx())
+
+
 @views_bp.get('/barbeiro/configuracoes')
 @session_required('barbeiro', 'super_admin')
 def barbeiro_configuracoes():
@@ -510,6 +545,12 @@ def super_auditoria():
 @session_required('super_admin')
 def super_solicitacoes_senha():
     return render_template('super/solicitacoes_senha.html', **_super_ctx())
+
+
+@views_bp.get('/super/duvidas')
+@session_required('super_admin')
+def super_duvidas():
+    return render_template('super/duvidas.html', **_super_ctx())
 
 
 @views_bp.get('/super/segmentos')
@@ -671,14 +712,16 @@ def cliente_cadastro_post(slug):
         return jsonify({'erro': 'Informe seu nome.'}), 400
     if not telefone:
         return jsonify({'erro': 'Informe seu telefone.'}), 400
-    if len(senha) < 6:
-        return jsonify({'erro': 'A senha deve ter no mínimo 6 caracteres.'}), 400
+    if not email or not _EMAIL_RE.match(email):
+        return jsonify({'erro': 'Informe um e-mail válido — você vai usar ele pra entrar depois.'}), 400
+    if len(senha) < 8:
+        return jsonify({'erro': 'A senha deve ter no mínimo 8 caracteres.'}), 400
 
     tel_norm, tel_erro = normalizar_telefone(telefone)
     if tel_erro:
         return jsonify({'erro': f'Telefone: {tel_erro}'}), 400
 
-    if email and Usuario.query.filter_by(
+    if Usuario.query.filter_by(
         barbearia_id=barbearia.id, email=email, perfil='cliente'
     ).first():
         return jsonify({'erro': 'Já existe uma conta com este e-mail.'}), 409
@@ -770,6 +813,12 @@ def cliente_historico():
 @views_bp.get('/cliente/perfil')
 @cliente_session_required
 def cliente_perfil():
+    return _cliente_spa()
+
+
+@views_bp.get('/cliente/loja')
+@cliente_session_required
+def cliente_loja():
     return _cliente_spa()
 
 
