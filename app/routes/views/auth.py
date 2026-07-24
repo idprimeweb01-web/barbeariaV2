@@ -23,7 +23,19 @@ _PERFIL_REDIRECT = {
     'barbeiro':    '/barbeiro/',
 }
 
-_COOKIE_OPTS = dict(httponly=True, samesite='Lax', path='/')
+def _cookie_opts():
+    """Recalculado a cada chamada (não congelado em import) — mesmo critério
+    de app/__init__.py (SESSION_COOKIE_SECURE/JWT_COOKIE_SECURE): Secure só
+    em produção, porque o navegador recusa cookie Secure em HTTP puro, e
+    localhost/LAN de dev não tem HTTPS."""
+    return dict(
+        httponly=True,
+        samesite='Lax',
+        path='/',
+        secure=(os.environ.get('FLASK_ENV') == 'production'),
+    )
+
+
 _EMAIL_RE = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 
 
@@ -133,10 +145,10 @@ def entrar_post():
     )
 
     # Access token: 15 min (alinhado com JWT_ACCESS_TOKEN_EXPIRES)
-    resp.set_cookie('bos_at', access_token, max_age=15 * 60, **_COOKIE_OPTS)
+    resp.set_cookie('bos_at', access_token, max_age=15 * 60, **_cookie_opts())
     # Refresh token: 30 dias se "lembrar", cookie de sessão caso contrário
     rt_max_age = 30 * 24 * 3600 if lembrar else None
-    resp.set_cookie('bos_rt', refresh_token, max_age=rt_max_age, **_COOKIE_OPTS)
+    resp.set_cookie('bos_rt', refresh_token, max_age=rt_max_age, **_cookie_opts())
 
     session.permanent = lembrar
     session['user_id']      = usuario.id
@@ -164,7 +176,7 @@ def renovar():
 
         new_at = create_access_token(identity=str(uid))
         resp   = make_response(jsonify({'ok': True}), 200)
-        resp.set_cookie('bos_at', new_at, max_age=15 * 60, **_COOKIE_OPTS)
+        resp.set_cookie('bos_at', new_at, max_age=15 * 60, **_cookie_opts())
 
         session['user_id']      = usuario.id
         session['nome']         = usuario.nome
@@ -662,9 +674,9 @@ def cliente_entrar_post(slug):
     refresh_token = create_refresh_token(identity=str(usuario.id))
 
     resp = make_response(jsonify({'ok': True, 'redirect': '/cliente/dashboard'}), 200)
-    resp.set_cookie('bos_at', access_token, max_age=15 * 60, **_COOKIE_OPTS)
+    resp.set_cookie('bos_at', access_token, max_age=15 * 60, **_cookie_opts())
     rt_max_age = 30 * 24 * 3600 if lembrar else None
-    resp.set_cookie('bos_rt', refresh_token, max_age=rt_max_age, **_COOKIE_OPTS)
+    resp.set_cookie('bos_rt', refresh_token, max_age=rt_max_age, **_cookie_opts())
 
     session.permanent = lembrar
     session['user_id']       = usuario.id
@@ -763,8 +775,8 @@ def cliente_cadastro_post(slug):
     refresh_token = create_refresh_token(identity=str(usuario.id))
 
     resp = make_response(jsonify({'ok': True, 'redirect': '/cliente/dashboard'}), 201)
-    resp.set_cookie('bos_at', access_token, max_age=15 * 60, **_COOKIE_OPTS)
-    resp.set_cookie('bos_rt', refresh_token, max_age=30 * 24 * 3600, **_COOKIE_OPTS)
+    resp.set_cookie('bos_at', access_token, max_age=15 * 60, **_cookie_opts())
+    resp.set_cookie('bos_rt', refresh_token, max_age=30 * 24 * 3600, **_cookie_opts())
 
     session.permanent = True
     session['user_id']        = usuario.id
