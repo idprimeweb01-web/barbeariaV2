@@ -1,0 +1,1384 @@
+====================================================================
+ BarberOS — FLUXO DETALHADO DE TELAS E AÇÕES (manual de uso)
+ Gerado em 19/07/2026 a partir da leitura de todos os templates/páginas
+====================================================================
+
+Como ler este documento:
+- Cada tela tem: o que aparece ao abrir, e uma lista de ações (botões,
+  abas, links) com o que cada uma faz.
+- "Abre modal com campos: ..." significa que aparece uma janela por cima
+  da tela atual com aquele formulário.
+- "Ação direta" significa que o clique já executa a ação (às vezes com
+  uma caixa de confirmação do tipo "Tem certeza?"), sem abrir formulário.
+- O documento está dividido em 5 partes: Portas de entrada (login/
+  cadastro/agendamento público), Gestor, Funcionário (Barbeiro), Cliente
+  e Super Admin (dono da plataforma).
+
+
+====================================================================
+ PARTE 0 — PORTAS DE ENTRADA (antes de logar)
+====================================================================
+
+--------------------------------------------------------------------
+TELA DE ACESSO DA EQUIPE — /entrar
+--------------------------------------------------------------------
+Usada por: Gestor, Funcionário (Barbeiro) e Super Admin — é a MESMA tela
+para os três; o sistema decide para onde mandar o usuário depois do
+login, de acordo com o perfil cadastrado no banco (não existe seleção
+manual de perfil na tela).
+
+Ao abrir: logo "BarberOS", selo "Acesso da Equipe", e um formulário com:
+- Campo E-mail
+- Campo Senha (com botão de olho para mostrar/ocultar o texto digitado)
+- Checkbox "Lembrar-me" (mantém a sessão por 30 dias; sem marcar, expira
+  ao fechar o navegador)
+- Link "Esqueci a senha" → leva para /esqueci-senha
+- Botão "ENTRAR"
+
+Ações disponíveis:
+- Botão "ENTRAR": valida e-mail e senha preenchidos, envia para o
+  servidor. Se as credenciais estiverem corretas, redireciona
+  automaticamente conforme o perfil do usuário:
+    - gestor      → /gestor/dashboard
+    - barbeiro    → /barbeiro/dashboard
+    - super_admin → /super/dashboard
+  Se a conta pertencer a um CLIENTE, mostra erro explicando que essa
+  entrada é só para equipe e que clientes acessam pelo link do
+  estabelecimento. Se a conta estiver desativada, mostra erro específico.
+  Se as credenciais estiverem erradas, mostra "Credenciais inválidas."
+- Link "Esqueci a senha": vai para a tela de recuperação de senha da
+  equipe (/esqueci-senha) — pede e-mail e telefone, gera uma solicitação
+  que aparece na tela "Solicitações de Senha" do Super Admin/Gestor.
+
+--------------------------------------------------------------------
+AGENDAMENTO PÚBLICO — /b/<slug-da-barbearia>
+--------------------------------------------------------------------
+Usada por: qualquer visitante, SEM precisar estar logado. É o link que a
+barbearia divulga (Instagram, WhatsApp etc.). Depois de finalizar o
+agendamento, o site sugere criar uma conta para acompanhar o histórico.
+É uma tela cheia (não é a mesma coisa que o SPA do cliente logado) — um
+wizard próprio de 5 passos + tela de sucesso, com barra de progresso
+numerada (1-2-3-4-5) no topo.
+
+PASSO 1 — Identificação:
+- Campo Telefone* (com máscara automática)
+- Campo Seu nome*
+- Campo E-mail (opcional)
+- Botão "Próximo →": valida telefone e nome preenchidos e avança
+- Abaixo do formulário: "já tem cadastro?" com dois botões "Entrar" e
+  "Criar conta", que levam para /b/<slug>/entrar e /b/<slug>/cadastro
+  (ou seja, dá pra pular o fluxo de convidado e logar direto)
+
+PASSO 2 — Serviços:
+- Lista de serviços (nome, duração, preço, descrição) — seleção múltipla,
+  clicar marca/desmarca um serviço
+- Resumo dinâmico no rodapé: "N serviço(s) · X min · R$ Y"
+- Botão "← Voltar" e botão "Próximo →" (exige pelo menos 1 serviço
+  selecionado)
+
+PASSO 3 — Profissional:
+- Lista de barbeiros que atendem TODOS os serviços escolhidos (foto/
+  inicial, nome, bio)
+- Se houver só 1 profissional elegível, o sistema pula esse passo
+  automaticamente e já segue pro passo 4
+- Botão "← Voltar" e "Próximo →"
+
+PASSO 4 — Data & Horário:
+- Campo de data (não permite escolher data passada nem além do limite de
+  antecedência configurado pela barbearia)
+- Ao escolher a data, carrega automaticamente a grade de horários livres
+  daquele profissional para a duração total escolhida
+- Se não houver horário livre naquele dia, mostra aviso sugerindo tentar
+  outro dia
+- Botão "← Voltar" e "Próximo →" (exige um horário selecionado)
+
+PASSO 5 — Confirmar:
+- Resumo do agendamento (serviços, profissional, data/hora, valor total)
+- Escolha da forma de pagamento: "Pagar no local" (padrão) ou "PIX" (só
+  aparece se a barbearia tiver a feature de PIX integrado ativada)
+- Botão "← Voltar" e botão "Confirmar agendamento"
+
+TELA DE SUCESSO (passo 6):
+- Ícone de comemoração + "Agendamento confirmado!"
+- Se o pagamento escolhido foi PIX: mostra QR Code, código "copia e
+  cola" com botão "📋 Copiar código PIX", e uma área para anexar o
+  comprovante (upload de imagem até 5 MB) com botão "Enviar comprovante"
+  — depois de enviado, mostra confirmação "Comprovante enviado! O gestor
+  irá confirmar em breve."
+- Botão "Fazer novo agendamento": reinicia o wizard do zero (volta pro
+  passo 1)
+- Link "Crie sua conta" ao final, sugerindo cadastro para acompanhar
+  agendamentos e benefícios pelo painel do cliente
+
+--------------------------------------------------------------------
+LOGIN DO CLIENTE — /b/<slug>/entrar
+--------------------------------------------------------------------
+Ao abrir: logo/nome da barbearia + formulário com Campo E-mail, Campo
+Senha (com botão de mostrar/ocultar), checkbox "Lembrar-me" (vem marcado
+por padrão), link "Esqueci minha senha" (→ /b/<slug>/esqueci-senha).
+
+Ações disponíveis:
+- Botão "ENTRAR": valida e envia; se sucesso, redireciona para
+  /cliente/dashboard. Se a conta já estiver logada como cliente,
+  redireciona direto pro dashboard sem pedir login de novo.
+- Link "Cadastre-se" no rodapé: leva para /b/<slug>/cadastro.
+
+--------------------------------------------------------------------
+CADASTRO DO CLIENTE — /b/<slug>/cadastro
+--------------------------------------------------------------------
+Ao abrir: formulário com Nome completo*, Telefone (WhatsApp)* (com
+máscara automática "(XX) XXXXX-XXXX"), E-mail* (com dica: "não tem
+e-mail? pode inventar um só pra login"), Senha* (mín. 8 caracteres),
+Confirmar senha*.
+
+Ações disponíveis:
+- Botão "CRIAR CONTA": valida todos os campos (nome, telefone, e-mail em
+  formato válido, senha com 8+ caracteres, confirmação igual à senha).
+  Se já existir conta com aquele e-mail, ou se aquele telefone já tiver
+  dono, mostra erro específico. Em caso de sucesso, cria a conta, já loga
+  automaticamente e redireciona para /cliente/dashboard.
+- Link "Entrar" no rodapé: volta para /b/<slug>/entrar (para quem já tem
+  conta).
+
+
+====================================================================
+ PARTE 1 — ÁREA DO GESTOR (perfil "gestor" / "super_admin")
+====================================================================
+
+Depois de logar em /entrar, o gestor cai em /gestor/dashboard. A tela
+inteira tem uma barra lateral (sidebar) fixa à esquerda com os seguintes
+itens de menu, nesta ordem:
+
+  Dashboard
+  Agenda            (expande em: Aguardando Transferência, Planos*,
+                      Cupons*, VIP*)
+  Serviços
+  Produtos          (expande em: Vendas*)
+  Pessoas           (expande em: Funcionários, Clientes)
+  Relatórios        (expande em: Auditoria)
+  Solicitações      (expande em: Solicitações de Plano*, Pedidos de
+                      Compra*, Solicitações de Senha, Dúvidas do Cliente)
+  Configurações     (expande em: Meu Perfil, Config. PIX, Webhook/n8n,
+                      Bot WhatsApp, Aparência)
+
+(*) Alguns subitens só aparecem se a funcionalidade correspondente
+estiver ativada para aquela barbearia (ex.: "Planos" só aparece se o
+recurso de planos de assinatura estiver ligado).
+
+A seguir, o detalhamento de cada tela, na ordem em que aparecem no menu.
+
+--------------------------------------------------------------------
+DASHBOARD — /gestor/dashboard
+--------------------------------------------------------------------
+Ao abrir: a página mostra "Carregando…" e, assim que os dados chegam,
+exibe 4 cards principais em grade e, abaixo, uma linha com 2 blocos
+maiores.
+
+Cards principais:
+- "Agendamentos Hoje": número de agendamentos do dia (status agendado) e,
+  como subtexto, quantos já foram concluídos hoje.
+- "Top Serviços do Mês": lista dos 3 serviços mais vendidos no mês, com
+  posição (1., 2., 3.), nome e quantidade (ex: "2×"). Se não houver nenhum
+  serviço registrado, mostra "Nenhum serviço ainda".
+- "PIX Pendentes": card condicional — só aparece se houver pelo menos 1
+  pagamento PIX pendente de aprovação. Mostra a quantidade de PIX
+  pendentes.
+- "Receita do Mês": valor total faturado no mês + subtexto com o ticket
+  médio.
+
+Linha secundária (2 blocos lado a lado, empilham em telas estreitas):
+- "Receita — últimos 7 dias": gráfico de barras com a receita diária dos
+  últimos 7 dias, somando apenas agendamentos concluídos. Tooltip mostra
+  o valor formatado em reais ao passar o mouse.
+- "Estoque Crítico": lista até 8 produtos com estoque abaixo do mínimo,
+  nome do produto e quantidade em destaque (vermelho). Se não houver
+  nenhum alerta, mostra "Sem alertas ✓".
+
+Ações disponíveis:
+- Botão "Ver na Agenda →" (dentro do card PIX Pendentes, só existe quando
+  o card está visível): navega para a tela Agenda.
+- Não há outros botões de ação nesta tela — é uma tela somente de leitura
+  (nenhum CRUD, nenhum modal). Todo o resto é informativo.
+
+--------------------------------------------------------------------
+AGENDA — /gestor/agenda
+--------------------------------------------------------------------
+Ao abrir: mostra uma barra de ferramentas no topo e, abaixo, uma tabela
+dos agendamentos do dia selecionado (o dia atual, por padrão).
+
+Barra de ferramentas:
+- Setas "‹" e "›": navegam um dia para trás/frente, recarregando a
+  tabela.
+- Rótulo central com a data por extenso.
+- Campo de data (calendário): permite pular direto para qualquer dia.
+- Select "Barbeiro": filtra por profissional ("Todos barbeiros" + lista
+  dos ativos).
+- Select "Status": filtra por status (Todos / Agendado / Ag. comprovante
+  / Ag. aprovação / Ag. PIX (legado) / Em atendimento / Concluído /
+  Cancelado).
+- Botão "+ Agendar": abre o modal "Novo Agendamento".
+
+Tabela (Hora, Status, Cliente/Serviço, Barbeiro, Valor, Ações):
+- Cada linha mostra hora, um badge colorido de status, nome do cliente
+  com o serviço logo abaixo, nome do barbeiro, valor total em destaque.
+- Se não houver nenhum agendamento no filtro/dia atual, mostra "Nenhum
+  agendamento para este dia."
+- Paginação (Anterior/Próxima + "Página X de Y") aparece só quando há
+  resultados.
+
+Botões de ação por linha (aparecem conforme o status atual do
+agendamento):
+- "✓ PIX" (se aguardando aprovação/comprovante/pagamento): abre o modal
+  "Aprovar Pagamento PIX".
+- "▶ Iniciar" (se agendado): ação direta — marca como iniciado, toast
+  "Atendimento iniciado." e recarrega a tabela.
+- "✓ Concluir" (se agendado ou em atendimento): ação direta — marca como
+  concluído, toast "Atendimento concluído.".
+- "✕ Cancelar" (se não cancelado/concluído): abre o modal "Cancelar
+  Agendamento".
+
+Modal "Novo Agendamento": Barbeiro* (select — ao escolher, carrega os
+serviços que ele realiza), Serviço* (select, mostra duração e preço),
+Nome do cliente*, Telefone*, Data e hora*. Botões "Cancelar"/"Agendar".
+
+Modal "Aprovar Pagamento PIX": mostra cliente e valor. Se o cliente ainda
+não enviou comprovante, mostra aviso; se enviou, mostra a imagem do
+comprovante (clicável para tamanho original). Botões "Cancelar" e "✓
+Confirmar Aprovação".
+
+Modal "Cancelar Agendamento": mostra cliente/serviço (leitura), campo
+"Motivo (opcional)". Botões "Voltar" e "Cancelar agendamento" (ação
+destrutiva).
+
+--------------------------------------------------------------------
+AGUARDANDO TRANSFERÊNCIA — /gestor/transferencias  (submenu de Agenda)
+--------------------------------------------------------------------
+Ao abrir: título e texto explicativo ("Agendamentos sem profissional
+definido — barbeiro desativado ou transferência em aberto. Transfira
+para um dos profissionais elegíveis abaixo."). Abaixo, lista de cartões,
+um por agendamento pendente, cada um com data/hora, nome do cliente e
+lista de serviços.
+
+Estado vazio: "Nenhum agendamento aguardando transferência."
+
+Ações disponíveis (por cartão):
+- Se há barbeiros elegíveis para aquele horário/serviço: select "escolha
+  o profissional" + botão "Transferir" — ação direta que reatribui o
+  agendamento, toast "Agendamento transferido." e o cartão some da lista.
+- Se NÃO há profissional elegível: mostra apenas o texto "Nenhum
+  profissional elegível para este horário." (sem ação possível).
+- Não há modais — a transferência é feita direto no cartão.
+
+--------------------------------------------------------------------
+PLANOS — /gestor/planos  (submenu de Agenda)
+--------------------------------------------------------------------
+Ao abrir: tabela (Nome, Preço, Serviços, Barbeiro, Clientes, Status,
+Ações). Estado vazio: "Nenhum plano cadastrado." Botão "+ Novo Plano".
+
+Ações disponíveis:
+- Botão "+ Novo Plano": abre modal com Nome, Preço mensal (R$),
+  Expiração (dias), Descrição (opcional), lista de checkboxes de
+  "Serviços incluídos" (cada um com limite mensal numérico ou toggle "∞
+  ilimitado"), toggle "Plano ativo". Ao criar, o campo "Barbeiro
+  responsável" fica oculto (só aparece na edição). Botões
+  "Cancelar"/"Salvar".
+- Ícone "✏️ Editar": mesmo modal, título "Editar Plano", já preenchido,
+  mostrando também "Barbeiro responsável por este plano" (select).
+- Ícone "👥 Assinantes" / clique no número de clientes: abre modal
+  "Assinantes — <nome do plano>" listando clientes assinados (Cliente,
+  Telefone, Desde, Status). Se não há assinantes ativos, mostra "Nenhum"
+  (sem link).
+- Ícone "🙈/👁️ Inativar/Ativar": ação direta que alterna o status do
+  plano.
+- Ícone "🗑️ Deletar": confirmação ("Deletar este plano permanentemente?")
+  e exclui.
+
+--------------------------------------------------------------------
+CUPONS — /gestor/cupons  (submenu de Agenda)
+--------------------------------------------------------------------
+Ao abrir: tabela (Nome, Código, Tipo, Valor, Validade, Usos, Status,
+Ações), com paginação (50/página). Botão "+ Cupom".
+
+Ações disponíveis:
+- Botão "+ Cupom": abre modal com Nome*, Código* (forçado maiúsculo),
+  Tipo* (Percentual/Valor Fixo), Valor*, Data de Expiração*, Quantidade
+  Máxima de Utilizações (vazio = ilimitado), Serviços (rádio: Nenhum /
+  Todos / Selecionar quais — revela checkboxes), Produtos (mesma lógica).
+  Toggle "Cupom ativo" só aparece na edição. Botões "Cancelar"/"Salvar".
+- Botão "Editar": mesmo modal, preenchido, com o toggle "ativo" visível.
+- Botão "Relatório": abre modal mostrando status, expiração, usos (com
+  máximo se houver), usos restantes, restrição de serviços/produtos,
+  total já descontado, e tabela de cada uso individual (Cliente, Quando,
+  Valor Original, Desconto, Valor Final). Se ninguém usou: "Ninguém usou
+  este cupom ainda."
+- Botão "Remover": confirmação ("Desativar o cupom '<nome>'?") e
+  desativa.
+
+--------------------------------------------------------------------
+VIP — /gestor/vip  (submenu de Agenda)
+--------------------------------------------------------------------
+Ao abrir: duas tabelas — "Níveis VIP" (Nível, Brinde, Tipo, Valor, Modo
+Brinde [toggle inline], Status, Ações) e, abaixo, "Clientes VIP"
+(Cliente, Nível atual, Meses consecutivos, Próxima renovação, Ações).
+Botão "+ Novo Nível".
+
+Ações disponíveis:
+- Botão "+ Novo Nível": abre modal com Nível (número), Nome/descrição do
+  brinde, Tipo (Físico/Desconto — "Desconto" revela campo "Valor do
+  desconto"), toggle "Modo Brinde ativo", toggle "Nível ativo". Botões
+  "Cancelar"/"Salvar".
+- Ícone "✏️ Editar": mesmo modal preenchido.
+- Ícone "👁️ Ver": modal somente leitura com os detalhes do nível.
+- Toggle inline "Modo Brinde" (na linha da tabela): liga/desliga o
+  resgate de brinde daquele nível sem abrir modal.
+- Ícone "🗑️ Deletar": confirmação e exclui o nível.
+- Na tabela de Clientes VIP, ícone "📜 Histórico": abre modal "Histórico
+  VIP — <nome>" com data + descrição de cada evento. Sem histórico: "Sem
+  histórico registrado."
+
+--------------------------------------------------------------------
+SERVIÇOS — /gestor/servicos
+--------------------------------------------------------------------
+Ao abrir: cabeçalho "Serviços" + botão "+ Serviço", e tabela (Nome,
+Descrição, Duração, Preço, Status, Ações). Estado vazio: "Nenhum serviço
+cadastrado."
+
+Ações disponíveis:
+- Botão "+ Serviço": abre modal "Novo Serviço" vazio.
+- Botão "Editar": mesmo modal em modo edição, pré-preenchido.
+- Botão "Remover": confirmação ("Desativar 'X'?") e desativa (não é
+  exclusão real — o serviço fica "Inativo" e some das opções de novo
+  agendamento).
+
+Modal Novo/Editar Serviço: Nome*, Descrição (textarea), Duração
+(minutos)* (mín. 5), Preço (R$)*. Campo "Serviço ativo" (checkbox) só
+aparece no modo edição. Botões "Cancelar"/"Salvar".
+
+--------------------------------------------------------------------
+PRODUTOS — /gestor/produtos
+--------------------------------------------------------------------
+Ao abrir: 3 abas no topo — "Produtos" (padrão), "Categorias" e
+"Movimentações".
+
+Aba "Produtos": cabeçalho + botão "+ Produto". Tabela (Foto, Nome,
+Categoria, Marca, Preço, Margem, Estoque, Status, Ações). Estoque: badge
+vermelho "Zerado" se 0, badge laranja com quantidade + mínimo se abaixo
+do mínimo, ou número cinza se normal. Ações por linha: "Editar" e
+"Estoque" sempre; "Remover" só se ativo. Estado vazio: "Nenhum produto
+cadastrado."
+
+Aba "Categorias": cabeçalho + botão "+ Categoria". Tabela (Nome, Status,
+Ações): "Editar" sempre, "Desativar" só se ativa. Estado vazio: "Nenhuma
+categoria cadastrada."
+
+Aba "Movimentações": cabeçalho + botão "+ Nova movimentação". Tabela
+(Data, Produto, Tipo, Quantidade, Estoque após, Motivo, Usuário) com
+badge de tipo (Entrada/verde, Saída venda/vermelho, Saída uso/vermelho,
+Ajuste/cinza) e paginação. Estado vazio: "Nenhuma movimentação
+registrada."
+
+Ações/Modais:
+- "+ Produto"/"Editar": modal com Nome*, Categoria (select), Marca,
+  Preço de venda*, Custo unitário, Estoque inicial (só ao criar), Estoque
+  mínimo, Código de barras, Foto (upload). "Produto ativo" só na edição.
+- Botão "Estoque": modal "Ajustar Estoque" com Estoque atual (leitura),
+  Quantidade a ajustar (+/-), Motivo (opcional). Botão "Aplicar".
+- Botão "Remover": modal de confirmação "Desativar produto? Não aparecerá
+  mais para novos atendimentos." (soft-delete).
+- "+ Categoria"/"Editar" categoria: modal com campo único Nome*.
+- "Desativar" categoria: confirmação via popup do navegador, sem modal.
+- "+ Nova movimentação": modal com Produto* (select, mostra estoque
+  atual), Tipo* (Entrada/Saída-venda/Saída-uso/Ajuste — só "Ajuste"
+  aceita valor negativo), Quantidade*, Motivo* obrigatório.
+
+--------------------------------------------------------------------
+VENDAS — /gestor/vendas  (submenu de Produtos)
+--------------------------------------------------------------------
+Ao abrir: cabeçalho + botão "+ Nova venda". Filtro por data (campo de
+data + botão "Ver todas"). Tabela (Data, Cliente, Profissional, Itens,
+Método, Total, Status, Ações). Estado vazio: "Nenhuma venda encontrada."
+
+Ações disponíveis:
+- Filtro de data: recarrega a lista automaticamente; "Ver todas" limpa.
+- Botão "Cancelar" (só vendas concluídas): confirmação ("Cancelar esta
+  venda? O estoque será devolvido.") — ação direta, devolve o estoque.
+- Botão "+ Nova venda": abre modal "Nova Venda".
+
+Modal "Nova Venda": campo de busca de produto (nome/código de barras —
+lista suspensa de resultados clicáveis), lista de itens adicionados (com
+botões "−"/"+"/"×" por item, subtotal), total calculado automaticamente,
+Cliente (opcional, texto livre), Profissional vendedor (opcional,
+select), Método de pagamento* (PIX/Dinheiro/Cartão). Botão "Finalizar
+venda" (exige ao menos 1 item) — registra a venda e dá baixa no estoque.
+
+--------------------------------------------------------------------
+FUNCIONÁRIOS — /gestor/barbeiros  (submenu de Pessoas)
+--------------------------------------------------------------------
+Ao abrir: cabeçalho "Equipe" + botão "+ Funcionário". Tabela (Foto, Nome,
+Email, Telefone [+ ícone 📲 WhatsApp se houver], Comissão, Status,
+Ações). Estado vazio: "Nenhum funcionário cadastrado."
+
+Ações por linha:
+- "Editar": abre modal Novo/Editar Funcionário pré-preenchido (busca
+  também os serviços que ele já realiza, para marcar os checkboxes).
+- "Agenda": abre modal "Configurar Agenda" desse funcionário.
+- "Remover": confirmação ("Desativar 'X'?"). Se NÃO tem agendamentos
+  futuros, desativa direto. Se TEM, o sistema recusa a desativação
+  simples e abre automaticamente o modal "Agendamentos futuros" para
+  resolver isso antes.
+
+Modal Novo/Editar Funcionário: Nome*, E-mail, Telefone*, Senha* (mín. 6 —
+só obrigatória/visível ao CRIAR), Comissão (%) (0-100), Bio, e lista de
+checkboxes "Serviços que realiza" (nome + preço).
+
+Modal "Configurar Agenda — <Nome>":
+- Seção "Horário de Trabalho": Abertura, Fechamento, Intervalo entre
+  slots (15/20/30/45/60 min), toggle "Loja aberta", toggle "Barbeiro pode
+  editar horário" (libera a tela própria dele). Botão "Salvar horário".
+- Seção "Pausas/Intervalos": lista de pausas cadastradas (com botão "✕"
+  Remover, confirmação "Remover esta pausa?"). Formulário para adicionar
+  nova pausa: Início, Fim, Descrição, botão "+ Pausa".
+
+Modal "Agendamentos futuros de <Nome>" (só abre automaticamente, sem
+botão manual, quando a desativação encontra agendamentos futuros):
+- Lista de agendamentos futuros, cada um com select "Transferir para…" +
+  botão "Transferir" (transfere aquele agendamento específico).
+- Botão "Transferir restantes p/ mural e desativar": manda os restantes
+  para o mural (outros barbeiros podem assumir) e desativa o funcionário.
+- Link "Cancelar todos os agendamentos e desativar": confirmação
+  ("Cancelar TODOS os agendamentos futuros restantes?"), cancela cada um
+  e desativa o funcionário.
+
+--------------------------------------------------------------------
+CLIENTES — /gestor/clientes  (submenu de Pessoas)
+--------------------------------------------------------------------
+Ao abrir: grade de 6 cards de métricas (Total, Novos no mês, Inativos
+>30d, Ticket médio, Retenção, VIP >R$500), barra de filtros, gráfico
+"Novos clientes por mês", tabela paginada de clientes e, por fim, 4 cards
+de "Insights".
+
+Barra de filtros: busca por nome/telefone/e-mail (ao digitar), select de
+status (Todos/Ativos/Novos/Inativos/Em risco/VIP), select de barbeiro,
+botão "Filtrar", botão "Limpar", botão "📥 CSV" (exporta os clientes
+carregados, respeitando o filtro).
+
+Barra de seleção em massa: aparece automaticamente ao marcar pelo menos 1
+checkbox de linha. Mostra "X selecionados" + botão "Desativar
+selecionados" (confirmação, desativa todos de uma vez) + "Cancelar"
+(limpa seleção).
+
+Tabela (checkbox, Cliente, Telefone [+📲], E-mail, Visitas, Gasto Total,
+Ticket, Última Visita, Status, Ações). Estado vazio: "Nenhum cliente
+encontrado."
+
+Ações por linha:
+- "Ver": abre modal "Perfil" do cliente.
+- "Histórico": abre modal "Histórico" do cliente.
+- "Editar": busca o perfil completo e abre modal "Editar Cliente"
+  pré-preenchido.
+- "Desativar": confirmação ("Desativar 'X'?") e desativa.
+
+Cards de Insights (clicáveis, cada linha abre o modal "Perfil" daquele
+cliente): "Em Risco (>60d)", "Follow-up (7-30d)", "Novos (<7d)", "Top 5
+por Gasto".
+
+Modal "Perfil": estatísticas (Visitas, Total gasto, Última visita),
+Contato (telefone+WhatsApp, e-mail), "Serviço favorito" (condicional),
+observações (condicional), "Últimas visitas" (condicional), botão
+"Desativar cliente", rodapé com "Fechar" e "Editar" (abre o modal de
+edição).
+
+Modal "Editar Cliente": Nome*, E-mail, Observações (textarea). Botões
+"Cancelar"/"Salvar".
+
+Modal "Histórico — <Nome>": resumo (Visitas, Total gasto, Última visita,
+Serviço favorito) + tabela completa de atendimentos (Data, Serviço,
+Barbeiro, Valor). Estado vazio: "Nenhum atendimento encontrado."
+
+--------------------------------------------------------------------
+RELATÓRIOS — /gestor/relatorios
+--------------------------------------------------------------------
+Ao abrir: barra de filtros com abas "Hoje / Semana / Mês / Ano" (Hoje
+ativa por padrão), campo de Data, select de Barbeiro, botão "Carregar" e
+botões "↓ Excel" / "↓ PDF". Abaixo: 4 cards de métricas (Faturamento,
+Atendimentos [com sub-badges concluídos/cancelados], Ticket Médio,
+Período). Depois: tabelas "Por Forma de Pagamento" e "Local × Online"
+lado a lado; gráfico "Faturamento no período"; tabelas "Por Barbeiro" e
+"Serviços Mais Vendidos" (top 10); "Melhores Clientes" (top 10) e
+"Produtos Mais Vendidos" (top 10); "Caixa por Barbeiro"; e "Clientes com
+Pagamento Pendente" (independe do período — mostra a situação atual).
+
+Ações disponíveis:
+- Abas Hoje/Semana/Mês/Ano: trocam o período calculado e recarregam tudo.
+- Campo Data: define a data de referência do período.
+- Select Barbeiro: filtra os dados já carregados.
+- Botão "Carregar": busca de novo com o período/filtro atuais.
+- Botão "↓ Excel" / "↓ PDF": abre em nova aba a exportação do relatório
+  de agendamentos do período.
+
+Estados condicionais: cada tabela tem sua própria mensagem de "sem
+dados"; tabela de dívidas mostra "Nenhum cliente com pagamento pendente
+🎉" quando vazia.
+
+--------------------------------------------------------------------
+AUDITORIA — /gestor/auditoria  (submenu de Relatórios)
+--------------------------------------------------------------------
+Ao abrir: select "Todas as ações / Criação / Edição / Exclusão" + botão
+"Atualizar". Tabela (Data/Hora, Usuário, Ação) com paginação (50/página).
+
+Ações disponíveis:
+- Select de tipo de ação: recarrega automaticamente, filtrado, voltando à
+  página 1.
+- Botão "Atualizar": recarrega com o filtro atual (também volta à página
+  1).
+- Estado vazio: "Nenhum registro encontrado."
+
+--------------------------------------------------------------------
+SOLICITAÇÕES DE PLANO — /gestor/pix-approval  (submenu de Solicitações)
+--------------------------------------------------------------------
+Ao abrir: texto explicativo ("Aprove ou rejeite solicitações com
+comprovante PIX. O cliente é notificado automaticamente."). Lista de
+cards, um por solicitação pendente: avatar, nome do cliente + nome do
+plano, "#id • data", valor, link "📎 Ver comprovante" (ou "💵 Pagamento via
+PIX (sem comprovante)"). Botões "✓ Aprovar"/"✕ Rejeitar" por card.
+Paginação (50/página). Estado vazio: "Nenhuma solicitação pendente".
+
+Ações disponíveis:
+- Botão "✓ Aprovar": confirmação ("Aprovar esta solicitação?") — ação
+  direta, cliente notificado automaticamente.
+- Botão "✕ Rejeitar": abre modal com campo "Motivo da Rejeição*"
+  (textarea, até 500 caracteres, contador ao vivo). Botões
+  "Cancelar"/"Rejeitar".
+- Link "Ver comprovante": abre em nova aba.
+
+--------------------------------------------------------------------
+PEDIDOS DE COMPRA — /gestor/compras-produto  (submenu de Solicitações)
+--------------------------------------------------------------------
+Ao abrir: texto explicativo ("Pedidos de compra de produto feitos pelo
+cliente no portal. Aprovar gera a venda de verdade e dá baixa no
+estoque."). Filtros em formato de abas: "Pendentes" (padrão),
+"Aprovados", "Rejeitados" — cada clique recarrega a lista daquele status.
+
+Cada cartão de pedido mostra: avatar+nome do cliente, "#ID • data •
+método de pagamento", itens (qtd × produto), valor total, linha de
+desconto (se houve cupom), linha de comprovante ("📎 Ver comprovante" /
+"⏳ Aguardando comprovante" / "Pagamento na loja"), e motivo (se
+rejeitado). Estado vazio conforme o filtro ativo (ex.: "Nenhum pedido
+pendente").
+
+Ações disponíveis (só em "Pendentes"):
+- Botão "✓ Aprovar": confirmação ("Aprovar este pedido? Isso vai dar
+  baixa no estoque e registrar a venda.") — ação direta.
+- Botão "✕ Rejeitar": abre modal "Rejeitar Pedido" com "Motivo da
+  Rejeição*" (textarea, até 500 caracteres, contador ao vivo). Botões
+  "Cancelar"/"Rejeitar".
+Pedidos já decididos mostram apenas um badge de status, sem botões.
+
+--------------------------------------------------------------------
+SOLICITAÇÕES DE SENHA — /gestor/solicitacoes-senha  (submenu de
+Solicitações)
+--------------------------------------------------------------------
+Ao abrir: texto explicativo ("Clientes que esqueceram a senha. Clique em
+WhatsApp para enviar o código diretamente."). Lista de cards: nome do
+cliente, telefone (ou "sem telefone"), código de redefinição em destaque,
+botão "📲 WhatsApp".
+
+Ações disponíveis:
+- Botão "📲 WhatsApp": abre em nova aba um link wa.me com mensagem
+  pré-preenchida contendo o código — só aparece se houver telefone
+  válido. Não existe botão para "marcar como atendido"; a lista não some
+  o item sozinha.
+- Estado vazio: "Nenhuma solicitação pendente 🎉".
+
+--------------------------------------------------------------------
+DÚVIDAS DO CLIENTE — /gestor/duvidas-cliente  (submenu de Solicitações)
+--------------------------------------------------------------------
+Ao abrir: tela estática de "em construção" — ícone de balão de mensagem e
+o texto "Em breve: mensagens que os clientes enviarem vão cair aqui."
+
+Ações disponíveis: nenhuma — funcionalidade ainda não implementada.
+
+--------------------------------------------------------------------
+MEU PERFIL — /gestor/perfil  (submenu de Configurações)
+--------------------------------------------------------------------
+Ao abrir: três cartões empilhados.
+
+1) "Dados da barbearia": preview do logo (ou placeholder "Sem logo") +
+   botão "Trocar logo"; campos Nome de exibição, Telefone principal,
+   E-mail de contato, Instagram, Abre às/Fecha às, Rua, Bairro/Número/
+   Complemento, Cidade/Estado/CEP; botão "Salvar dados da barbearia".
+2) "Seus dados pessoais": Nome, E-mail (usado para entrar); botão "Salvar
+   meus dados".
+3) "Alterar senha": Senha atual, Nova senha (mín. 8); botão "Alterar
+   senha".
+
+Ações disponíveis:
+- Botão "Trocar logo": abre o seletor de arquivos (PNG/JPEG/WEBP); ao
+  escolher, faz upload automaticamente e atualiza o preview.
+- "Salvar dados da barbearia": exige nome de exibição preenchido.
+- "Salvar meus dados": exige nome e e-mail preenchidos.
+- "Alterar senha": exige senha atual + nova senha (mín. 8); limpa os
+  campos após sucesso.
+
+--------------------------------------------------------------------
+CONFIG. PIX — /gestor/configuracoes/pix  (submenu de Configurações)
+--------------------------------------------------------------------
+Ao abrir: um cartão com Chave PIX (+ botão "Testar chave PIX"), Nome do
+Titular (máx. 25), Cidade (máx. 15 — exigência do padrão PIX), Banco
+(select opcional). Botões "Cancelar"/"Salvar".
+
+Ações disponíveis:
+- Botão "Testar chave PIX": valida a chave e mostra o resultado logo
+  abaixo (caixa verde "✓ ..." ou vermelha "✕ ...").
+- Botão "Cancelar": volta para /gestor/dashboard.
+- Botão "Salvar": exige chave, nome do titular e cidade preenchidos.
+
+--------------------------------------------------------------------
+WEBHOOK / N8N — /gestor/configuracoes/webhook  (submenu de
+Configurações)
+--------------------------------------------------------------------
+Ao abrir: dois cartões + tabela de histórico.
+
+Cartão 1: campo "URL do Webhook"; checkboxes de "Eventos que disparam o
+webhook" (Agendamento criado/aprovado/cancelado, Assinatura de plano
+ativada, Venda concluída, Comprovante PIX enviado); toggle "Webhook
+ativo" (exige URL salva); botão "Testar URL"; botão "Salvar".
+
+Cartão 2: toggle "Permitir que a automação aprove agendamentos
+automaticamente" — ao ligar, revela uma caixa com "Secret do webhook"
+(somente leitura) + botões "Copiar" e "Gerar novo" + instruções do
+endpoint de aprovação.
+
+Seção "Últimos disparos": tabela (Evento, Status HTTP, Resultado
+[Sucesso/Falhou], Erro, Quando), paginação (20/página).
+
+Ações disponíveis:
+- "Testar URL": envia requisição de teste e mostra sucesso/erro.
+- "Salvar": grava URL, eventos, status ativo e permissão de
+  auto-aprovação.
+- "Copiar" (secret): copia para a área de transferência.
+- "Gerar novo" (secret): confirmação (avisa que invalida o anterior
+  imediatamente) e gera um novo.
+- Estado vazio da tabela: "Nenhum disparo registrado ainda."
+
+--------------------------------------------------------------------
+BOT WHATSAPP — /gestor/configuracoes/whatsapp-bot  (submenu de
+Configurações)
+--------------------------------------------------------------------
+Ao abrir: indicador de status (bolinha verde=conectado / cinza=
+desconectado) + texto de status ("Carregando…", "Conectado (<id>)",
+"Aguardando leitura do QR code…" ou "Nenhum número conectado."). Texto
+explicando que o bot responde no WhatsApp via IA configurada no n8n, e
+que cada barbearia usa um número próprio conectado por QR code.
+
+Ações disponíveis (aparecem/somem conforme o estado da conexão):
+- "Conectar WhatsApp" (se nada conectado): inicia a conexão, mostra o QR
+  code na tela com instruções, e passa a verificar automaticamente a cada
+  4s se já conectou (toast de sucesso quando conectar).
+- "Desconectar" (se já conectado): confirmação ("O bot para de responder
+  até você escanear o QR code de novo.") — desconecta mantendo a
+  instância.
+- "Remover instância" (se conectado ou aguardando QR): confirmação
+  (recomendado só para trocar de número) — remove por completo, exigindo
+  nova conexão do zero depois.
+
+--------------------------------------------------------------------
+APARÊNCIA — /gestor/aparencia  (submenu de Configurações)
+--------------------------------------------------------------------
+Ao abrir: texto explicando que a paleta escolhida afeta as telas do
+gestor, funcionários e clientes (a cor de destaque continua sendo a
+configurada em "Meu Perfil"/personalização — aqui só muda fundo, cartões
+e textos). Grade de cards de tema: Preto, Branco, Rosa, Azul claro, Verde
+claro — cada um com amostra visual e, quando aplicável, selo de segmento
+sugerido (Preto→Barbearia, Rosa→Salão, Azul claro→Clínica). Botão
+"Salvar".
+
+Ações disponíveis:
+- Clicar em um card: seleciona aquele tema como pré-visualização (borda
+  destacada), ainda sem salvar.
+- Botão "Salvar": envia o tema escolhido e recarrega a página para
+  aplicar visualmente.
+
+
+====================================================================
+ PARTE 2 — ÁREA DO FUNCIONÁRIO / BARBEIRO (perfil "barbeiro")
+====================================================================
+
+Depois de logar em /entrar, o funcionário cai em /barbeiro/dashboard.
+Sidebar fixa com os itens, nesta ordem:
+
+  Dashboard
+  Agendamentos
+  Horário
+  Clientes
+  Disponíveis
+  Caixa
+  Solicitações de Senha
+  Configurações
+  Redefinições
+
+--------------------------------------------------------------------
+DASHBOARD — /barbeiro/dashboard
+--------------------------------------------------------------------
+Ao abrir: "Carregando…" e depois:
+- 4 cards de indicadores: "Agendamentos Hoje" (+ "X no mês"), "Próximo
+  Atendimento" (horário, cliente, serviço(s), valor — ou "Nenhum" se não
+  houver agendamento futuro), "Comissão do Mês" (destacada em verde, +
+  comissão só de hoje), "Receita Hoje" (+ receita total do mês).
+- 2 cartões: "Receita — últimos 7 dias" (gráfico de barras — só o dia de
+  hoje vem preenchido de verdade, os outros aparecem zerados) e "Próximos
+  agendamentos" (data, hora, cliente, serviços, valor de cada um; vazio =
+  "Nenhum agendamento futuro").
+
+Ações disponíveis: nenhuma — tela somente informativa, sem botões,
+modais ou navegação.
+
+--------------------------------------------------------------------
+AGENDAMENTOS — /barbeiro/agendamentos
+--------------------------------------------------------------------
+Ao abrir: título "Meus Agendamentos", barra de filtros (campo de data,
+pré-preenchido com hoje; select de status; botão "Filtrar") e tabela do
+dia (Hora, Cliente, Serviço, Status, Valor, Ações).
+
+Ações disponíveis:
+- Clicar em qualquer linha (ou no botão "Ver"): abre um painel lateral
+  (drawer) com os detalhes do agendamento.
+- Estado vazio: "Nenhum agendamento nesta data".
+
+Drawer de detalhes:
+- Cabeçalho "HORA — cliente" + botão "✕" fechar (ou clicar fora).
+- Seção Cliente: nome, telefone (+ ícone 📲 WhatsApp), badge de status.
+- Seção Serviço(s): lista com preço/duração + valor total.
+- Seção "Observação" — só se houver.
+- Seção "Últimas visitas" — só se o cliente tiver histórico.
+- Seção "Comprovante PIX" — só quando status é aguardando aprovação/
+  comprovante: mostra a imagem enviada ou aviso "Cliente ainda não
+  enviou o comprovante".
+- Seção "Notas do cliente" — só se existirem notas.
+- Botões no rodapé, conforme o status:
+  - Agendado: "Iniciar" (ação direta), "+ Observação" (modal), "Cancelar"
+    (modal).
+  - Em atendimento: "Concluir" (modal), "+ Observação", "Cancelar".
+  - Aguardando aprovação/comprovante: "✓ Aprovar PIX" (ação direta),
+    "+ Observação", "Cancelar".
+  - Concluído/Cancelado: só "+ Observação".
+
+Modal "Concluir atendimento": Observação interna (opcional). Botões
+"Cancelar"/"Concluir".
+Modal "Cancelar agendamento": Motivo (opcional). Botões "Voltar"/
+"Cancelar agendamento" (vermelho).
+Modal "Adicionar observação do cliente": Categoria (Observação geral/
+Preferência/Alerta), Texto*. Botões "Cancelar"/"Salvar".
+
+--------------------------------------------------------------------
+HORÁRIO — /barbeiro/horario
+--------------------------------------------------------------------
+Ao abrir: se o gestor NÃO permitiu edição, mostra só um aviso "🔒 Edição
+de horário desativada — fale com o gestor" (formulário/pausas ficam
+ocultos). Caso liberado, mostra:
+
+Seção "Horário de Trabalho": Hora início, Hora fim, Intervalo entre
+atendimentos (15/20/30*/45/60 min), toggle "Agenda aberta". Botão "Salvar
+horário" (exige início/fim preenchidos).
+
+Seção "Pausas recorrentes": botão "+ Adicionar pausa"; lista de pausas
+(horário + descrição, ou "Sem descrição"; vazio = "Nenhuma pausa
+cadastrada"); cada pausa com "Editar" e "Remover" (confirmação via popup
+do navegador).
+
+Modal Adicionar/Editar pausa: Descrição (até 50 car.), Hora início, Hora
+fim. Botões "Cancelar"/"Salvar".
+
+--------------------------------------------------------------------
+CLIENTES — /barbeiro/clientes
+--------------------------------------------------------------------
+Ao abrir: título "Meus Clientes", busca por nome/telefone (filtra em
+tempo real) e tabela (Nome, Telefone [+📲], Últimos Agend. [até 2],
+Preferências [chip], Visitas, Ações). Estado vazio: "Nenhum cliente
+atendido ainda".
+
+Ações disponíveis:
+- Botão "Histórico": abre modal já na aba "Histórico".
+- Botão "+ Nota": abre o mesmo modal já na aba "Notas".
+- Modal com 2 abas:
+  - "Histórico": todas as visitas passadas (data, hora, duração, badge de
+    status, serviço, observação, valor). Vazio: "Sem histórico de
+    visitas".
+  - "Notas": lista de notas cadastradas + formulário para adicionar nova
+    (Categoria: Observação geral/Preferência/Alerta; Texto). Botão
+    "Salvar nota" também atualiza o chip "Preferências" na tabela
+    principal. Vazio: "Sem notas registradas".
+- Botão "Fechar" no rodapé do modal.
+
+--------------------------------------------------------------------
+DISPONÍVEIS — /barbeiro/disponiveis
+--------------------------------------------------------------------
+Ao abrir: título "Disponíveis para pegar" + texto explicativo (são
+agendamentos que ficaram sem profissional por transferência/desativação
+de outro barbeiro, já filtrados pelos serviços e agenda livre deste
+barbeiro). Grade de cartões (data/hora, nome do cliente, serviço(s),
+valor total, botão "Pegar este atendimento").
+
+Ações disponíveis:
+- Botão "Pegar este atendimento": ação direta — assume o atendimento
+  (botão vira "Assumindo…" durante o processo); em sucesso, o card some
+  da lista; em erro, mostra mensagem e reabilita o botão.
+- Estado vazio: "Nenhum atendimento disponível no momento."
+
+--------------------------------------------------------------------
+CAIXA — /barbeiro/caixa
+--------------------------------------------------------------------
+Ao abrir: título "Caixa do Dia".
+
+Cartão de total (topo): "Produtos vendidos hoje" (ou "em DD/MM" se dia
+passado) + valor. Campo de data (até hoje) — em dias passados, a seção de
+venda de produtos fica oculta (modo só consulta). Ao lado da data: nada
+(se venda de produtos desligada ou dia ≠ hoje), tag "Caixa fechado"
+(vermelha, se já fechado), ou botão "Fechar caixa" (se aberto e é hoje).
+
+4 cards de resumo (Dinheiro, Cartão, PIX, Total do dia) — informativos.
+
+Seção "Agendamentos de hoje — pagamento pendente": tabela (Hora, Cliente,
+Serviço, Origem [Online (PIX)/Local], Valor) + botão "Receber" por linha.
+Vazio: "Nenhum pagamento pendente hoje 🎉".
+
+Modal "Receber pagamento": select Forma de pagamento (Dinheiro/Cartão/
+PIX). Botões "Cancelar"/"Confirmar recebimento".
+
+Seção "Venda de produtos" (só se a feature estiver ativada): barra com
+busca de produto, campo "Desconto %", select "Pagamento" padrão. Tabela
+de produtos (Produto, Preço, Estoque [badge], Qtd., botão "Vender" —
+ausente se estoque zero). Tabela "Itens vendidos hoje" com botão
+"Remover" por item (só se caixa ainda aberto — confirmação via popup).
+
+Botão "Fechar caixa": confirmação ("Fechar o caixa de hoje? Não será
+possível adicionar mais itens.") — a partir daí não dá mais para vender
+produtos nem remover itens daquele dia.
+
+--------------------------------------------------------------------
+SOLICITAÇÕES DE SENHA — /barbeiro/solicitacoes-senha
+--------------------------------------------------------------------
+Ao abrir: título + texto explicativo (clientes que esqueceram a senha;
+clique em WhatsApp para enviar o código). Lista de cards: nome, telefone
+(ou "sem telefone"), código em destaque, botão "📲 WhatsApp" (só se
+houver telefone válido).
+
+Ações disponíveis: só o link do WhatsApp — não há como "marcar como
+atendido". Estado vazio: "Nenhuma solicitação pendente 🎉".
+
+--------------------------------------------------------------------
+CONFIGURAÇÕES — /barbeiro/configuracoes
+--------------------------------------------------------------------
+Ao abrir: três cartões de preferências PESSOAIS (salvas no navegador do
+funcionário, não no servidor):
+
+- "Interface": toggle "Mostrar telefone do cliente" na grade de
+  agendamentos — salva assim que alternado.
+- "Notificações": toggle "Lembrete do próximo cliente" (alerta 5 min
+  antes) — ao ativar, o navegador pede permissão de notificação; se
+  negada, o toggle volta a desligar sozinho e mostra erro.
+- "Segurança": toggle "Confirmação ao sair" (pede confirmação antes do
+  logout) — salva assim que alternado.
+
+Ações disponíveis: nenhum botão de salvar separado — cada toggle já
+aplica a mudança na hora. Sem modais.
+
+--------------------------------------------------------------------
+REDEFINIÇÕES — /barbeiro/redefinicoes
+--------------------------------------------------------------------
+Ao abrir (aba do navegador mostra "Conta"): três cartões.
+
+- "Alterar senha": Senha atual*, Nova senha* (mín. 6), Confirmar nova
+  senha*. Botão "Alterar senha" — valida que nova senha e confirmação
+  batem; desabilita e mostra "Alterando…" durante o envio.
+- "Esqueci a senha": texto explicando o processo (pede um código que
+  passa pelo super admin, repassado por WhatsApp) + botão/link "Ir para
+  redefinição de senha" → leva para /esqueci-senha (fora do painel).
+- "Sessão": botão "Sair da conta" → abre modal de confirmação.
+
+Modal "Sair da conta": "Tem certeza que deseja sair?" — botões
+"Cancelar"/"Sair" (efetiva o logout).
+
+
+====================================================================
+ PARTE 3 — ÁREA DO CLIENTE (perfil "cliente", SPA em React)
+====================================================================
+
+Depois de logar em /b/<slug>/entrar (ou se cadastrar), o cliente cai em
+/cliente/dashboard. Diferente das áreas de Gestor/Funcionário (que são
+páginas Jinja tradicionais), a área do cliente é um app React que troca
+de tela sem recarregar a página. Sidebar com os itens, nesta ordem:
+
+  Dashboard
+  Meus Planos     (só aparece se a feature "planos" estiver ativa)
+  Agendar
+  Loja            (só aparece se a feature "produtos_venda" estiver ativa)
+  Benefícios      (só aparece se a feature "vip_brindes" estiver ativa)
+  Histórico
+  Meu Perfil
+
+No topo da tela (barra superior), sempre visível: botão de WhatsApp
+direto para a barbearia (se houver telefone cadastrado) e botão "Sair"
+(logout).
+
+--------------------------------------------------------------------
+DASHBOARD — /cliente/dashboard
+--------------------------------------------------------------------
+Ao abrir: spinner de carregamento, depois:
+- 4 cards: "Próx. agendamentos" (quantidade futura), "Concluídos"
+  (histórico total), "Cancelados" (em vermelho), "Nível VIP" (nível atual
+  + descrição do brinde, ou "—"/"Sem nível VIP").
+- Coluna "Próximos agendamentos": lista (dia/mês, serviço(s), horário,
+  profissional, etiqueta de status). Vazio: ícone de calendário + "Nenhum
+  agendamento futuro" + botão "Agendar agora".
+- Coluna "Meus planos": cards das assinaturas ativas (nome, validade,
+  "Ativo"). Vazio: ícone de estrela + "Nenhum plano ativo" + botão "Ver
+  planos".
+- Se nível VIP > 0: cartão extra "Status VIP" (etiqueta do nível,
+  descrição do benefício — incluindo % de desconto se aplicável — e data
+  da próxima renovação).
+
+Ações disponíveis:
+- Botão "+ Agendar" (cabeçalho da seção de agendamentos) → /cliente/agendar.
+- Botão "Agendar agora" (estado vazio) → mesma ação.
+- Botão "Ver todos" (cabeçalho da seção de planos) → /cliente/planos.
+- Botão "Ver planos" (estado vazio) → mesma ação.
+- Os cards de agendamento/plano nesta tela são só informativos (não
+  clicáveis).
+
+--------------------------------------------------------------------
+MEUS PLANOS — /cliente/planos
+--------------------------------------------------------------------
+Ao abrir: spinner. Se a feature de planos não estiver ativa (acesso
+direto por URL), mostra "Recurso não disponível". Caso contrário:
+
+1) "Assinaturas ativas": cards com nome do plano, início/término,
+   "Ativo", e lista de serviços inclusos com barra de progresso de uso
+   mensal (ex.: "3/5 este mês" — fica vermelha perto do limite; serviços
+   "ilimitados" não mostram barra). Vazio: "Nenhuma assinatura ativa no
+   momento".
+
+2) "Planos disponíveis" (só se existir algum plano cadastrado): seletor
+   de forma de pagamento no cabeçalho (PIX [se ativo]/Dinheiro/Cartão).
+   Grid de cards de plano (nome, descrição, preço, serviços inclusos com
+   limite ou "∞"). Rodapé de cada card:
+   - Já assina: etiqueta "Plano atual" (sem ação).
+   - Solicitação pendente: etiqueta "Aguardando aprovação" (sem ação).
+   - Senão: botão "Assinar" → envia a solicitação com a forma de
+     pagamento escolhida.
+     - Se gerar PIX: troca para a tela de confirmação PIX (QR code,
+       código copia-e-cola com botão "Copiar código", upload de
+       comprovante com botão "Enviar comprovante", confirmação de envio,
+       botão "Voltar para meus planos").
+     - Senão: notificação "Solicitação enviada! Aguarde a aprovação do
+       estabelecimento."
+
+3) "Histórico de solicitações" (só se houver alguma): tabela (Plano,
+   Valor, Forma de pagamento, Data, Status: Pendente/Aprovado/Rejeitado).
+
+Ações disponíveis:
+- Botão "Cancelar" em cada assinatura ativa: confirmação ("Cancelar esta
+  assinatura?") — cancela e notifica "Assinatura cancelada."
+- Botão "Assinar": inicia o fluxo de solicitação (ver acima).
+- Na tela de confirmação PIX: "Copiar código", "Enviar comprovante",
+  "Voltar para meus planos".
+
+--------------------------------------------------------------------
+AGENDAR — /cliente/agendar
+--------------------------------------------------------------------
+Ao abrir: spinner, depois um aviso fixo no topo: se o cliente tem plano
+ativo, mostra "Plano [Nome] ativo — mostrando só os serviços incluídos no
+plano (N disponíveis)" (já filtra o passo 1); senão, "Sem plano ativo —
+todos os serviços disponíveis para agendamento avulso."
+
+Wizard de até 5 etapas com indicador de progresso no topo (some no passo
+5). Clicar numa etapa já concluída no indicador volta direto pra ela.
+
+ETAPA 1 — Serviço(s): grid de cards de serviço (nome, duração, preço),
+seleção múltipla por clique (marca/desmarca). Resumo no rodapé
+(quantidade, duração total, valor total) assim que 1+ é selecionado.
+Botão "Continuar (N) →" busca os profissionais que atendem TODOS os
+serviços escolhidos e avança. Vazio: "Nenhum serviço disponível para o
+seu plano".
+
+ETAPA 2 — Profissional: botão "← Voltar". Grid de cards de barbeiro
+(avatar, nome, especialidade). Clicar seleciona e avança automaticamente
+para a Etapa 3 (já dispara a busca de horários). Vazio: "Nenhum
+profissional disponível para este serviço".
+
+ETAPA 3 — Data e Hora: botão "← Voltar". Campo de data (não permite
+passado), nome do profissional ao lado. Grid de horários disponíveis
+(busca automática ao trocar a data). Vazio: mensagem específica de
+indisponibilidade ou "Nenhum horário disponível nesta data". Clicar num
+horário seleciona e avança automaticamente para a Etapa 4.
+
+ETAPA 4 — Confirmar: botão "← Voltar". Resumo (serviços com preço,
+Profissional, Data, Hora, Valor total, Duração total). Formulário: Forma
+de pagamento (No local/PIX [se ativo]/Cartão/Dinheiro), Cupom (opcional,
+maiúsculo automático), Observação (opcional). Botão "Confirmar
+agendamento":
+- Se gerar PIX → avança para a Etapa 5.
+- Senão → notificação "Agendamento criado com sucesso!" e navega direto
+  para /cliente/historico.
+
+ETAPA 5 — Pagamento PIX (só se pagamento online): QR code, código
+copia-e-cola com botão "Copiar código", upload de comprovante (JPEG/PNG
+até 5 MB) com botão "Enviar comprovante" (confirmação visual após
+enviado). Botão final "Ir para meus agendamentos" → /cliente/historico.
+
+--------------------------------------------------------------------
+LOJA — /cliente/loja
+--------------------------------------------------------------------
+Ao abrir: spinner. Se a feature de venda de produtos não estiver ativa
+(acesso direto por URL), mostra "Recurso não disponível". Caso
+contrário:
+
+1) "Produtos disponíveis": grid de cards (foto, nome, preço, estoque).
+   Esgotado (estoque 0): opacidade reduzida + etiqueta "Sem estoque" no
+   lugar do controle de quantidade. Disponível: controles "-"/"+" (limita
+   ao estoque) + quantidade ao centro. Vazio: "Nenhum produto disponível
+   no momento".
+
+2) Cartão "Seu carrinho" (só aparece com 1+ item selecionado): lista de
+   itens (qtd × nome — subtotal), total geral, Cupom (opcional), Forma de
+   pagamento (PIX [se ativo]/Dinheiro/Cartão — pago na loja). Botão
+   "Finalizar pedido — R$ X":
+   - Se gerar PIX → tela de confirmação PIX (QR code, "Copiar código",
+     upload de comprovante, "Enviar comprovante", botão "Voltar para a
+     loja" que esvazia o carrinho).
+   - Senão → notificação de sucesso e o carrinho esvazia automaticamente.
+
+3) "Meus pedidos" (só se houver algum): tabela (Itens, Valor [+desconto/
+   cupom se houver], Forma de pagamento, Data, Status: Pendente/Aprovada/
+   Rejeitada [+ motivo, se informado]).
+
+Ações disponíveis:
+- Botões "-"/"+" por produto: ajustam a quantidade no carrinho, respeitam
+  o limite de estoque.
+- Botão "Finalizar pedido": envia a compra.
+- Na tela PIX: "Copiar código", "Enviar comprovante", "Voltar para a
+  loja".
+
+--------------------------------------------------------------------
+BENEFÍCIOS — /cliente/beneficios
+--------------------------------------------------------------------
+Ao abrir: spinner. Se a feature de VIP/brindes não estiver ativa (acesso
+direto por URL), mostra "Recurso não disponível". Caso contrário:
+
+1) Cartão "Programa VIP": nível atual (se > 0). Se nível 0: "Complete
+   atendimentos para alcançar níveis VIP e desbloquear benefícios
+   exclusivos". Se já tem nível: descrição do brinde/benefício + caixa
+   "Seu benefício atual" (percentual de desconto ou descrição do brinde)
+   + data da próxima renovação, se houver.
+
+2) "Benefícios do plano": se SEM plano ativo, estado vazio "Você não tem
+   nenhum plano ativo" + botão "Conhecer planos" (e botão "Ver planos" no
+   cabeçalho). Se COM plano(s): card por plano (nome, validade, "Ativo",
+   serviços com uso mensal — mesmo formato de barra de progresso da tela
+   de Planos).
+
+3) Cartão "Quer mais benefícios?" (só se já há plano ativo): incentivo a
+   upgrade + botão "Ver planos".
+
+Ações disponíveis: todos os botões ("Ver planos"/"Conhecer planos") levam
+para /cliente/planos — esta tela é só informativa, sem resgate de prêmio
+ou compra direta.
+
+--------------------------------------------------------------------
+HISTÓRICO — /cliente/historico
+--------------------------------------------------------------------
+Ao abrir: carrega a primeira página de agendamentos (sem filtro).
+
+Abas de filtro (botões, não trocam de URL): "Todos", "Agendados",
+"Concluídos", "Cancelados" — cada clique recarrega a lista filtrada e
+volta para a página 1.
+
+Tabela: Data/Hora, Serviços, Profissional, Valor, Pagamento (Online
+(PIX)/Local + etiqueta Pago/Pendente), Status, ação. Vazio: "Nenhum
+agendamento encontrado". Paginação "< Anterior" / "Página X de Y" /
+"Próxima >".
+
+Ações disponíveis:
+- Botão "Cancelar" (só em linhas com status "Agendado"): confirmação
+  ("Cancelar este agendamento?") — cancela, notifica "Agendamento
+  cancelado." e recarrega mantendo filtro/página.
+- Abas de filtro e paginação.
+
+--------------------------------------------------------------------
+MEU PERFIL — /cliente/perfil
+--------------------------------------------------------------------
+Ao abrir: spinner, depois cartão de cabeçalho (avatar com inicial, nome,
+e-mail ou telefone), cartão "Dados pessoais" e cartão "Sair da conta".
+
+"Dados pessoais" tem 2 modos:
+- Visualização (padrão): Nome, Telefone, E-mail como texto.
+- Edição: formulário com Nome completo* (obrigatório), Telefone, E-mail
+  (opcional).
+
+Ações disponíveis:
+- Botão "Editar" (no cabeçalho): entra em modo edição; o mesmo botão vira
+  "Cancelar" nesse modo (descarta as mudanças e volta à visualização).
+- Botão "Salvar alterações" (só em modo edição): mostra "Salvando…"
+  durante o envio; em sucesso, notifica "Perfil atualizado!", atualiza os
+  dados exibidos e volta ao modo de visualização.
+- Botão "Sair" (cartão "Sair da conta"): efetua logout.
+
+
+====================================================================
+ PARTE 4 — ÁREA DO SUPER ADMIN (perfil "super_admin", dono da plataforma)
+====================================================================
+
+Também loga em /entrar (mesma tela da equipe) e cai em /super/dashboard.
+Sidebar fixa, flat (sem submenus), nesta ordem:
+
+  Dashboard
+  Barbearias
+  Gestores
+  Features
+  Customização
+  Segmentos
+  Auditoria
+  Relatórios
+  Solicitações de Senha
+
+"Editar Rótulos" e "Features Padrão" NÃO são itens de menu — são telas de
+detalhe abertas a partir de um clique dentro da tela Segmentos.
+
+--------------------------------------------------------------------
+DASHBOARD — /super/dashboard
+--------------------------------------------------------------------
+Ao abrir: "Carregando…" e depois:
+- 4 cards: "Estabelecimentos Ativos" (+ "X inativo(s)"), "Usuários na
+  Plataforma" (+ "X clientes · Y barbeiros"), "Agendamentos no Mês" (+
+  "X concluídos · Y cancelados"), "Receita no Mês" (R$).
+- Tabela "Pagamentos no Mês (toda a plataforma)": Atendimentos recebidos
+  e Vendas de produto (avulsa + caixa) com total em R$; linha "Total por
+  forma" somando Dinheiro/Cartão/PIX/Total geral; texto detalhando Local
+  (balcão) vs Online (PIX antecipado).
+- Tabela "Ranking do Mês" (#, Estabelecimento, Agendamentos, Receita) —
+  barbearias ordenadas por desempenho no mês. Vazio: "Sem agendamentos
+  neste mês."
+
+Ações disponíveis:
+- Link "Ver todos →" (ao lado de "Ranking do Mês"): navega para
+  Barbearias.
+- Sem botões de ação, modais ou filtros — tela só de leitura.
+
+--------------------------------------------------------------------
+BARBEARIAS — /super/barbearias
+--------------------------------------------------------------------
+Ao abrir: tabela (Nome, Slug, Status, Criado em, Ações), páginas de 50.
+Cada linha: nome de exibição, slug em formato código, badge "Ativa"/
+"Inativa", data de criação. Estado vazio: "Nenhum estabelecimento
+cadastrado."
+
+Ações disponíveis:
+- Botão "+ Novo Estabelecimento": abre modal de criação:
+  - Nome* (preenche o Slug automaticamente, a menos que o Slug já tenha
+    sido editado manualmente)
+  - Slug* (só minúsculas, números e hífen)
+  - Nome de exibição (opcional — se vazio, usa o Nome)
+  - Segmento (select: "Sem segmento (padrão barbearia)" + lista de
+    /super/segmentos — texto de ajuda: "define os rótulos e as features
+    padrão")
+  - Seção "Dados do Gestor": Nome do gestor*, E-mail do gestor*, Telefone
+    do gestor*, Senha inicial do gestor* (mín. 6)
+  - Seção retrátil "Endereço e Contato (opcional)": Rua/Número/
+    Complemento/Bairro/Cidade/UF/CEP, Telefone/WhatsApp de contato,
+    Instagram
+  - Botões "Cancelar"/"Criar Estabelecimento" (spinner durante envio;
+    erro aparece dentro do próprio modal)
+  - Sucesso: o modal vira uma tela de confirmação (ícone de check,
+    resumo do Estabelecimento/Slug/Gestor+e-mail, link de acesso da
+    equipe /entrar e link público /b/slug/, ambos em nova aba) + botão
+    "Fechar" (fecha e recarrega a lista)
+- Botão "Detalhes" (por linha): abre modal com Nome (+ nome interno se
+  diferente), Slug, Status, Segmento (ou "Sem segmento"), Gestor
+  vinculado (nome+e-mail, ou "Nenhum gestor vinculado."), Link Público
+  clicável, data de criação. Rodapé: "Editar" (abre o modal de edição) e,
+  condicionalmente, "Desativar" (se ativa) ou "Reativar" (se inativa).
+- Botão "Editar": abre modal "Editar Estabelecimento" com Nome*, Nome de
+  exibição, Slug* (normaliza para minúsculas), URL de agendamento
+  personalizada, Segmento (select — "troca só os rótulos, não reajusta
+  features já ligadas"), e os mesmos campos de Endereço/Contato do
+  cadastro. Botões "Cancelar"/"Salvar" (se o Segmento mudou, dispara uma
+  segunda requisição específica para atualizá-lo).
+- Link "Ver site" (por linha): abre a página pública do estabelecimento
+  em nova aba.
+- Botão "Desativar" (só em ativas): confirmação nativa ("Desativar
+  'NOME'? Todos os usuários deste estabelecimento também serão
+  desativados.") — ação direta.
+- Botão "Ativar" (só em inativas, verde): ação direta, sem confirmação.
+- Paginação: "< Anterior" / "Próxima >".
+
+--------------------------------------------------------------------
+GESTORES — /super/gestores
+--------------------------------------------------------------------
+Ao abrir: tabela somente leitura (Nome, E-mail, Telefone, Barbearia,
+Status), páginas de 50. Estado vazio: "Nenhum gestor encontrado."
+
+Ações disponíveis:
+- Campo "Buscar por nome ou e-mail (nesta página)…": filtra em tempo
+  real, mas só dentro dos registros já carregados na página atual (não
+  busca no servidor).
+- Ícone "📲" ao lado do telefone (se houver): abre WhatsApp com saudação
+  pré-preenchida ("Olá {nome}!").
+- Nome da barbearia como link (se tiver slug): abre a página pública
+  daquele estabelecimento em nova aba.
+- Badge de Status: só informativo, não clicável.
+- Não há criação, edição ou exclusão de gestores aqui — é só consulta.
+
+--------------------------------------------------------------------
+FEATURES — /super/features
+--------------------------------------------------------------------
+Ao abrir: select "Barbearia" ("Selecione uma barbearia…" + lista de
+todas). Antes de escolher: "Selecione uma barbearia para ver as
+features."
+
+Ações disponíveis:
+- Select "Barbearia": ao escolher, carrega as features daquele
+  estabelecimento organizadas em seções: "CLIENTE — PLANOS" (Planos de
+  Assinatura, Programa VIP + Brindes, PIX Integrado), "CLIENTE —
+  FUNCIONALIDADES" (Histórico do Cliente, Sistema de Cupons, Venda de
+  Produtos), "NEGÓCIO" (Controle de Comissão, Notificações Push), e
+  "OUTRAS" (qualquer feature nova do catálogo sem rótulo mapeado ainda,
+  mostrando a chave bruta).
+- Toggle por feature: ação direta (sem modal) que liga/desliga aquela
+  feature para a barbearia selecionada; fica "ocupado" durante o
+  salvamento; toast de confirmação ou erro.
+
+--------------------------------------------------------------------
+CUSTOMIZAÇÃO — /super/customizacao
+--------------------------------------------------------------------
+Ao abrir: duas colunas. Esquerda: lista de todos os estabelecimentos
+(avatar/logo ou inicial + nome + slug). Direita: painel vazio
+("Selecione um estabelecimento para personalizar") até escolher um.
+
+Ações disponíveis:
+- Clicar num item da lista: seleciona aquele estabelecimento (destaca a
+  borda) e carrega o painel direito:
+  - Cabeçalho: nome + "Aparência na página pública de agendamento" + link
+    "Ver página" (nova aba).
+  - 3 cards de upload de imagem — "Logo" (círculo do cabeçalho, PNG
+    transparente, ideal 500×500), "Capa do Cabeçalho" (banner atrás do
+    logo, JPG/PNG, ideal 1200×300), "Fundo da Página" (atrás do
+    formulário de agendamento, JPG/PNG, ideal 1920×1080). Cada card é
+    clicável (ou botão "Trocar" quando já há imagem) e abre o seletor de
+    arquivo (JPEG/PNG/WEBP até 5 MB); mostra spinner durante o envio;
+    depois exibe a prévia. Botão "Remover" (só quando há imagem):
+    confirmação nativa ("Remover esta imagem?").
+  - Card "Cor Primária": amostra + seletor de cor nativo + valor
+    hexadecimal; atualiza a prévia em tempo real; botão "Salvar" grava a
+    cor.
+  - Card "Pré-visualização": mockup em miniatura do cabeçalho da página
+    pública, atualizado ao vivo conforme logo/capa/cor mudam.
+- Trocar de estabelecimento na lista recarrega todo o painel direito para
+  o novo selecionado.
+
+--------------------------------------------------------------------
+SEGMENTOS — /super/segmentos
+--------------------------------------------------------------------
+Ao abrir: tabela (Segmento, Chave, Estabelecimentos [contagem], Ações).
+Estado vazio: "Nenhum segmento cadastrado. Clique em 'Sincronizar
+Padrões' para criar os 4 segmentos pré-definidos."
+
+Ações disponíveis:
+- Botão "+ Sincronizar Padrões": ação direta que cria/sincroniza os 4
+  segmentos padrão do sistema (toast de sucesso + recarrega a página
+  automaticamente); sem modal, sem confirmação.
+- Link "Editar Rótulos" (por linha): navega para /super/segmentos/<id>/
+  rotulos.
+- Link "Features Padrão" (por linha): navega para /super/segmentos/<id>/
+  features.
+- Não há criação manual nem exclusão de segmento nesta tela.
+
+--------------------------------------------------------------------
+SEGMENTOS → EDITAR RÓTULOS — /super/segmentos/<seg_id>/rotulos
+(aberta a partir de um clique em Segmentos, sem item próprio na sidebar)
+--------------------------------------------------------------------
+Ao abrir: link "← Voltar a Segmentos" no topo. "Carregando…" e depois o
+formulário, com o nome do segmento e a chave técnica como título,
+dividido em blocos Singular/Plural: Estabelecimento (tenant),
+Profissional, Serviço, Agendamento, Cliente, Produto, Plano/Pacote; mais
+um bloco "Termos Genéricos" com Pagamento/Faturamento (Receita) em par e
+um campo único "Relatório". Rodapé: "Campos vazios mantêm o valor padrão
+do sistema. Máximo 50 caracteres por campo."
+
+Ações disponíveis:
+- Link "Cancelar": volta para /super/segmentos sem salvar.
+- Botão "Salvar rótulos": ação direta — grava os campos preenchidos
+  (deixar em branco = usar o rótulo padrão do sistema); botão mostra
+  "Salvando…" durante o envio; toast de sucesso/erro ao final.
+
+--------------------------------------------------------------------
+SEGMENTOS → FEATURES PADRÃO — /super/segmentos/<seg_id>/features
+(aberta a partir de um clique em Segmentos, sem item próprio na sidebar)
+--------------------------------------------------------------------
+Ao abrir: link "← Voltar a Segmentos". Título com o nome do segmento +
+texto explicativo ("Define quais features uma barbearia nova deste
+segmento já nasce com — aplicado só na criação, não muda barbearias já
+existentes."). Lista de todas as features do catálogo, cada linha com
+nome, badge de origem ("padrão do segmento" se este segmento tem
+configuração própria, ou "padrão global" se está herdando o padrão
+geral), descrição, e um toggle indicando se vem ativada por padrão para
+novos estabelecimentos deste segmento.
+
+Ações disponíveis:
+- Toggle por linha: ação direta que liga/desliga o padrão daquela
+  feature para o segmento; fica "ocupado" durante o salvamento; recarrega
+  a lista inteira ao concluir (atualizando o badge de origem); toast
+  "Padrão atualizado."
+- Importante: só afeta barbearias criadas DEPOIS da alteração — não
+  retroage sobre estabelecimentos já existentes.
+
+--------------------------------------------------------------------
+AUDITORIA — /super/auditoria
+--------------------------------------------------------------------
+Ao abrir: select de filtro + botão de atualizar, tabela (Data/Hora,
+Usuário, Barbearia, Ação), paginação de 50. Estado vazio: "Nenhum
+registro encontrado."
+
+Ações disponíveis:
+- Select "Todas as ações / Criação / Edição / Exclusão": recarrega
+  filtrado, voltando à página 1.
+- Botão "Atualizar": recarrega com o filtro atual, também na página 1.
+- Paginação "< Anterior" / "Próxima >".
+- Tela é só leitura — sem edição, exclusão ou exportação dos logs.
+
+--------------------------------------------------------------------
+RELATÓRIOS — /super/relatorios
+--------------------------------------------------------------------
+Ao abrir: título "Relatórios da Plataforma" + subtítulo "Totais
+consolidados de todos os estabelecimentos". "Carregando…" e depois 2
+linhas de cards: "Estabelecimentos" (+ "X ativos"), "Gestores",
+"Barbeiros", "Clientes"; "Agendamentos Totais", "Concluídos" (verde),
+"Cancelados" (vermelho), "Aguardando PIX" (âmbar).
+
+Ações disponíveis: nenhuma — tela puramente informativa, sem filtros de
+data, sem seleção de estabelecimento, sem tabelas comparativas nem
+gráficos renderizados hoje. (O CSS do arquivo já define estilos para
+abas de período, gráfico, tabela comparativa por estabelecimento e
+alerta de estoque baixo, mas nada disso aparece de fato no conteúdo
+renderizado — parece um recurso planejado/parcialmente implementado,
+ainda não ativo.)
+
+--------------------------------------------------------------------
+SOLICITAÇÕES DE SENHA — /super/solicitacoes-senha
+--------------------------------------------------------------------
+Ao abrir: texto explicativo ("Gestores e barbeiros que esqueceram a
+senha. Clique em WhatsApp para enviar o código diretamente."). Lista de
+cards: nome + badge do perfil (gestor/barbeiro), telefone (ou "sem
+telefone") + nome da barbearia (se houver), código de redefinição em
+destaque, botão "📲 WhatsApp" (só se houver telefone).
+
+Ações disponíveis:
+- Botão "📲 WhatsApp": abre uma conversa wa.me com mensagem pré-preenchida
+  (nome + código) para o Super Admin repassar manualmente.
+- Não há botão de aprovar/negar/excluir — a ação se resume a repassar o
+  código já gerado via WhatsApp.
+- Estado vazio: "Nenhuma solicitação pendente 🎉".
+
+
+====================================================================
+ FIM DO DOCUMENTO
+====================================================================

@@ -125,6 +125,37 @@ nada, mas agora têm valores reais gerados e são a próxima linha de defesa).
   [ ] Decisão tomada sobre Redis pro rate limiting (seção 3) — ou
       provisionado, ou aceito como limitação conhecida
   [ ] `flask db upgrade` (já roda automaticamente no Procfile antes do
-      gunicorn subir) — confirmar que todas as migrations do repo (até
-      `df41b77230dd`, Bloco 6.4) aplicam limpo num banco Railway vazio
+      gunicorn subir) — confirmar que todas as migrations do repo aplicam
+      limpo num banco Railway vazio (ver seção 7 — chain até `6c106d8fec79`,
+      já inclui a correção do índice de double-booking)
   [ ] Upload de comprovante/foto testado em produção depois do deploy
+
+
+7. CHECKUP DE SEGURANÇA — 2026-07-23 (ver memória do projeto pra detalhes)
+------------------------------------------------------------------------------
+  Achados corrigidos nesta sessão (já aplicados no código/banco local):
+  [x] Double-booking real (índices `uq_ag_barbeiro_slot`/`uq_usuario_email_staff`
+      ausentes do banco por bug de migration) — migration corretiva
+      `6c106d8fec79` criada e testada, validado com teste de concorrência real.
+  [x] Auditoria do gestor vazava ações do super_admin — corrigido.
+  [x] XSS armazenado: função `esc()` duplicada em ~18 templates não escapava
+      aspas — corrigido em todos, uniformizado.
+  [x] Upload de logo da barbearia (`gestor/perfil.py`) sem validação de magic
+      bytes (só confiava no Content-Type do cliente) — corrigido, agora usa
+      o validador compartilhado.
+  [x] Nenhum header de segurança configurado (sem X-Frame-Options, CSP,
+      X-Content-Type-Options) — adicionados em `app/__init__.py`. CSP usa
+      'unsafe-inline' em script/style porque o projeto depende de <script>
+      inline em quase toda tela Jinja — uma CSP estrita é refactor futuro
+      maior (mover JS pra arquivos externos ou usar nonce).
+
+  Achados NÃO corrigidos (decisão de produto ou risco médio — ver relatório
+  da conversa de 2026-07-23 pra detalhe completo):
+  [ ] Upload de comprovante PIX anônimo (`pub/agendamento.py`) só valida
+      barbearia_id, não valida que quem envia é o cliente dono daquele
+      agendamento_id — permite, em teoria, anexar comprovante fake no
+      agendamento de outro cliente da mesma barbearia (severidade média,
+      mitigada por rate limit + precisa adivinhar um ID válido).
+  [ ] LGPD: sem política de privacidade, sem checkbox de consentimento no
+      cadastro, sem autoatendimento de exclusão/exportação de dados do
+      cliente, sem tratamento especial pra dados de menores de idade.

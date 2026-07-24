@@ -1,0 +1,1434 @@
+====================================================================
+ BarberOS — FLUXO DETALHADO DO BACKEND (referência de API)
+ Gerado em 19/07/2026 a partir da leitura de todas as rotas Flask
+ Complementa o docs/Fluxo_Telas_Detalhado.txt (frontend) — aqui é o que
+ acontece POR TRÁS de cada botão/tela documentado naquele arquivo.
+====================================================================
+
+Como ler este documento:
+- Cada rota é documentada como: MÉTODO /caminho-completo, Proteção
+  (quem pode chamar), O que faz, Validações, Efeitos colaterais
+  (o que grava/altera/dispara) e Resposta (sucesso + principais erros).
+- "Proteção" refere-se aos decorators de app/decorators/auth.py:
+  @gestor_required (perfil gestor OU super_admin; bloqueia se o tenant/
+  barbearia estiver desativado), @barbeiro_required (idem p/ barbeiro),
+  @cliente_required (SÓ cliente — super_admin NÃO tem bypass aqui,
+  diferente das outras três), @super_required (só super_admin).
+  "@feature_required('x')" é um decorator adicional (app/utils/features.py)
+  que bloqueia com 403 se a funcionalidade "x" não estiver ativa para
+  aquela barbearia.
+- Praticamente toda escrita passa por commit_ou_falhar(contexto): se o
+  commit falhar, faz rollback, loga o erro internamente e devolve 500
+  genérico "Erro ao salvar. Tente novamente." — nunca expõe stack trace.
+- APIError sem código explícito devolve HTTP 400 com corpo
+  {"erro": "<mensagem>"}.
+- Isolamento multi-tenant: em praticamente toda rota de gestor/barbeiro/
+  cliente, os dados são filtrados por barbearia_id (o tenant do usuário
+  logado) além do id do próprio recurso — isso impede um usuário de ler/
+  alterar dados de outra barbearia só adivinhando um ID. Isso NÃO é
+  repetido rota a rota abaixo, é o padrão geral do sistema.
+
+
+====================================================================
+ PARTE -1 — STACK TÉCNICA
+====================================================================
+
+--------------------------------------------------------------------
+Backend (a API documentada neste arquivo)
+--------------------------------------------------------------------
+- Linguagem/framework: Python + Flask 3.1.3.
+- ORM: SQLAlchemy 2.0.50, via Flask-SQLAlchemy 3.1.1.
+- Migrações de banco: Flask-Migrate 4.1.0 (Alembic 1.18.4) —
+  barberos/migrations/versions/ (~35 revisões no histórico).
+- Autenticação: Flask-JWT-Extended 4.7.4 (tokens JWT, lidos tanto de
+  cookie HttpOnly quanto de header Authorization — ver Parte 0) +
+  sessão Flask tradicional para o guard de tela (session_required em
+  app/routes/views/auth.py).
+- Rate limiting: Flask-Limiter 4.1.1. Por padrão usa storage
+  "memory://" (contagem por-worker do gunicorn — cada worker tem a sua
+  própria, não é compartilhada); para produção com múltiplos workers,
+  precisa setar RATELIMIT_STORAGE_URI para um Redis compartilhado
+  (comentário em app/extensions.py cita "plugin do Railway" como
+  exemplo). Limites individuais (RL_LOGIN, RL_AGENDAR, RL_SLOTS,
+  RL_COMPROVANTE, RL_CUPOM_VALIDAR, RL_PLANO_SOLICITAR,
+  RL_COMPRA_SOLICITAR, RL_WEBHOOK_INBOUND, RL_RESET_SENHA, RL_CADASTRO)
+  são configuráveis por variável de ambiente, cada rota com um default
+  hardcoded caso a env var não esteja setada.
+- Job em background: APScheduler 3.10.4, rodando dentro do próprio
+  processo Flask (thread, iniciado em create_app() via
+  app/utils/scheduler.py::iniciar_scheduler, desabilitável com
+  DISABLE_SCHEDULER=1 nos testes) — a cada 1 minuto varre agendamentos
+  próximos e gera notificações de lembrete (in-app, para cliente e
+  barbeiro).
+- Exportação de relatórios: openpyxl 3.1.5 (Excel) e reportlab 4.2.5
+  (PDF) — usados só em gestor/relatorios.py.
+- Upload/armazenamento de imagem: Cloudinary (SDK cloudinary==1.44.2),
+  configurado uma única vez no startup (create_app(), não mais por
+  request) — usado para logo/capa/imagens de customização
+  (gestor/perfil.py, super/barbearias.py), fotos de produto
+  (gestor/catalogo.py) e comprovantes de PIX (pub/agendamento.py,
+  pub/planos.py, cliente/produtos.py) — estes últimos, além do
+  Cloudinary, ficam atrás de um proxy de link assinado com expiração
+  curta (comprovante_bp, ver Parte 0) em vez de expor a URL do
+  Cloudinary direto.
+- Servidor WSGI / deploy: gunicorn 21.2.0, 2 workers, timeout 120s
+  (barberos/Procfile: `flask db upgrade && gunicorn -w 2 ... wsgi:app`
+  — roda as migrações pendentes automaticamente antes de subir o
+  servidor a cada deploy). Ponto de entrada: barberos/wsgi.py.
+
+--------------------------------------------------------------------
+Banco de dados
+--------------------------------------------------------------------
+PostgreSQL, acessado via psycopg2-binary 2.9.12. A URL vem de
+DATABASE_URL (env var); app/__init__.py normaliza o prefixo legado
+"postgres://" para "postgresql://" antes de passar ao SQLAlchemy (alguns
+provedores de hospedagem, ex. Railway/Heroku, ainda entregam a URL no
+formato antigo).
+
+--------------------------------------------------------------------
+Frontend — DUAS stacks diferentes coexistindo (ver Fluxo_Telas_Detalhado.txt)
+--------------------------------------------------------------------
+- Área staff (gestor/barbeiro/super) + páginas públicas: Jinja2 3.1.6,
+  server-rendered, sem build step — templates em
+  barberos/app/templates/{gestor,barbeiro,super,staff,pub}/, JS puro
+  inline + barberos/app/static/js/bos.js (helper de fetch/auth
+  compartilhado) + barberos/app/static/css/{style,temas}.css.
+- Área do cliente: React 18.3.1 + Vite 5.4.0 + react-router-dom 6.26.0,
+  fonte em barberos/frontend/src/, buildado (`npm run build`) para
+  barberos/app/static/cliente_portal/ com nomes de arquivo FIXOS
+  (index.js, assets/index.css — configurado em
+  barberos/frontend/vite.config.js) e servido através do template
+  barberos/app/templates/cliente/app.html, que injeta dados da sessão
+  via window.BOS_*.
+
+--------------------------------------------------------------------
+n8n + WhatsApp bot — como roda
+--------------------------------------------------------------------
+n8n e a Evolution API (gateway de WhatsApp) NÃO ficam dentro do app
+Flask — são serviços separados, self-hosted via Docker Compose neste
+mesmo repositório em .claude/n8n/docker-compose.yml (não versionado
+por padrão — .gitignore local ignora .env/n8n_data/evolution_data/
+evolution_pgdata/evolution_redisdata; só o compose e os workflows em si
+ficam no repo). Sobem 4 containers:
+  - barberos-n8n (imagem docker.n8n.io/n8nio/n8n:latest, porta 5678) —
+    motor de automação; workflows prontos ficam em
+    .claude/n8n/workflows/barberos-eventos.json (reage aos webhooks de
+    SAÍDA do Flask — agendamento criado/aprovado/cancelado, plano
+    ativado, venda concluída, comprovante enviado — e decide o que
+    fazer, ex. notificar o gestor por WhatsApp ou auto-aprovar PIX) e
+    .claude/n8n/workflows/barberos-bot-whatsapp.json (o bot de
+    agendamento conversacional, que fala com a Evolution API).
+  - barberos-evolution (imagem evoapicloud/evolution-api:latest, porta
+    8080) — gateway self-hosted de WhatsApp; cada barbearia pareia 1
+    número próprio via QR code pela tela
+    /gestor/configuracoes/whatsapp-bot (rota
+    gestor_whatsapp_bot_bp, que fala com esta API via HTTP puro — sem
+    SDK oficial, contrato Evolution API v2 — em
+    app/utils/evolution.py).
+  - barberos-evolution-db (postgres:16-alpine) — Postgres DEDICADO da
+    Evolution API, separado do banco principal do barberos.
+  - barberos-evolution-redis (redis:7-alpine) — cache da Evolution API.
+
+Como o Flask conversa com esses serviços (tudo por HTTP, via variáveis
+de ambiente do próprio barberos, não do compose acima):
+  - SAÍDA (barberos → n8n): app/utils/webhooks.py::disparar_webhook() —
+    1 URL por barbearia (BarbeariaWebhookConfig.webhook_url, configurada
+    pelo gestor na tela Webhook/n8n), POST síncrono, timeout 5s, SEM
+    fila de retry (falha só é logada) e SEM assinatura HMAC (decisão de
+    projeto registrada no código: a própria URL do n8n, opaca por
+    padrão, já cumpre esse papel nesta fase).
+  - ENTRADA (n8n → barberos): app/routes/webhook_inbound.py
+    (webhook_inbound_bp, POST /api/v1/webhook/agendamentos/<id>/aprovar)
+    — autenticado por um secret por barbearia (BarbeariaWebhookConfig.
+    webhook_secret) comparado via hmac.compare_digest no header
+    X-Webhook-Secret; usado quando o gestor liga "permite_auto_aprovacao"
+    (o n8n analisa o comprovante PIX recebido e aprova sozinho).
+  - Flask → Evolution API: env vars EVOLUTION_API_URL/EVOLUTION_API_KEY
+    (apontando para http://localhost:8080, já que o barberos roda fora
+    do Docker) — usadas em gestor/whatsapp_bot.py para criar/consultar/
+    desconectar a instância de WhatsApp de cada barbearia.
+  - Evolution API → n8n: ao criar a instância, o barberos já configura
+    o webhook de mensagens recebidas da Evolution apontando para
+    N8N_BOT_WEBHOOK_URL (env var do barberos), com o header
+    X-Webhook-Secret = N8N_BOT_WEBHOOK_SECRET quando definido — é o que
+    autentica essa chamada específica no node "Webhook - Evolution
+    Inbound" do workflow barberos-bot-whatsapp.json.
+  - n8n → barberos (fora do fluxo de aprovação PIX): env var
+    BARBEROS_BASE_URL, apontando para host.docker.internal:5000 quando
+    o barberos roda direto no Windows/host e o n8n está no Docker.
+
+Em resumo: n8n e Evolution API são infraestrutura de automação externa
+ao processo Flask, orquestrados por Docker Compose, e a ÚNICA forma de
+acoplamento com o backend é HTTP (webhooks de saída + este endpoint de
+entrada + a API HTTP da Evolution) — nenhum import direto, nenhuma
+dependência de biblioteca do n8n dentro do requirements.txt do Flask.
+
+
+====================================================================
+ PARTE 0 — AUTENTICAÇÃO E CAMADA COMPARTILHADA
+====================================================================
+
+--------------------------------------------------------------------
+SESSÃO DE TELA (cookies) — views_bp, sem prefixo (/entrar, /b/<slug>/...)
+--------------------------------------------------------------------
+Esta é a autenticação REAL usada por todas as telas do sistema (Jinja e
+o SPA React do cliente) — documentada em detalhe no Fluxo_Telas_Detalhado
+(Parte 0), aqui só o resumo do lado backend:
+
+POST /entrar — login de gestor/barbeiro/super_admin. Verifica e-mail+senha
+(werkzeug check_password_hash), rejeita perfil 'cliente' e contas
+desativadas. Em sucesso, cria um access_token (JWT, 15 min) e um
+refresh_token (JWT, 30 dias se "lembrar" senão sessão), e os grava em
+DOIS cookies HttpOnly (bos_at, bos_rt) — não retorna os tokens no corpo
+JSON (diferente do /api/v1/auth/login abaixo). Também popula a sessão
+Flask tradicional (session['user_id'], ['perfil'], etc.) usada pelo guard
+session_required das rotas de tela.
+
+POST /entrar/renovar — chamado automaticamente pelo bos.js (telas Jinja)
+e pelo api.js do SPA do cliente sempre que uma chamada de API recebe 401.
+Valida o refresh_token do cookie bos_rt, emite um novo access_token e
+atualiza o cookie bos_at + a sessão Flask. Se o refresh falhar, o
+frontend redireciona pro login.
+
+POST /sair — revoga (grava em TokenRevogado) tanto o access quanto o
+refresh token atuais pelo jti, limpa a sessão Flask e apaga os dois
+cookies. Uma falha ao gravar a revogação é logada mas não impede o
+logout de completar (nunca trava o usuário fora por erro de banco).
+
+POST /b/<slug>/entrar, POST /b/<slug>/cadastro — login/cadastro de
+CLIENTE, escopados por barbearia via slug (um cliente só existe dentro
+de uma barbearia). Mesmo padrão de cookies JWT do /entrar. O cadastro
+cria Usuario (perfil='cliente') + Cliente (ou reaproveita um Cliente
+já existente com aquele telefone, se ele ainda não tinha login).
+
+--------------------------------------------------------------------
+API DE AUTENTICAÇÃO POR TOKEN — auth_bp (/api/v1/auth)
+--------------------------------------------------------------------
+IMPORTANTE: nenhuma tela do sistema atual (nem os templates Jinja, nem
+o SPA React do cliente — confirmado lendo frontend/src/api.js, que só
+chama /api/v1/cliente/*, /api/v1/pub/*, e usa /entrar/renovar para
+refresh) usa este blueprint. Ele expõe login via Authorization: Bearer
+(cabeçalho, não cookie) e devolve os tokens diretamente no corpo JSON —
+compatível com JWT_TOKEN_LOCATION=['headers','cookies'] configurado em
+create_app(). Existe como uma superfície de API "pura" pronta para
+consumidores externos (app mobile futuro, integração de terceiro), mas
+hoje é código morto do ponto de vista de uso real.
+
+POST /api/v1/auth/login
+Proteção: pública.
+O que faz: autentica por e-mail+senha e devolve os tokens no corpo (ao
+contrário do /entrar, que só grava em cookie).
+Validações: email e senha obrigatórios; senha verificada via hash;
+usuário precisa estar ativo (403 senão).
+Efeitos colaterais: nenhum no banco.
+Resposta: 200 → {access_token, refresh_token, usuario}; erros → 400
+campos ausentes, 401 credenciais inválidas, 403 conta desativada.
+
+POST /api/v1/auth/refresh
+Proteção: @jwt_required(refresh=True) — exige um refresh token válido
+(via header Authorization).
+O que faz: emite um novo access_token.
+Validações: usuário do token precisa existir e estar ativo (401 senão).
+Resposta: 200 → {access_token}.
+
+GET /api/v1/auth/me
+Proteção: exige g.user_id setado (401 "Autenticação necessária." senão —
+funciona tanto com cookie quanto header, pois é resolvido no
+before_request load_user_context).
+O que faz: devolve os dados do usuário autenticado.
+Resposta: 200 → dados formatados do usuário; 404 se usuário não existir.
+
+POST /api/v1/auth/trocar-senha
+Proteção: exige g.user_id.
+O que faz: troca a própria senha.
+Validações: senha_atual e senha_nova obrigatórias; senha_nova mín. 6
+caracteres; senha_atual precisa bater com o hash salvo (403 senão).
+Efeitos colaterais: grava novo hash; revoga TODOS os tokens ativos do
+usuário (revogar_todos_tokens) — desloga qualquer sessão/dispositivo
+antigo, forçando novo login em todo lugar após trocar a senha.
+Resposta: 200 → mensagem de sucesso.
+
+POST /api/v1/auth/solicitar-reset-senha
+Proteção: pública, rate limit (RL_RESET_SENHA, default 5/min).
+O que faz: gera um código de recuperação para uma conta de CLIENTE
+identificada por e-mail (e opcionalmente slug — necessário porque e-mail
+de cliente não é único entre barbearias diferentes; sem o slug, se o
+mesmo e-mail existir em duas barbearias, o código pode ir pro Usuario
+errado). SEMPRE devolve a mesma mensagem genérica, exista o e-mail ou
+não — evita enumeração de contas por tentativa e erro.
+Efeitos colaterais: cria um registro de código de recuperação (visível
+depois nas telas "Solicitações de Senha" do gestor/barbeiro).
+
+POST /api/v1/auth/solicitar-reset-senha-staff
+Proteção: pública, mesmo rate limit.
+O que faz: mesma ideia, mas para conta de gestor/barbeiro — o código
+gerado fica visível para o super_admin repassar por WhatsApp (não há
+e-mail automático).
+
+POST /api/v1/auth/confirmar-reset-senha
+Proteção: pública, mesmo rate limit.
+O que faz: valida e-mail+código (o código é o que a hierarquia repassou
+por WhatsApp) e, se corretos, redefine a senha e já devolve tokens novos
+(auto-login) — embora o frontend do cliente hoje prefira mandar para a
+tela de login normal em vez de aproveitar esse auto-login.
+Validações: email e codigo obrigatórios; código precisa bater e não
+estar expirado (validar_codigo_recuperacao_por_email).
+
+--------------------------------------------------------------------
+VIP (compartilhado) — vip_bp (/api/v1/gestor/vip)
+--------------------------------------------------------------------
+Apesar do prefixo /gestor, vive como módulo próprio (app/routes/vip.py)
+por ser uma funcionalidade transversal (gestor gerencia os níveis;
+cliente consulta seu nível via /api/v1/cliente/vip, documentado na Parte 3).
+
+GET /api/v1/gestor/vip/niveis
+Proteção: @gestor_required
+O que faz: lista os níveis VIP cadastrados na barbearia (sem gate de
+feature — leitura sempre liberada).
+Resposta: 200 → array de níveis (nivel, descrição do brinde, tipo
+físico/desconto, valor do desconto, se o modo de resgate está ativo).
+
+POST /api/v1/gestor/vip/niveis
+Proteção: @gestor_required + @feature_required('vip_brindes')
+O que faz: cria um novo nível VIP.
+Validações: "nivel" inteiro positivo e ainda não usado nesta barbearia
+(409 senão); "brinde_descricao" obrigatória; "tipo_brinde" deve ser
+"fisico" ou "desconto"; se "desconto", "valor_desconto" numérico ≥ 0
+obrigatório; "brindes" (lista opcional de {name, description}) validada
+item a item.
+Efeitos colaterais: cria VipNivel; registra auditoria.
+Resposta: 201 → nível criado.
+
+PUT /api/v1/gestor/vip/niveis/<id>
+Proteção: @gestor_required + @feature_required('vip_brindes')
+O que faz: edita um nível existente (parcial).
+Validações: mesmas regras do POST aplicadas por campo enviado; trocar o
+número do nível checa duplicidade excluindo o próprio registro.
+Efeitos colaterais: atualiza VipNivel; registra auditoria.
+
+PUT /api/v1/gestor/vip/niveis/<id>/modo-brinde
+Proteção: @gestor_required + @feature_required('vip_brindes')
+O que faz: alterna (toggle) se o resgate de brinde daquele nível está
+habilitado, sem precisar reenviar o objeto inteiro.
+Resposta: 200 → nível atualizado.
+
+DELETE /api/v1/gestor/vip/niveis/<id>
+Proteção: @gestor_required + @feature_required('vip_brindes')
+O que faz: exclui um nível VIP definitivamente (hard delete, não soft).
+Validações: bloqueia com 409 "vinculado a clientes. Inative-o em vez de
+deletar." se algum ClienteVip já estiver naquele nível — proteção contra
+apagar um nível que clientes já alcançaram.
+Efeitos colaterais: deleta VipNivel; registra auditoria.
+
+GET /api/v1/gestor/vip/clientes?nivel=&page=&per_page=
+Proteção: @gestor_required (sem gate de feature — só leitura)
+O que faz: lista clientes com nível VIP > 0, paginado, com filtro
+opcional por nível exato.
+Resposta: 200 → lista paginada (cliente, nível atual, meses consecutivos,
+próxima renovação).
+
+GET /api/v1/gestor/vip/clientes/<id>/historico?page=&per_page=
+Proteção: @gestor_required
+O que faz: histórico paginado de eventos VIP de um cliente (mudanças de
+nível, motivo).
+Validações: cliente precisa existir na barbearia (404 senão).
+
+--------------------------------------------------------------------
+WEBHOOK INBOUND (automação chamando de volta) — webhook_inbound_bp
+(/api/v1/webhook)
+--------------------------------------------------------------------
+Direção oposta do webhook de saída do gestor (que dispara PRA FORA): aqui
+é a automação (n8n) chamando DE VOLTA pro sistema. Autenticado por um
+secret no header, não por sessão/JWT — quem chama é um sistema externo.
+
+POST /api/v1/webhook/agendamentos/<id>/aprovar
+Proteção: pública, mas exige o header "X-Webhook-Secret" batendo (via
+hmac.compare_digest — comparação em tempo constante, evita vazar por
+timing quanto do secret já bateu) com o webhook_secret configurado pela
+barbearia dona do agendamento; rate limit (RL_WEBHOOK_INBOUND, default
+20/min).
+O que faz: aprova automaticamente um comprovante PIX em nome da
+automação — é o mesmo fluxo que existe na tela do gestor/barbeiro
+("Aprovar comprovante"), mas disparado por uma IA/bot do n8n depois de
+analisar a imagem do comprovante, SE o gestor tiver habilitado
+"permite_auto_aprovacao" na tela de Webhook.
+Validações: agendamento deve existir (404, com lock via with_for_update);
+a barbearia precisa ter permite_auto_aprovacao=True E um webhook_secret
+configurado (403 "Aprovação automática não está habilitada..." senão);
+o secret enviado precisa bater exatamente (401 "Secret inválido." senão).
+Efeitos colaterais: usa o mesmo núcleo aprovar_comprovante_pix() usado
+pelas aprovações manuais; registra auditoria com usuario_id=None (ação
+do sistema, não de uma pessoa) citando "aprovado automaticamente via
+automação (n8n)"; dispara de volta um webhook de saída
+AGENDAMENTO_APROVADO com aprovado_por='automacao_n8n'.
+Resposta: 200 → mensagem + id + status.
+
+--------------------------------------------------------------------
+COMPROVANTES (proxy assinado) — comprovante_bp (sem prefixo)
+--------------------------------------------------------------------
+GET /comprovante/<token>
+Proteção: pública, mas o "token" em si é a proteção — um token assinado
+com expiração curta (gerado só dentro de rotas já autenticadas que
+validam que o usuário tem acesso àquele agendamento/solicitação; ver
+app/utils/comprovante_link.py). Existe porque as URLs reais do Cloudinary
+são previsíveis (ag_<id>.png, plano_sol_<id>.png) e ficam publicamente
+acessíveis por padrão — servir por aqui evita expor essas URLs diretas.
+O que faz: decodifica o token (tipo: agendamento/plano/compra + id +
+barbearia_id), localiza o registro correspondente e faz proxy da imagem
+do Cloudinary de volta para o navegador (nunca redireciona para a URL
+real do Cloudinary).
+Validações: token inválido/expirado → 410 Gone (indica ao frontend para
+gerar um link novo); registro não encontrado ou sem comprovante → 404;
+falha ao buscar a imagem no Cloudinary → 502.
+Efeitos colaterais: nenhum (proxy de leitura). Resposta inclui
+Cache-Control: private, max-age=0, no-store (nunca cacheia, já que o
+token é de uso limitado no tempo).
+
+--------------------------------------------------------------------
+⚠️ ACHADO: código morto — app/routes/features.py (NÃO registrado)
+--------------------------------------------------------------------
+Este arquivo define um blueprint próprio (`features = Blueprint('features',
+__name__, url_prefix='/api/features')`) com rotas de feature flags, PIX de
+planos e perfil condicional do cliente — mas ele NÃO está registrado em
+`app/__init__.py` (conferido contra a lista completa de
+`app.register_blueprint(...)`, e uma busca por `routes.features` no
+projeto inteiro não encontra nenhum import dele em lugar nenhum). Ou
+seja, nenhuma dessas rotas (`/api/features/barbearia/<id>/list`,
+`/api/features/pix/pendentes`, `/api/features/pix/<id>/aprovar`,
+`/api/features/pix/<id>/rejeitar`, `/api/features/cliente/profile`, etc.)
+existe de fato na aplicação em execução.
+
+Pior: se alguém tentasse registrar esse blueprint hoje, a aplicação
+quebraria no import — o arquivo faz `from app.routes.auth import
+gestor_required, super_admin_required`, mas `app/routes/auth.py` (o
+arquivo real, documentado acima) não define nenhuma dessas duas funções
+(ele só tem as rotas de login/refresh/me/trocar-senha/reset). É código
+legado de uma versão anterior da arquitetura, quando talvez existisse um
+`gestor_required` dentro de `routes/auth.py` — hoje esses decorators
+vivem em `app/decorators/auth.py`. As funcionalidades equivalentes já
+foram reimplementadas nos lugares certos: features por barbearia estão
+em `gestor/features.py` e `super/barbearias.py`, aprovação de PIX de
+plano está em `gestor/planos.py` (rotas `/planos/solicitacoes/.../aprovar`
+e `/rejeitar`), e o perfil condicional do cliente é coberto por
+`cliente/features.py` + `cliente/perfil.py` + `cliente/planos.py`. Não é
+um bug em produção (o código nunca roda), mas é seguro para exclusão —
+vale considerar remover o arquivo para não confundir manutenção futura.
+
+
+====================================================================
+ PARTE 1 — BACKEND DO GESTOR (/api/v1/gestor/...)
+====================================================================
+
+======================================================================
+ARQUIVO: gestor/agendamento.py — blueprint gestor_agenda_bp (/api/v1/gestor)
+Alimenta as telas: Dashboard (indiretamente), Agenda, Aguardando Transferência
+======================================================================
+
+GET /api/v1/gestor/agendamentos
+Proteção: @gestor_required
+O que faz: Lista os agendamentos da barbearia do gestor logado, paginados. Alimenta a tela principal de Agenda/lista de agendamentos.
+Validações: Se "data" não for informado, assume o dia de hoje (nunca retorna o histórico inteiro por padrão). "data" deve ser YYYY-MM-DD. Se "barbeiro_id" for informado, checa que o profissional existe na barbearia (senão 404). "status", se informado, deve ser um dos status válidos. "page"/"per_page" devem ser inteiros; per_page é limitado a 100.
+Efeitos colaterais: Nenhum (somente leitura).
+Resposta: sucesso (200) → "dados" (lista de agendamentos formatados, incluindo cliente, profissional, serviços com comissão calculada, e status do PIX se houver) + metadados de paginação. Erros: 404 se barbeiro_id não existir; 400/422 se "data"/"status"/paginação forem inválidos.
+
+GET /api/v1/gestor/agendamentos/<id>
+Proteção: @gestor_required
+O que faz: Retorna o detalhe completo de um agendamento específico da barbearia.
+Validações: O agendamento deve existir e pertencer à barbearia do gestor.
+Resposta: sucesso (200) → objeto do agendamento. Erro: 404 se não existir/não for da barbearia.
+
+PUT /api/v1/gestor/agendamentos/<id>/aprovar
+Proteção: @gestor_required + @feature_required('pix_integrado')
+O que faz: Aprova manualmente um comprovante PIX pendente, movendo o agendamento para status "agendado". PIX nunca vira "agendado" automaticamente — sempre exige essa ação explícita.
+Validações: Agendamento deve existir na barbearia. Trava a linha (with_for_update) para evitar aprovação concorrente. Deve estar num status aprovável (aguardando_aprovacao/aguardando_comprovante/aguardando_pagamento) — senão 409 "Este agendamento já foi processado."
+Efeitos colaterais: Marca a solicitação de PIX como "aprovado"; se havia cupom, registra o uso; muda status para "agendado"; dispara webhook AGENDAMENTO_APROVADO (aprovado_por: gestor).
+Resposta: sucesso (200); erros: 404/409.
+
+PUT /api/v1/gestor/agendamentos/<id>/cancelar
+Proteção: @gestor_required
+O que faz: Cancela um agendamento em nome do gestor.
+Validações: Não pode cancelar se já "cancelado" ou "concluido" (400). "motivo" opcional (truncado a 300 caracteres).
+Efeitos colaterais: PIX pendente vira "rejeitado"; se havia cupom aplicado com status "agendado", decrementa o uso; status vira "cancelado"; webhook AGENDAMENTO_CANCELADO (cancelado_por: gestor).
+Resposta: sucesso (200); erros: 404/400.
+
+PUT /api/v1/gestor/agendamentos/<id>/iniciar
+Proteção: @gestor_required
+O que faz: Marca o início do atendimento ("em_atendimento") — o gestor pode fazer isso por qualquer profissional.
+Validações: precisa estar "agendado" (senão 422).
+
+PUT /api/v1/gestor/agendamentos/<id>/concluir
+Proteção: @gestor_required
+O que faz: Marca como concluído.
+Validações: precisa estar "agendado" ou "em_atendimento" (senão 422).
+
+GET /api/v1/gestor/agenda/grade?barbeiro_id=&data=
+Proteção: @gestor_required
+O que faz: Retorna a "grade do dia" de um profissional — configuração de horário, serviços que atende e agendamentos daquele dia.
+Validações: ambos parâmetros obrigatórios; barbeiro deve existir, pertencer à barbearia e estar ativo (404 senão).
+
+POST /api/v1/gestor/agenda/agendamento-manual
+Proteção: @gestor_required
+O que faz: Cria um agendamento manualmente em nome de um cliente (gestor agenda pelo telefone/balcão).
+Validações: barbeiro_id, nome, telefone, servico_id, data_hora obrigatórios; telefone normalizado; barbeiro/serviço devem existir/ativos; data_hora não pode ser passado; checa conflito de horário — mas PERMITE encaixe fora da grade configurada (decisão deliberada, diferente do fluxo normal do cliente).
+Efeitos colaterais: busca cliente pelo telefone (cria se não existir, atualiza nome se mudou); cria Agendamento (status "agendado", metodo_pagamento "presencial") + AgendamentoServico.
+Resposta: 201.
+
+GET /api/v1/gestor/agenda/bloqueios/mes?mes=&ano=
+Proteção: @gestor_required
+O que faz: Visão de calendário mensal de bloqueios de horário da barbearia, agregando por dia.
+
+POST /api/v1/gestor/agenda/bloqueios
+Proteção: @gestor_required
+O que faz: Cria bloqueio(s) de horário para TODOS os profissionais ativos de uma vez (ex.: feriado). Pode ser pontual ou recorrente (por até 1 ano à frente, semanal ou mensal).
+Validações: "data" obrigatória; se não "dia_inteiro", hora_inicio/hora_fim obrigatórios (HH:MM, fim > início); precisa haver ao menos 1 barbeiro ativo (404 senão).
+Efeitos colaterais: cria um HorarioBloqueado por barbeiro ativo, por data calculada.
+
+DELETE /api/v1/gestor/agenda/bloqueios/<id>
+Proteção: @gestor_required
+O que faz: Remove um bloqueio E todos os "irmãos" com mesmo intervalo/motivo (remove de todos os profissionais afetados de uma vez, espelhando a criação).
+
+POST /api/v1/gestor/barbeiros/<id>/bloqueios
+Proteção: @gestor_required
+O que faz: Cria um bloqueio específico para UM profissional (não afeta os outros).
+Validações: data_hora_inicio/fim obrigatórios (ISO 8601), fim > início.
+
+GET /api/v1/gestor/agenda/solicitacoes-liberacao?status=
+Proteção: @gestor_required
+O que faz: Lista solicitações de liberação de horário feitas por profissionais (pedido para desbloquear um período).
+
+PUT /api/v1/gestor/agenda/solicitacoes-liberacao/<id>
+Proteção: @gestor_required
+O que faz: Aprova ou rejeita uma solicitação de liberação.
+Validações: deve estar "pendente" (400 senão); "status" no corpo deve ser "aprovado" ou "rejeitado".
+Efeitos colaterais: se aprovado, remove os HorarioBloqueado do profissional que caem dentro do intervalo solicitado.
+
+POST /api/v1/gestor/agendamentos/<id>/transferir
+Proteção: @gestor_required
+O que faz: Transfere um agendamento de um profissional para outro dentro da mesma barbearia. Alimenta a ação de reatribuir na Agenda/mural de transferências.
+Validações: barbeiro_id (destino) obrigatório; agendamento precisa estar num status transferível (409 senão); destino precisa existir/ativo e não ser o mesmo já responsável (422); destino precisa atender TODOS os serviços (422 senão); revalida conflito de horário (409) e disponibilidade real nos slots (422).
+Efeitos colaterais: reatribui barbeiro_id; se estava "aguardando_transferencia", força "agendado"; atualiza/cria TransferenciaAgendamento (motivo "solicitado_gestor"); notifica in-app o cliente se ele tiver conta.
+
+GET /api/v1/gestor/agendamentos-sem-barbeiro
+Proteção: @gestor_required
+O que faz: Lista os agendamentos "órfãos" (status aguardando_transferencia) e, para cada um, quais profissionais ativos são elegíveis para assumi-lo. Alimenta o "mural de transferências".
+
+
+======================================================================
+ARQUIVO: gestor/catalogo.py — blueprint catalogo_bp (/api/v1/gestor)
+Alimenta as telas: Serviços, Produtos (abas Produtos/Categorias)
+======================================================================
+
+GET /api/v1/gestor/servicos, POST /api/v1/gestor/servicos, GET/PATCH/DELETE /api/v1/gestor/servicos/<id>
+Proteção: @gestor_required
+O que fazem: CRUD do catálogo de serviços. Criar exige nome, duracao_minutos (inteiro positivo) e preco (não-negativo). Editar é parcial. Excluir é soft-delete (ativo=False, preserva histórico de agendamentos).
+
+GET /api/v1/gestor/produtos/categorias, POST, PATCH/<id>, DELETE/<id>
+Proteção: @gestor_required (+ @feature_required('produtos_venda') nas rotas de escrita)
+O que fazem: CRUD de categorias de produto. Nome precisa ser único na barbearia (409 se duplicado). Exclusão é soft-delete.
+
+GET /api/v1/gestor/produtos, GET/<id>
+Proteção: @gestor_required
+O que fazem: listagem/detalhe de produtos, com preço, custo, margem calculada, estoque atual/reservado/disponível e flag "estoque_baixo".
+
+POST /api/v1/gestor/produtos
+Proteção: @gestor_required + @feature_required('produtos_venda')
+O que faz: cadastra um produto novo.
+Validações: nome obrigatório; preço/custo/estoque_minimo não-negativos; categoria_id (se enviado) precisa existir.
+Efeitos colaterais: produto nasce com estoque 0; se "quantidade_estoque" > 0 foi enviado, chama o serviço central de estoque para lançar a ENTRADA inicial (gera MovimentacaoEstoque) — evita duplicar o estoque inicial, um bug já corrigido no histórico do projeto.
+
+PATCH /api/v1/gestor/produtos/<id>
+Proteção: @gestor_required
+O que faz: edita campos do produto (não é aqui que se ajusta quantidade de estoque — isso é a rota dedicada abaixo).
+
+DELETE /api/v1/gestor/produtos/<id>
+Proteção: @gestor_required
+O que faz: soft-delete (ativo=False).
+
+POST /api/v1/gestor/produtos/<id>/ajustar-estoque
+Proteção: @gestor_required + @feature_required('produtos_venda')
+O que faz: ajusta manualmente o estoque (entrada/saída, positivo ou negativo).
+Efeitos colaterais: chama o serviço central de estoque (registra MovimentacaoEstoque tipo "ajuste" + atualiza quantidade), grava motivo e usuário responsável.
+
+POST /api/v1/gestor/produtos/<id>/foto
+Proteção: @gestor_required
+O que faz: upload da foto do produto para o Cloudinary (pasta por barbearia, public_id fixo produto_<id>, overwrite+invalidate).
+Resposta: 200 → foto_url; erros: 400 arquivo ausente/inválido; 502 falha no Cloudinary.
+
+
+======================================================================
+ARQUIVO: gestor/profissionais.py — blueprint profissionais_bp (/api/v1/gestor)
+Alimenta a tela: Funcionários
+======================================================================
+
+GET /api/v1/gestor/barbeiros, GET/<id>
+Proteção: @gestor_required
+O que fazem: listagem/detalhe de profissionais (dados de usuário, comissões, ativo, configuração de agenda resumida, serviços que atende).
+
+POST /api/v1/gestor/barbeiros
+Proteção: @gestor_required
+O que faz: cadastra um novo profissional — cria SIMULTANEAMENTE o Usuario (perfil barbeiro) e o registro Barbeiro.
+Validações: nome/telefone/senha obrigatórios (senha mín. 6); e-mail (se informado) precisa ser único (409 senão).
+
+PATCH /api/v1/gestor/barbeiros/<id>
+Proteção: @gestor_required
+O que faz: edita nome/bio/comissões e trata a DESATIVAÇÃO de profissional (o caso mais complexo do arquivo).
+Validações relevantes: ao desativar (ativo=false), verifica se há agendamentos futuros ativos do profissional. Se houver e o gestor NÃO enviou acao="transferir_mural", BLOQUEIA com 409 devolvendo a lista desses agendamentos (para o gestor decidir na tela). Se enviou acao="transferir_mural", prossegue mesmo assim.
+Efeitos colaterais: se desativando com transferir_mural, cada agendamento futuro muda para "aguardando_transferencia" + cria TransferenciaAgendamento (motivo "barbeiro_desativado") + notifica in-app o cliente; sincroniza Usuario.ativo junto; ao desativar, revoga TODOS os tokens de sessão do usuário; registra auditoria (comissões alteradas, ativo/desativado).
+
+POST /api/v1/gestor/barbeiros/<id>/servicos, DELETE /api/v1/gestor/barbeiros/<id>/servicos/<servico_id>
+Proteção: @gestor_required
+O que fazem: atribui/remove um serviço à lista de serviços que o profissional oferece. Não pode atribuir duplicado (409).
+
+GET/PUT /api/v1/gestor/barbeiros/<id>/agenda
+Proteção: @gestor_required
+O que fazem: consulta/edita a ConfiguracaoAgenda do profissional (horário, intervalo, se a loja está aberta pra ele, se ele pode editar o próprio horário).
+
+POST /api/v1/gestor/barbeiros/<id>/agenda/pausas, DELETE .../pausas/<id>
+Proteção: @gestor_required
+O que fazem: cadastra/remove pausas recorrentes (ex.: almoço).
+Validações: hora_fim > hora_inicio; se já existe config, a pausa precisa caber dentro do horário de trabalho; não pode sobrepor outra pausa já cadastrada (erro citando o conflito).
+
+
+======================================================================
+ARQUIVO: gestor/planos.py — blueprint planos_bp (/api/v1/gestor)
+Alimenta as telas: Planos, Solicitações de Plano
+======================================================================
+
+GET /api/v1/gestor/planos, GET/<id>
+Proteção: @gestor_required
+O que fazem: lista/detalha planos de assinatura, cada um com os serviços cobertos (limite mensal ou ilimitado) e contagem de assinantes ativos.
+
+POST /api/v1/gestor/planos, PATCH/<id>, DELETE/<id>
+Proteção: @gestor_required + @feature_required('planos')
+O que fazem: CRUD de planos. barbeiro_id null = "plano aberto" (qualquer profissional atende). max_assinaturas opcional. DELETE é soft-delete (não mexe nas assinaturas já existentes).
+
+POST /api/v1/gestor/planos/<id>/servicos, DELETE .../servicos/<servico_id>
+Proteção: @gestor_required (SEM @feature_required aqui, diferente das demais rotas de gerenciamento do arquivo)
+O que fazem: vincula/desvincula um serviço ao plano, com limite_uso_mensal (ou "ilimitado") e dias_expiracao (padrão 30). Não pode adicionar serviço duplicado (409).
+
+GET /api/v1/gestor/planos/<id>/assinaturas
+Proteção: @gestor_required
+O que faz: lista os clientes assinantes (ativos e inativos) daquele plano.
+
+GET /api/v1/gestor/planos/solicitacoes?status=&page=&per_page=
+Proteção: @gestor_required
+O que faz: fila paginada de solicitações de assinatura de plano feitas por clientes.
+
+PUT /api/v1/gestor/planos/solicitacoes/<id>/aprovar
+Proteção: @gestor_required
+O que faz: aprova a solicitação e ATIVA a assinatura do cliente. PIX de plano NUNCA ativa sozinho — sempre passa por aqui.
+Validações: trava a solicitação e o Plano (evita corrida entre aprovações simultâneas); precisa estar PENDENTE (409 senão); plano precisa estar ativo (422 senão); se tem limite de assinantes e já foi atingido, 403; plano precisa ter ao menos 1 serviço ativo com dias_expiracao definido (422 — checagem que corrigiu um bug de assinaturas ficarem sem data de expiração).
+Cálculo: data_fim = hoje + o MAIOR dias_expiracao entre os serviços ativos do plano (prazo mais generoso).
+Efeitos colaterais: cria ClientePlano ativo; após o commit, dispara processamento de VIP leveling do cliente (falha aqui não desfaz a aprovação); dispara webhook PLANO_ATIVADO.
+Resposta: erro extra 409 "Solicitação já aprovada por outro gestor." se IntegrityError por corrida.
+
+PUT /api/v1/gestor/planos/solicitacoes/<id>/rejeitar
+Proteção: @gestor_required
+O que faz: rejeita a solicitação pendente, com motivo opcional (default "Rejeitado pelo gestor.").
+
+
+======================================================================
+ARQUIVO: gestor/cupons.py — blueprint cupons_bp (/api/v1/gestor)
+Alimenta a tela: Cupons
+Todas as rotas usam @gestor_required + @feature_required('cupons')
+======================================================================
+
+GET /api/v1/gestor/cupons?ativo=&page=&per_page=
+O que faz: lista paginada de cupons, com status de expiração calculado e a que se aplicam (nenhum/todos/lista específica de serviços e produtos).
+
+POST /api/v1/gestor/cupons
+Validações: nome/código obrigatórios (código normalizado maiúsculo, único na barbearia — 409 senão); tipo_desconto percentual ou valor_fixo; valor_desconto positivo (percentual não pode passar de 100); data_expiracao obrigatória; quantidade_maxima_usos opcional; servicos_modo/produtos_modo (nenhum/todos/selecionar) — "selecionar" exige lista de IDs não-vazia, todos existentes (404 senão, 422 se vazia).
+Efeitos colaterais: cria Cupom + CupomServico/CupomProduto conforme aplicável.
+
+PATCH /api/v1/gestor/cupons/<id>
+O que faz: edição parcial. Se servicos_modo/produtos_modo vierem no payload, APAGA todas as associações daquela dimensão e recria do zero (substituição completa, não incremental).
+
+GET /api/v1/gestor/cupons/<id>/uso
+O que faz: relatório de uso do cupom — quem usou, quando, valor de desconto de cada uso; calcula usos_restantes e soma total já descontado (histórico completo, sem filtro de período).
+
+DELETE /api/v1/gestor/cupons/<id>
+O que faz: soft-delete (preserva o cupom e seu histórico de uso).
+
+
+======================================================================
+ARQUIVO: gestor/vendas.py — blueprint gestor_vendas_bp (/api/v1/gestor/vendas)
+Alimenta a tela: Vendas (submenu de Produtos)
+PDV de produtos avulsos — lógica centralizada em app.utils.vendas
+(criar_venda_core/cancelar_venda_core), reaproveitada pelo PDV do barbeiro.
+======================================================================
+
+POST /api/v1/gestor/vendas
+Proteção: @gestor_required + @feature_required('produtos_venda')
+O que faz: registra uma venda avulsa de um ou mais produtos.
+Validações: corpo não vazio; ao menos 1 item; metodo_pagamento pix/dinheiro/cartao; não pode informar cliente_id E cliente_nome_livre juntos; cliente_id (se enviado) deve existir; barbeiro_id (se enviado, vendedor p/ comissão) deve existir/ativo; cada item precisa de produto_id+quantidade positiva; produto deve existir/ativo; estoque suficiente por item (422 com lock atômico, evita corrida entre vendas simultâneas).
+Efeitos colaterais: cria Venda (status "concluida") + VendaItem por item + MovimentacaoEstoque "saida_venda" por item; calcula comissão do barbeiro por item; se cupom, valida/incrementa/registra uso; dispara webhook venda_concluida.
+Resposta: 201.
+
+GET /api/v1/gestor/vendas?data=&page=&per_page=
+O que faz: histórico paginado de vendas, mais recentes primeiro.
+
+POST /api/v1/gestor/vendas/<id>/cancelar
+Proteção: @gestor_required + @feature_required('produtos_venda')
+O que faz: cancela uma venda concluída, devolvendo o estoque de cada item (MovimentacaoEstoque "entrada", motivo "cancelamento venda").
+Validações: não pode já estar cancelada (422).
+
+
+======================================================================
+ARQUIVO: gestor/clientes.py — blueprint gestor_clientes_bp (/api/v1/gestor)
+Alimenta a tela: Clientes
+======================================================================
+
+GET /api/v1/gestor/clientes
+Proteção: @gestor_required
+O que faz: tela principal de clientes — lista paginada/filtrável + painel de stats + gráfico + insights, tudo num único endpoint.
+Validações: "status" precisa ser um de {ativo, novos, em_risco, vip, inativos} (422 senão); barbeiro_id (se enviado) precisa existir (404 senão).
+Lógica de cálculo (a parte mais rica do arquivo):
+  - visitas/gasto/última visita calculados a partir de agendamentos CONCLUÍDOS.
+  - Classificação por prioridade: "inativo" (Cliente.ativo=False) > "vip" (gasto ≥ R$500) > "novo" (cadastrado ≤7 dias) > "em_risco" (>60 dias sem visita) > "ativo".
+  - ATENÇÃO: o filtro "status=inativos" usa regra DIFERENTE da classificação acima — considera "inativo por falta de retorno" (nunca veio, ou +30 dias sem visitar), independente do campo Cliente.ativo.
+  - Busca textual e filtro por barbeiro são feitos no banco; filtro por "status" classificado é aplicado em memória (depende de dados agregados).
+  - Stats: total, novos no mês, inativos 30+ dias, ticket médio (só entre quem tem ≥1 visita), % retenção (clientes com ≥2 visitas), quantidade VIP.
+  - Gráfico: novos clientes por mês, últimos 6 meses.
+  - Insights: em_risco (top5), follow_up (7-30 dias, top5), novos_7d (até 5), top5 por gasto.
+Resposta: 200 → {stats, chart_novos, dados, paginação, insights}.
+
+GET /api/v1/gestor/clientes/<id>
+O que faz: perfil detalhado — dados pessoais, totais, serviço mais feito (maior contagem entre agendamentos concluídos) e histórico dos últimos 5 atendimentos concluídos.
+
+PATCH /api/v1/gestor/clientes/<id>
+O que faz: edição parcial pelo gestor.
+Validações: nome (se enviado) não pode ficar vazio; email normalizado; telefone vazio é IGNORADO (não permite apagar telefone por esta rota); data_nascimento precisa ser YYYY-MM-DD válida.
+Efeitos colaterais: se "ativo" mudar e o cliente tiver conta de usuário vinculada, sincroniza Usuario.ativo também — desativar aqui bloqueia o login do cliente.
+
+
+======================================================================
+ARQUIVO: gestor/relatorios.py — blueprint gestor_relatorios_bp (/api/v1/gestor)
+Alimenta a tela: Relatórios
+Rotas de agendamentos (JSON/Excel/PDF) compartilham o parser _parse_params()
+(valida "colunas" — 5 são sempre obrigatórias — e "de"/"ate" YYYY-MM-DD,
+padrão = do 1º dia do mês até hoje).
+======================================================================
+
+GET /api/v1/gestor/relatorios/agendamentos
+O que faz: relatório detalhado de agendamentos do período em JSON, 1 linha por agendamento, colunas configuráveis (data, cliente, serviços concatenados [marca "[P]" se pago via plano], status, valor_total, barbeiro, forma de pagamento, origem online/local, status_pagamento, duração). Soma receita_total se a coluna valor_total foi escolhida.
+
+GET /api/v1/gestor/relatorios/agendamentos/excel, .../pdf
+O que fazem: mesma extração de dados exportada como .xlsx/.pdf para download (cabeçalho com nome/período, zebra striping, linha de TOTAL em negrito se valor_total estiver presente; PDF usa paisagem se >5 colunas).
+
+GET /api/v1/gestor/relatorios/colunas
+O que faz: devolve o catálogo de colunas disponíveis (para montar os checkboxes de seleção na UI).
+
+GET /api/v1/gestor/relatorios/dividas
+O que faz: lista clientes com pagamento pendente, somando quanto cada um deve — NÃO usa filtro de período, soma TODOS os agendamentos status_pagamento=pendente de qualquer data.
+
+GET /api/v1/gestor/relatorios/vendas-produtos
+O que faz: relatório de produtos vendidos no período, consolidando as DUAS origens que normalmente não se cruzam: venda avulsa/PDV (Venda/VendaItem) e venda pela caixa diária do barbeiro (BarbeiroCaixa/ItemCaixa) — único ponto do sistema que soma as duas visões.
+
+GET /api/v1/gestor/relatorios/caixa
+O que faz: relatório de "caixa" por barbeiro no período — soma venda de produtos (ItemCaixa) + recebimentos de atendimento pago no local, por forma de pagamento. Nota: o "pix" aqui é só o PIX recebido presencialmente (forma_pagamento_recebido) — PIX antecipado online já entra como "pago" automaticamente e não passa por este relatório.
+
+
+======================================================================
+ARQUIVO: gestor/auditoria.py — blueprint gestor_auditoria_bp (/api/v1/gestor)
+Alimenta a tela: Auditoria (submenu de Relatórios)
+======================================================================
+
+GET /api/v1/gestor/auditoria?tipo_acao=&entidade=&de=&ate=&page=&per_page=
+Proteção: @gestor_required
+O que faz: lista o log de auditoria (AuditoriaLog) DESTA barbearia (contraparte tenant-scoped do /api/v1/super/auditoria, que é cross-tenant).
+Validações: de/ate (opcionais) YYYY-MM-DD; page/per_page inteiros (per_page máx. 200).
+
+
+======================================================================
+ARQUIVO: gestor/webhook.py — blueprint gestor_webhook_bp (/api/v1/gestor/webhook)
+Alimenta a tela: Webhook / n8n
+Configuração de webhook de SAÍDA (BarbeariaWebhookConfig, 1 por barbearia).
+O disparo real (disparar_webhook, em app/utils/webhooks.py) é síncrono,
+timeout 5s, nunca lança exceção (falha só é logada), sem fila de retry.
+======================================================================
+
+GET /api/v1/gestor/webhook
+O que faz: retorna a configuração atual (ou um objeto "vazio" se nunca configurado, em vez de 404).
+
+PUT /api/v1/gestor/webhook
+O que faz: salva/atualiza (cria se não existir). Todos os campos opcionais, só aplica os presentes.
+Validações: webhook_url deve começar com http:// ou https:// (HTTPS não é obrigatório, de propósito, para permitir testes com n8n local); eventos_ativos deve ser lista de eventos válidos (TipoEventoWebhook.TODOS); não pode ativar sem uma URL já configurada.
+Efeitos colaterais: se permite_auto_aprovacao for ligado pela 1ª vez sem secret ainda, gera um automaticamente.
+
+POST /api/v1/gestor/webhook/secret/regenerar
+O que faz: gera novo secret (invalida o anterior) — recomendado se o gestor suspeitar que vazou.
+
+POST /api/v1/gestor/webhook/testar
+O que faz: dispara um POST síncrono de teste (não grava WebhookLog — é considerado validação manual, não evento de negócio).
+Resposta: sempre 200, com {sucesso, http_status, erro} dentro do corpo (o teste em si nunca "falha" no sentido HTTP, só reporta o resultado).
+
+GET /api/v1/gestor/webhook/logs?page=&per_page=
+O que faz: histórico paginado de disparos reais.
+
+Nota sobre o disparo em si (não é rota, mas é chamado por vendas.py/compras.py/agendamento.py/planos.py etc.): só envia se ativo=True, com URL preenchida e o tipo_evento estar na lista eventos_ativos. Payload inclui evento, barbearia_id, dados básicos da barbearia, contato do gestor ativo, e o dicionário específico do evento. Todo disparo real grava WebhookLog.
+
+
+======================================================================
+ARQUIVO: gestor/dashboard.py — blueprint gestor_dash_bp (/api/v1/gestor)
+Alimenta a tela: Dashboard
+======================================================================
+
+GET /api/v1/gestor/dashboard
+O que faz: agregações do dia/mês para o painel principal.
+Retorna: hoje (agendamentos concluídos/agendados/cancelados + receita do dia), mes (total/concluídos/receita/ticket médio), pendentes_pix (contagem aguardando comprovante/aprovação/pagamento), agendamentos_pendentes (hoje, status_pagamento pendente), top_servicos (top 5 do mês por quantidade), estoque_critico (até 10 produtos abaixo do mínimo + contagem total), assinantes_ativos (só se feature "planos" ativa, senão null), rotulos (labels centralizados via app.labels.L — suporta a plataforma multi-segmento).
+
+
+======================================================================
+ARQUIVO: gestor/perfil.py — blueprint gestor_perfil_bp (/api/v1/gestor/perfil)
+Alimenta a tela: Meu Perfil
+======================================================================
+
+GET /api/v1/gestor/perfil
+O que faz: dados atuais da barbearia + da conta do gestor.
+
+PATCH /api/v1/gestor/perfil/barbearia
+O que faz: atualiza dados cadastrais da barbearia (nome, contatos, Instagram, endereço, horário). Parcial.
+Validações: nome_exibicao não pode ficar vazio; horários HH:MM válidos.
+
+PATCH /api/v1/gestor/perfil/conta
+O que faz: atualiza nome/e-mail da própria conta.
+Validações: e-mail não pode já pertencer a outra conta (409).
+
+POST /api/v1/gestor/perfil/senha
+O que faz: troca a senha do gestor.
+Validações: senha atual precisa bater (401 senão); nova senha mín. 8 caracteres.
+
+POST /api/v1/gestor/perfil/logo
+O que faz: upload da logo para o Cloudinary (public_id fixo por barbearia, overwrite+invalidate — sobrescreve a anterior).
+Validações: JPG/JPEG/PNG/WebP, máximo 5 MB.
+
+
+======================================================================
+ARQUIVO: gestor/barbearia.py — blueprint gestor_barbearia_bp (/api/v1/gestor)
+Alimenta as telas: Config. PIX, Aparência
+======================================================================
+
+GET/PATCH /api/v1/gestor/barbearia/pix
+O que fazem: consulta/edita chave PIX + titular (máx. 25 car.) + cidade (máx. 15 — limite do padrão PIX/EMV) + banco.
+
+POST /api/v1/gestor/barbearia/pix/testar
+O que faz: valida o FORMATO de uma chave PIX (e-mail/CPF/CNPJ/telefone/aleatória), sem persistir nada e sem chamar nenhum serviço bancário externo — validação puramente local por padrão de dígitos.
+Resposta: sempre 200 → {valida, mensagem}.
+
+GET /api/v1/gestor/barbearia/tema
+Proteção: @_require(['gestor','barbeiro']) — DIFERENTE do padrão do arquivo: também libera o perfil barbeiro (a base.html do barbeiro também aplica essas cores em runtime).
+O que faz: retorna cor primária/fonte/tema atuais.
+
+PATCH /api/v1/gestor/barbearia/tema
+Proteção: @gestor_required (só o gestor pode ALTERAR, diferente do GET)
+O que faz: define o tema entre um conjunto fixo: preto, branco, rosa, azul_claro, verde_claro (422 se outro valor).
+
+
+======================================================================
+ARQUIVO: gestor/compras.py — blueprint gestor_compras_bp (/api/v1/gestor/compras)
+Alimenta a tela: Pedidos de Compra
+Aprovar reaproveita o mesmo núcleo criar_venda_core do PDV do gestor.
+======================================================================
+
+GET /api/v1/gestor/compras?status=pendente
+Proteção: @gestor_required + @feature_required('produtos_venda')
+O que faz: lista solicitações de compra de produto feitas por clientes pelo portal, filtráveis por status.
+
+POST /api/v1/gestor/compras/<id>/aprovar
+O que faz: aprova um pedido pendente, convertendo-o em Venda concluída de verdade.
+Validações: trava a solicitação (with_for_update); precisa estar "pendente" (409 senão); demais validações de venda (estoque, produto ativo) ocorrem dentro de criar_venda_core.
+Efeitos colaterais: cria Venda+VendaItem+MovimentacaoEstoque via criar_venda_core, usando cliente/pagamento/cupom já registrados na solicitação; vincula venda_id na solicitação; dispara webhook venda_concluida (origem: 'solicitacao_cliente').
+
+POST /api/v1/gestor/compras/<id>/rejeitar
+O que faz: rejeita com motivo opcional. Não mexe em estoque, não dispara webhook.
+
+
+======================================================================
+ARQUIVO: gestor/whatsapp_bot.py — blueprint gestor_whatsapp_bot_bp
+(/api/v1/gestor/whatsapp-bot)
+Alimenta a tela: Bot WhatsApp
+Integra com Evolution API (gateway self-hosted junto do n8n). Cada
+barbearia tem sua própria "instância" (1 número, pareado via QR code).
+Falhas de config (env vars ausentes) → 503; falhas de comunicação → 502.
+======================================================================
+
+GET /api/v1/gestor/whatsapp-bot
+O que faz: consulta o status atual da conexão (reflete o estado a cada chamada — sem lógica de poll no servidor, quem faz polling é o frontend). Se ainda não há instância, responde sem chamar a Evolution API.
+
+POST /api/v1/gestor/whatsapp-bot/conectar
+O que faz: cria a instância na Evolution API (se ainda não existir, já configurando o webhook de mensagens recebidas apontando pro N8N_BOT_WEBHOOK_URL, com header X-Webhook-Secret se configurado) e devolve o QR code (base64) para escanear.
+Validações: N8N_BOT_WEBHOOK_URL precisa estar configurada no servidor (503 senão).
+
+POST /api/v1/gestor/whatsapp-bot/desconectar
+O que faz: logout do número (a instância continua existindo, permite reconectar escaneando de novo).
+
+DELETE /api/v1/gestor/whatsapp-bot
+O que faz: remove a instância por completo (recomeçar do zero, ex. trocar de número). Limpa Barbearia.whatsapp_instance_id.
+
+
+======================================================================
+ARQUIVO: gestor/estoque.py — blueprint gestor_estoque_bp (/api/v1/gestor/estoque)
+Alimenta a tela: Produtos (aba Movimentações)
+Toda alteração passa por app/utils/estoque.py: UPDATE atômico com guarda
+de linha — nunca escreve direto em Produto.quantidade_estoque.
+======================================================================
+
+POST /api/v1/gestor/estoque/movimentar
+Proteção: @gestor_required + @feature_required('produtos_venda')
+O que faz: registra movimentação manual — entrada, saída (uso/consumo) ou ajuste (único tipo bidirecional, sinal decide a direção; usado para correção de inventário/quebra/perda).
+Validações: tipo válido (entrada/saida_venda/saida_uso/ajuste); quantidade inteiro ≠ 0; motivo obrigatório; entrada exige positivo; saídas exigem magnitude positiva e falham com 422 se estoque insuficiente.
+
+GET /api/v1/gestor/estoque/movimentacoes?produto_id=&page=&per_page=
+O que faz: histórico paginado de movimentações, opcionalmente filtrado por produto.
+
+
+======================================================================
+ARQUIVO: gestor/features.py — blueprint gestor_features_bp (/api/v1/gestor)
+Alimenta indiretamente todas as telas gateadas por feature
+======================================================================
+
+GET /api/v1/gestor/features
+O que faz: lista todas as features do catálogo com status ativo/inativo para esta barbearia (feature sem registro é considerada inativa).
+
+GET /api/v1/gestor/historico-cliente/resumo
+Proteção: @gestor_required + @feature_required('historico_cliente')
+O que faz: endpoint DE EXEMPLO (conforme comentário no código) — top 10 clientes por número de agendamentos, serve como referência de implementação do padrão feature_required além de funcionalidade real.
+
+
+======================================================================
+ARQUIVO: gestor/solicitacoes_senha.py — blueprint gestor_solicitacoes_senha_bp
+(/api/v1/gestor/solicitacoes-senha)
+Alimenta a tela: Solicitações de Senha
+======================================================================
+
+GET /api/v1/gestor/solicitacoes-senha
+O que faz: lista pedidos de redefinição de senha PENDENTES e não expirados feitos por CLIENTES desta barbearia — o gestor repassa o código manualmente por WhatsApp (não há envio automático). Filtra status='pendente' e expira_em > agora (UTC).
+
+
+====================================================================
+ PARTE 2 — BACKEND DO FUNCIONÁRIO / BARBEIRO (/api/v1/barbeiro/...)
+====================================================================
+Nota geral: toda rota abaixo usa @barbeiro_required (perfil barbeiro ou
+super_admin, bloqueando se o tenant estiver desativado) — não repetido
+rota a rota.
+
+======================================================================
+ARQUIVO: barbeiro/agendamentos.py — blueprint barbeiro_ag_bp (/api/v1/barbeiro)
+Alimenta a tela: Agendamentos, Disponíveis
+======================================================================
+
+GET /api/v1/barbeiro/agendamentos?data=&status=
+O que faz: lista os agendamentos do barbeiro logado (hoje por padrão, fuso Brasília). Cada item vem enriquecido em lote (evita N+1) com dados do cliente, serviços, até 5 últimas visitas concluídas do cliente, até 5 últimas notas e URL do comprovante PIX se houver.
+
+PATCH /api/v1/barbeiro/agendamentos/<id>/iniciar
+O que faz: botão "Iniciar" — AGENDADO → EM_ATENDIMENTO. Validação: status atual precisa ser exatamente "agendado" (422 senão).
+
+PATCH /api/v1/barbeiro/agendamentos/<id>/concluir
+O que faz: botão "Concluir". Aceita "notas_internas" opcional que SOBRESCREVE (não concatena) a observação, truncada a 300 caracteres.
+Validações: status precisa ser AGENDADO ou EM_ATENDIMENTO (422 senão — não dá pra concluir um já cancelado/concluído).
+Nota: não mexe em comissão/estoque diretamente — comissão é calculada sob demanda no dashboard, não persistida aqui.
+
+PATCH /api/v1/barbeiro/agendamentos/<id>/cancelar
+O que faz: botão "Cancelar". Aceita "motivo" opcional.
+Validações: não pode já estar CONCLUIDO/CANCELADO (422).
+Efeitos colaterais: se havia cupom aplicado com status AGENDADO, decrementa o uso (devolve a cota); dispara webhook AGENDAMENTO_CANCELADO (cancelado_por='barbeiro').
+
+PATCH /api/v1/barbeiro/agendamentos/<id>/aprovar-comprovante
+Proteção: + @feature_required('pix_integrado')
+O que faz: botão "Aprovar PIX" — usa o mesmo núcleo aprovar_comprovante_pix() do gestor e do callback automático do n8n.
+Validações: trava a linha (with_for_update); status precisa estar entre os 3 "aprováveis" — senão 409 (tratado como conflito de estado, não 422).
+Efeitos colaterais: marca a solicitação PIX como aprovada; se cupom, incrementa+registra uso; status vira "agendado"; webhook AGENDAMENTO_APROVADO (aprovado_por='barbeiro').
+
+PATCH /api/v1/barbeiro/agendamentos/<id>/receber-pagamento
+O que faz: botão "Receber pagamento" no balcão — registra recebimento SEM passar pelo fluxo PIX. Controle SEPARADO do status do atendimento (status_pagamento é independente de status do agendamento). Comentário no código deixa explícito: isso NÃO cria ItemCaixa (o total da caixa diária de produtos é só venda avulsa de produto).
+Validações: não pode receber de novo se já PAGO (422); forma_pagamento obrigatória (pix/dinheiro/cartao).
+
+POST /api/v1/barbeiro/agendamentos/<id>/notas
+O que faz: adiciona uma ClienteNota vinculada ao cliente do agendamento — diferente do campo "observacao" usado por concluir/cancelar, fica no histórico PERMANENTE do cliente, visível para outros barbeiros/gestor.
+Validações: texto obrigatório (422 senão).
+
+GET /api/v1/barbeiro/agendamentos-disponiveis
+O que faz: "mural de transferência" — lista agendamentos órfãos (AGUARDANDO_TRANSFERENCIA) que ESTE barbeiro pode assumir (exclui os já dele; filtra por elegibilidade: oferece todos os serviços E tem horário livre).
+
+POST /api/v1/barbeiro/agendamentos/<id>/pegar
+O que faz: botão "Pegar atendimento" — assume um agendamento órfão.
+Validações (cadeia importante): trava a linha ANTES de decidir qualquer coisa; RE-checa pós-lock se o status ainda é AGUARDANDO_TRANSFERENCIA (409 "não está mais disponível" se outro barbeiro já pegou enquanto esperava o lock); barbeiro precisa oferecer TODOS os serviços (422 senão); checa conflito de agenda (409, informando o horário conflitante); valida que o horário está entre os slots realmente disponíveis (422 senão).
+Efeitos colaterais: reatribui barbeiro_id e volta status para AGENDADO; atualiza/cria TransferenciaAgendamento (CONCLUIDA, motivo='pego_pelo_mural'); notifica in-app o cliente se tiver conta, citando o nome do novo barbeiro.
+
+
+======================================================================
+ARQUIVO: barbeiro/horario.py — blueprint barbeiro_horario_bp (/api/v1/barbeiro)
+Alimenta a tela: Horário
+======================================================================
+
+GET /api/v1/barbeiro/horario
+O que faz: carrega config de horário + lista de pausas. Devolve "bloqueado": true quando não há config OU o gestor não concedeu permite_horario_barbeiro — front usa isso pra desabilitar a edição.
+
+PATCH /api/v1/barbeiro/horario
+O que faz: barbeiro edita o PRÓPRIO horário — só permitido se o gestor liberou (ConfiguracaoAgenda.permite_horario_barbeiro).
+Validações: bloqueia com 403 ANTES de ler o corpo se não há config OU não tem permissão; horários HH:MM válidos; intervalo_minutos ≥ 5.
+⚠️ Nota de código morto: existe um bloco de "criar config se não existir", mas como a checagem de permissão já barra (403) quando a config não existe, esse caminho nunca é de fato alcançado na prática.
+
+POST /api/v1/barbeiro/pausas
+O que faz: botão "Adicionar pausa".
+Validações: mesma checagem de permite_horario_barbeiro (403); hora_fim > hora_inicio; checa sobreposição contra TODAS as pausas já cadastradas (pausas são recorrentes/diárias, sem data) — 409 citando o conflito.
+
+PATCH /api/v1/barbeiro/pausas/<id>, DELETE /api/v1/barbeiro/pausas/<id>
+⚠️ Nota de inconsistência: diferente de POST /pausas e PATCH /horario, estas DUAS rotas NÃO checam permite_horario_barbeiro — um barbeiro SEM permissão de editar horário ainda consegue editar/excluir uma pausa já existente.
+
+
+======================================================================
+ARQUIVO: barbeiro/caixa.py — blueprint barbeiro_caixa_bp (/api/v1/barbeiro/caixa)
+Alimenta a tela: Caixa
+Caixa diária: abre na primeira venda/abertura do dia, acumula ItemCaixa,
+fecha manualmente. Preço de produto é SEMPRE resolvido no servidor a
+partir de Produto.preco (nunca aceito do cliente — previne manipulação
+de preço via requisição adulterada). Estoque sempre via serviço central.
+======================================================================
+
+GET /api/v1/barbeiro/caixa?data=
+O que faz: retorna a caixa do dia (default hoje) com itens + total. Devolve `null` (ainda 200, não 404) se ainda não existe caixa aberta — front trata null como "mostrar botão Abrir caixa".
+
+POST /api/v1/barbeiro/caixa
+O que faz: botão "Abrir caixa" — abre a caixa do dia corrente. IDEMPOTENTE: chamar de novo no mesmo dia não duplica (constraint única uq_barbeiro_caixa_data garante isso mesmo sob concorrência). 201 se criou agora, 200 se já existia.
+
+POST /api/v1/barbeiro/caixa/<id>/itens
+Proteção: + @feature_required('produtos_venda')
+O que faz: botão "Vender" dentro do modal de venda — registra a venda avulsa de um produto (opcionalmente vinculada a um agendamento).
+Validações: caixa precisa pertencer ao barbeiro logado (404, inclusive se a caixa existe mas é de outro barbeiro — 404 em vez de 403 pra não confirmar a terceiros que ela existe); produto_id+quantidade obrigatórios; desconto_percentual 0-100; forma_pagamento válida; produto precisa existir/ativo (404); serviço interno bloqueia com 422 se a caixa já estiver fechada.
+Efeitos colaterais: cria ItemCaixa com preço travado no momento da venda; dá baixa no estoque via serviço central (lock atômico, evita duas caixas venderem a última unidade em disputa) com MovimentacaoEstoque "Venda avulsa — caixa #<id>"; incrementa caixa.total.
+
+DELETE /api/v1/barbeiro/caixa/itens/<id>
+Proteção: + @feature_required('produtos_venda')
+O que faz: remove um item lançado por engano (desfaz a venda).
+Validações: item/caixa precisam pertencer ao barbeiro (404); bloqueado com 422 se a caixa já estiver fechada.
+Efeitos colaterais: ESTORNA o estoque (registra ENTRADA, motivo "Estorno — remoção de item da caixa #<id>"); decrementa caixa.total (nunca abaixo de 0).
+
+PATCH /api/v1/barbeiro/caixa/<id>/fechar
+O que faz: botão "Fechar caixa" — trava contra novas alterações.
+Validações: tentar fechar uma caixa já fechada é bloqueado (422 "Caixa já fechado.") em vez de sobrescrever o timestamp original (protege a auditoria de quando ela realmente fechou).
+Efeitos colaterais: grava fechado_em (horário Brasília, não UTC — é exibido, não é log interno). Não apaga nem trava fisicamente os itens; a proteção é feita checando fechado_em nas outras duas rotas.
+
+
+======================================================================
+ARQUIVO: barbeiro/clientes.py — blueprint barbeiro_cli_bp (/api/v1/barbeiro)
+Alimenta a tela: Clientes
+======================================================================
+
+GET /api/v1/barbeiro/clientes
+O que faz: lista clientes DISTINTOS que já tiveram algum agendamento com ESTE barbeiro específico (não todos os clientes da barbearia). Cada linha: últimos 3 agendamentos, total de visitas concluídas, última visita, nota mais recente como "preferências".
+⚠️ Observação de eficiência: consultas feitas em loop por cliente (não em lote como agendamentos.py) — funcionalmente correto, mas pode ficar lento com muitos clientes.
+⚠️ Observação de ordenação: ordena por "última visita" como STRING no formato 'dd/mm/aaaa' — não é cronologicamente correto entre meses/anos diferentes.
+
+GET /api/v1/barbeiro/clientes/<id>/historico
+O que faz: até 10 agendamentos mais recentes (qualquer status) com ESTE barbeiro + TODAS as notas do cliente (notas são da barbearia toda, não filtradas por barbeiro).
+
+GET /api/v1/barbeiro/clientes/<id>/notas
+O que faz: lista todas as notas do cliente (de qualquer autor).
+
+POST /api/v1/barbeiro/clientes/<id>/notas
+O que faz: adiciona uma nota visível para toda a barbearia.
+Validações: texto obrigatório (422 senão); categoria/tipo opcional (categoria tem prioridade se ambos vierem), default 'observacao'.
+
+
+======================================================================
+ARQUIVO: barbeiro/dashboard.py — blueprint barbeiro_dash_bp (/api/v1/barbeiro)
+Alimenta a tela: Dashboard
+======================================================================
+
+GET /api/v1/barbeiro/dashboard
+O que faz: resumo do dia/mês: quantidade de agendamentos, receita e comissão calculada; agendamentos de hoje com pagamento pendente; próximos 5 agendamentos futuros AGENDADO; se feature 'comissao' ativa, breakdown avulso vs. plano.
+Regra de negócio: só entram nos totais agendamentos AGENDADO ou CONCLUIDO.
+Cálculo de comissão: por item, usa comissao_plano_percentual se o item veio de plano, senão comissao_percentual — aplicado sobre o preco_unitario GRAVADO no item (não o preço atual do serviço, que pode ter mudado desde então).
+⚠️ Nota de implementação: se o perfil de barbeiro não é encontrado, responde 404 direto via jsonify (não usa APIError como as demais rotas do módulo) — efeito prático equivalente, mas não passa pelo handler central de exceções.
+
+
+======================================================================
+ARQUIVO: barbeiro/notificacoes.py — blueprint barbeiro_notif_bp (/api/v1/barbeiro)
+======================================================================
+
+GET /api/v1/barbeiro/notificacoes?apenas_nao_lidas=&page=&per_page=
+O que faz: lista paginada das notificações in-app (ex.: "Seu atendimento mudou de profissional" disparada por POST .../pegar).
+
+GET /api/v1/barbeiro/notificacoes/contador
+O que faz: endpoint leve só com a contagem de não lidas — pensado para polling frequente (badge do sino) sem trazer a lista inteira.
+
+PATCH /api/v1/barbeiro/notificacoes/<id>/lida
+O que faz: marca uma notificação específica como lida.
+
+POST /api/v1/barbeiro/notificacoes/marcar-todas-lidas
+O que faz: UPDATE em massa de todas as não lidas do barbeiro.
+
+
+======================================================================
+ARQUIVO: barbeiro/produtos.py — blueprint barbeiro_produtos_bp (/api/v1/barbeiro)
+Rotas só de LEITURA (nenhuma escrita). Popula a busca de produto no modal
+de venda da caixa.
+======================================================================
+
+GET /api/v1/barbeiro/features
+O que faz: status de todas as feature flags para a barbearia do barbeiro — mesmo formato do endpoint equivalente do gestor. Usado para esconder/mostrar itens de UI (ex.: botão "Vender produto" quando 'produtos_venda' está desligada).
+
+GET /api/v1/barbeiro/produtos
+O que faz: catálogo de produtos ATIVOS da barbearia, para a busca/seleção no modal de venda da caixa.
+
+
+======================================================================
+ARQUIVO: barbeiro/solicitacoes_senha.py — blueprint barbeiro_solicitacoes_senha_bp
+(/api/v1/barbeiro/solicitacoes-senha)
+======================================================================
+
+GET /api/v1/barbeiro/solicitacoes-senha
+O que faz: lista pedidos de redefinição de senha PENDENTES feitos por CLIENTES — QUALQUER barbeiro (não só o gestor) pode ver e repassar o código por WhatsApp/telefone (útil quando o gestor não está disponível). Mesmo conteúdo/formato da versão do gestor, intencionalmente duplicado.
+Nota: não há rota para "concluir/resolver" a solicitação aqui — o fluxo de fato é completado pelo próprio cliente usando o código; esta rota só existe para o barbeiro conseguir ler/repassar.
+
+
+====================================================================
+ PARTE 3 — BACKEND DO CLIENTE (/api/v1/cliente/...)
+====================================================================
+Nota geral: toda rota usa @cliente_required — DIFERENTE de gestor/
+barbeiro/super, este decorator NÃO dá bypass a super_admin. O isolamento
+por tenant+cliente é sempre feito a partir do usuário autenticado (nunca
+de um id vindo do corpo/URL sem revalidação) — um cliente jamais acessa
+dado de outro cliente ou de outro tenant.
+
+======================================================================
+ARQUIVO: cliente/agendamento.py — blueprint cliente_bp (/api/v1/cliente)
+Alimenta as telas: Dashboard, Histórico, e a etapa final "Confirmar" do
+wizard Agendar (as etapas anteriores — listar serviços/barbeiros/horários
+— vivem em pub/agendamento.py, documentado na Parte 5, reaproveitadas
+tanto pelo wizard logado quanto pelo agendamento público de convidado).
+======================================================================
+
+GET /api/v1/cliente/agendamentos?status=&page=&per_page=
+O que faz: histórico/agenda do cliente autenticado, paginado.
+Validações: resolve o Cliente vinculado a g.user_id+barbearia atual (404 "Perfil de cliente não encontrado..." se não existir).
+
+POST /api/v1/cliente/agendamentos
+O que faz: etapa final do wizard (Confirmar) — cria o agendamento. Delega para `_criar_agendamento_core`, compartilhado com o quick-booking público.
+Validações: barbeiro_id/servicos/data_hora obrigatórios; dentro do core — feature pix_integrado se método pix (403 senão); antecedência máxima do tenant; múltiplos serviços só se a config permitir; cada serviço precisa ser oferecido pelo barbeiro; checa conflito de horário (lock + constraint única no banco); revalida contra os slots realmente livres (422 se não estiver mais disponível); bloqueia agendar no passado.
+Lógica de plano: resolve automaticamente se cada serviço é coberto por um ClientePlano ativo (checando barbeiro compatível e limite mensal); dentro do mesmo pedido, só a 1ª ocorrência de (plano, serviço) repetido consome o plano, demais cobradas avulso.
+Efeitos colaterais: cria Agendamento+AgendamentoServico; grava ClientePlanoUso se coberto por plano; se pix e valor>0, status nasce AGUARDANDO_COMPROVANTE + cria AgendamentoSolicitacaoPix + gera código PIX; se cupom e já confirmado, incrementa/registra uso; notificação in-app (se feature ativa) + webhook AGENDAMENTO_CRIADO.
+Resposta: 201; erros incluem 409 "Este horário acabou de ser reservado..." (corrida de concorrência) e 409 de limite de plano atingido em corrida paralela.
+
+POST /api/v1/cliente/agendamentos/<id>/cancelar
+O que faz: botão "Cancelar" na tela Histórico.
+Validações: isolamento (id+cliente_id+barbearia_id — 404 se não achar, sem revelar se existe para outra pessoa); não pode já estar CANCELADO/CONCLUIDO/EM_ATENDIMENTO; aplica antecedência mínima de cancelamento configurada pelo tenant (cancelamento_horas_minimas) — erro informando quantas horas faltam se dentro da janela proibida.
+Efeitos colaterais: se havia cupom com status AGENDADO, decrementa o uso; webhook AGENDAMENTO_CANCELADO (cancelado_por='cliente').
+
+
+======================================================================
+ARQUIVO: cliente/planos.py — blueprint cliente_planos_bp (/api/v1/cliente)
+Alimenta a tela: Meus Planos
+======================================================================
+
+GET /api/v1/cliente/planos?ativo=
+O que faz: lista as assinaturas do cliente, com uso mensal de cada serviço incluso (limite, usado no mês, restante).
+
+GET /api/v1/cliente/planos/<id>
+O que faz: detalhe de uma assinatura específica (404 se não pertence ao cliente/tenant).
+
+POST /api/v1/cliente/planos/<id>/cancelar
+O que faz: botão "Cancelar assinatura". Sem reembolso automático.
+Efeitos colaterais: marca ClientePlano.ativo=False; chama processar_evento_plano(..., 'cancelamento') do módulo de VIP leveling (abre janela de tolerância pós-cancelamento) — commitado separadamente, falha aqui não desfaz o cancelamento já salvo.
+
+GET /api/v1/cliente/planos/solicitacoes
+O que faz: histórico de solicitações de assinatura do cliente (pendente/aprovada/rejeitada). Nota: a CRIAÇÃO da solicitação em si não está neste arquivo — é a rota pública POST /api/v1/pub/<slug>/planos/<id>/solicitar, documentada na Parte 5 (reaproveitada por clientes logados também).
+
+
+======================================================================
+ARQUIVO: cliente/notificacoes.py — blueprint cliente_notif_bp (/api/v1/cliente)
+Mesmo padrão do equivalente do barbeiro.
+======================================================================
+
+GET /api/v1/cliente/notificacoes?apenas_nao_lidas=&page=&per_page=ㅤ
+GET /api/v1/cliente/notificacoes/contador
+PATCH /api/v1/cliente/notificacoes/<id>/lida
+POST /api/v1/cliente/notificacoes/marcar-todas-lidas
+O que fazem: listagem paginada, contador leve (polling), marcar 1 como lida, marcar todas como lidas — tudo isolado por barbearia_id+usuario_id.
+
+
+======================================================================
+ARQUIVO: cliente/dashboard.py — blueprint cliente_dash_bp (/api/v1/cliente)
+Alimenta a tela: Dashboard
+======================================================================
+
+GET /api/v1/cliente/dashboard
+O que faz: resumo para a home — próximos agendamentos (até 5, futuros, AGENDADO), resumo de histórico (concluídos/cancelados), planos ativos (só se feature "planos" ativa).
+⚠️ Tolerância especial: se o usuário autenticado ainda não tem um Cliente criado nesta barbearia, NÃO dá 404 (diferente das outras rotas do módulo cliente) — devolve 200 com listas vazias e mensagem explicativa.
+
+
+======================================================================
+ARQUIVO: cliente/perfil.py — blueprint cliente_perfil_bp (/api/v1/cliente)
+Alimenta a tela: Meu Perfil, e o card VIP em Benefícios
+======================================================================
+
+GET/PATCH /api/v1/cliente/perfil
+O que fazem: consulta/edita nome, telefone, email do próprio perfil — mantém Cliente e Usuario sincronizados (grava nos dois registros).
+Validações do PATCH: nome não pode ficar vazio; telefone normalizado, e se já pertence a OUTRO cliente da mesma barbearia, 409 "Já existe um cliente com este telefone."; email normalizado (vazio vira null).
+
+GET /api/v1/cliente/vip
+O que faz: status do cliente no programa de fidelidade — nível atual, info do brinde/benefício, data da próxima renovação. Nível 0 (sem registro) é estado válido, não erro.
+
+
+======================================================================
+ARQUIVO: cliente/cupons.py — blueprint cliente_cupons_bp (/api/v1/cliente)
+======================================================================
+
+POST /api/v1/cliente/cupons/validar
+Proteção: + rate limit (RL_CUPOM_VALIDAR, default 20/min)
+O que faz: campo "Cupom" no wizard de Agendar / carrinho da Loja — valida um código contra um subtotal (e opcionalmente itens específicos), retornando o desconto calculado ANTES de confirmar.
+Efeitos colaterais: NENHUM — só simula/calcula, não incrementa uso do cupom (isso só acontece na efetivação do agendamento/compra).
+
+
+======================================================================
+ARQUIVO: cliente/features.py — blueprint cliente_features_bp (/api/v1/cliente)
+======================================================================
+
+GET /api/v1/cliente/features
+O que faz: carregado no boot do SPA — espelha as mesmas flags de /gestor/features e /barbeiro/features, usado para esconder/mostrar itens do menu (Planos, Loja, Benefícios).
+
+
+======================================================================
+ARQUIVO: cliente/produtos.py — blueprint cliente_produtos_bp (/api/v1/cliente)
+Alimenta a tela: Loja
+Mesmo modelo de "solicitação → aprovação do gestor" usado em planos:
+o cliente pede, e só quando o GESTOR aprova (fora deste arquivo) é que
+baixa de estoque / Venda de verdade acontece.
+======================================================================
+
+GET /api/v1/cliente/produtos
+Proteção: + @feature_required('produtos_venda')
+O que faz: catálogo de produtos disponíveis para venda (só ativos).
+
+GET /api/v1/cliente/compras
+Proteção: + @feature_required('produtos_venda')
+O que faz: histórico de pedidos do cliente (SolicitacaoCompraProduto + itens).
+
+POST /api/v1/cliente/compras
+Proteção: + rate limit (RL_COMPRA_SOLICITAR, default 10/min) + @feature_required('produtos_venda')
+O que faz: botão "Finalizar pedido" no carrinho da Loja — cria uma SOLICITAÇÃO de compra (NÃO baixa estoque nem gera Venda ainda — isso é a aprovação do gestor).
+Validações: itens não pode ser vazio; produto_id+quantidade por item; produto precisa existir/ativo (404); checa estoque disponível no momento do pedido (422 se insuficiente — mas é só checagem informativa, NÃO reserva/baixa estoque); metodo_pagamento válido; se pix, exige feature pix_integrado (403 senão); cupom opcional validado contra os itens.
+Efeitos colaterais: cria SolicitacaoCompraProduto (PENDENTE) + itens; se pix e chave configurada, gera código PIX copia-e-cola com txid baseado no id da solicitação.
+
+POST /api/v1/cliente/compras/<id>/comprovante
+Proteção: + rate limit (RL_COMPROVANTE, default 3/min) + @feature_required('produtos_venda')
+O que faz: upload do comprovante PIX de um pedido.
+Validações: isolamento (id+barbearia+cliente); pedido precisa ser método pix (400 senão) e status PENDENTE (422 senão — não permite reenviar em pedido já respondido); JPEG/PNG até 5MB, com validação dos magic bytes reais do arquivo (não confia só no mimetype declarado, que é forjável).
+
+
+====================================================================
+ PARTE 4 — BACKEND DO SUPER ADMIN (/api/v1/super/...)
+====================================================================
+Nota geral: toda rota usa @super_required (só super_admin, sem exceção).
+
+======================================================================
+ARQUIVO: super/barbearias.py — blueprint super_bp (/api/v1/super)
+Alimenta as telas: Barbearias, Gestores, Features, Customização, Segmentos
+(+ os 2 drill-downs de Segmentos), e um utilitário de scheduler.
+======================================================================
+
+--- Sub-área: Barbearias (tenants) ---
+
+POST /api/v1/super/barbearias
+O que faz: cria uma barbearia COMPLETA junto com seu usuário gestor, numa única transação atômica. Tela "Novo Estabelecimento".
+Validações: nome/slug/gestor_nome/gestor_email/gestor_telefone/gestor_senha (mín. 6) obrigatórios; telefone normalizado; slug único (409 senão); e-mail do gestor único (409 senão); segmento_id (se informado) precisa existir (404 senão).
+Efeitos colaterais (tudo numa transação só — tudo ou nada): cria Barbearia; cria o Usuario gestor vinculado; cria BarbeariaCustomizacao vazia; COPIA o catálogo de features para FeatureBarbearia — usando os overrides de SegmentoFeaturePadrao do segmento (se houver) e caindo no padrão global (FeatureMetadata.ativo_por_padrao) para as demais; cria ConfiguracaoAgendamento default; registra auditoria após o commit.
+
+GET /api/v1/super/barbearias?ativo=&page=&per_page=
+O que faz: listagem paginada para a tela principal.
+
+GET /api/v1/super/barbearias/<id>
+O que faz: detalhe completo — dados cadastrais, gestor ativo vinculado (o primeiro encontrado), customização visual, mapa de features ativas/inativas.
+
+PATCH /api/v1/super/barbearias/<id>
+O que faz: edita campos cadastrais (nome, slug, endereço/contato, PIX, url de agendamento). Parcial.
+Validações: nome/slug não podem ficar vazios; slug precisa continuar único (409 senão).
+Efeitos colaterais: registra auditoria.
+
+POST /api/v1/super/barbearias/<id>/desativar
+O que faz: SUSPENDE um tenant inteiro.
+Validações: precisa estar atualmente ativa (400 senão).
+Efeitos colaterais (cascata em massa via bulk update): Barbearia.ativo=False; marca ativo=False E token_valido_apos=agora para TODOS os usuários daquele tenant (gestores, barbeiros, clientes) — revoga na hora qualquer JWT já emitido, porque um bulk update do SQLAlchemy não dispara os hooks normais do ORM (precisa ser feito explicitamente); registra auditoria.
+
+POST /api/v1/super/barbearias/<id>/ativar
+O que faz: reativa. Marca Barbearia.ativo=True e reativa SOMENTE os usuários com perfil 'gestor' — barbeiros e clientes NÃO são reativados automaticamente (fica a cargo do gestor, depois de logar).
+
+--- Sub-área: Features por barbearia ---
+
+GET /api/v1/super/barbearias/<id>/features
+O que faz: mapa nome→ativo/inativo para aquela barbearia.
+
+PUT /api/v1/super/barbearias/<id>/features/<nome_feature>
+O que faz: toggle de uma feature específica. Se já existir registro, inverte; senão, cria com ativo=True. Registra auditoria.
+
+--- Sub-área: Customização visual ---
+
+GET/PUT /api/v1/super/barbearias/<id>/customizacao
+O que fazem: consulta/atualiza cores do tema + fonte.
+Validações do PUT: cada campo de cor, se enviado e não-vazio, precisa começar com "#" (400 senão); campos vazios mantêm o valor anterior (não apagam).
+
+POST /api/v1/super/barbearias/<id>/customizacao/imagens
+O que faz: upload de logo/capa/boas_vindas para o Cloudinary (public_id determinístico "barbearia_<id>_<tipo>", overwrite+invalidate).
+Validações: tipo precisa ser logo/capa/boas_vindas; JPEG/PNG/WebP até 5MB; valida magic bytes reais (mimetype declarado é forjável).
+
+DELETE /api/v1/super/barbearias/<id>/customizacao/imagens?tipo=
+O que faz: remove uma imagem. Tenta apagar no Cloudinary, mas se falhar/já não existir lá, engole a exceção silenciosamente e remove a referência local mesmo assim.
+
+--- Sub-área: Utilitário de scheduler ---
+
+POST /api/v1/super/scheduler/executar-lembretes
+⚠️ Ferramenta de teste/depuração — dispara manualmente o job de lembretes que roda a cada 1 min, sem esperar o próximo ciclo. O próprio comentário no código avisa: "NÃO disponibilizar em produção sem autenticação adicional". Nota: aqui uma falha expõe o TRACEBACK completo ao cliente (500 {erro, traceback}) — diferente do padrão do resto da API via commit_ou_falhar, que nunca expõe stack trace.
+
+--- Sub-área: Gestores (visão cross-tenant) ---
+
+GET /api/v1/super/gestores?page=&per_page=
+O que faz: lista TODOS os gestores de TODAS as barbearias, com nome/slug do tenant (join outer — gestor órfão sem barbearia apareceria com barbearia=null).
+
+--- Sub-área: Features (visão global) ---
+
+GET /api/v1/super/features
+O que faz: matriz completa barbearias × features — visão consolidada de quais features cada tenant tem ligadas.
+
+--- Sub-área: Relatórios globais ---
+
+GET /api/v1/super/relatorios
+O que faz: contadores agregados cross-tenant (barbearias, gestores, barbeiros, clientes, agendamentos, concluídos, cancelados, pendentes_pix).
+
+--- Sub-área: Auditoria global ---
+
+GET /api/v1/super/auditoria?barbearia_id=&tipo_acao=&page=&per_page=
+O que faz: log de auditoria de TODA a plataforma (contraparte cross-tenant do /gestor/auditoria). per_page aqui vai até 200 (diferente do padrão 100 de outros endpoints).
+
+--- Sub-área: Segmentos ---
+
+GET /api/v1/super/segmentos
+O que faz: lista segmentos de negócio (o sistema é multi-segmento) com contagem de barbearias usando cada um.
+
+GET/PUT /api/v1/super/segmentos/<id>/rotulos
+O que fazem: consulta/edita os rótulos de texto customizados de um segmento (ex.: como ele chama "cliente"/"profissional"/"agendamento" — sistema centralizado via app.labels).
+Efeitos colaterais do PUT: só grava valores não-vazios (trimados, truncados a 50 caracteres); chama L.invalidar(seg_id) para o cache de rótulos em memória refletir a mudança imediatamente.
+
+POST /api/v1/super/segmentos/seed, POST /api/v1/super/segmentos/features/seed
+O que fazem: sincronizam os segmentos padrão e os padrões de feature por segmento a partir do seed embutido no código (app.seeds) — ferramenta administrativa/de setup, botão "Sincronizar Padrões".
+
+GET /api/v1/super/segmentos/<id>/features
+O que faz: catálogo completo de features com o valor padrão que cada uma teria para aquele segmento, distinguindo origem "segmento" (override explícito) vs. "global" (fallback).
+
+PUT /api/v1/super/segmentos/<id>/features/<nome_feature>
+O que faz: define o padrão de uma feature para um segmento (cria/sobrescreve SegmentoFeaturePadrao) — usado por criar_barbearia ao copiar as features iniciais de uma nova barbearia daquele segmento. NÃO afeta barbearias já criadas.
+
+PATCH /api/v1/super/barbearias/<id>/segmento
+O que faz: reatribui (ou remove) o segmento de uma barbearia existente.
+Efeitos colaterais: invalida o cache de rótulos tanto do segmento antigo quanto do novo; registra auditoria depois do commit (falha no log não reverte a troca já commitada).
+⚠️ Nota: NÃO re-sincroniza FeatureBarbearia — trocar o segmento de um tenant existente não reaplica os padrões de feature daquele segmento (isso só acontece na criação).
+
+
+======================================================================
+ARQUIVO: super/dashboard.py — blueprint super_dash_bp (/api/v1/super)
+Alimenta a tela: Dashboard
+======================================================================
+
+GET /api/v1/super/dashboard
+O que faz: agrega, DE PROPÓSITO sem nenhum filtro de tenant, as métricas de TODA a plataforma.
+Cálculos principais: contagem de barbearias ativas/inativas e usuários por perfil; agendamentos do mês corrente sem filtro de barbearia; "por_barbearia" — ranking por receita do mês; "pagamentos_mes" — reconcilia receita paga vinda de TRÊS fontes que nunca se cruzam em nenhum outro lugar do sistema (Agendamento pago local/pix, Venda/VendaItem do PDV, ItemCaixa da caixa do barbeiro), separado por forma de pagamento e por origem (local/online).
+Usa o sistema de rótulos centralizado (app.labels.L) — reflexo da plataforma multi-segmento.
+
+
+======================================================================
+ARQUIVO: super/solicitacoes_senha.py — blueprint super_solicitacoes_senha_bp
+(/api/v1/super/solicitacoes-senha)
+Alimenta a tela: Solicitações de Senha
+======================================================================
+
+GET /api/v1/super/solicitacoes-senha
+O que faz: lista solicitações de redefinição de senha pendentes/não-expiradas feitas por STAFF (perfis 'gestor' ou 'barbeiro') de QUALQUER barbearia — cross-tenant. Como gestores/barbeiros não recuperam senha sozinhos por e-mail, o Super Admin vê o código e repassa manualmente por WhatsApp. Solicitações de clientes NÃO aparecem aqui (fluxo próprio).
+Sem paginação, sem envelope — devolve a lista direta.
+
+
+====================================================================
+ PARTE 5 — BACKEND PÚBLICO (/api/v1/pub/..., sem login)
+====================================================================
+Usadas pelo wizard de agendamento de convidado (pub/booking.html) e pelo
+bot de WhatsApp (via n8n). "Pública" aqui não significa "sem nenhuma
+checagem" — quase toda rota exige que o slug resolva para uma barbearia
+existente e ativa.
+
+======================================================================
+ARQUIVO: pub/agendamento.py — blueprint pub_bp (/api/v1/pub)
+======================================================================
+
+GET /api/v1/pub/<slug>/servicos
+O que faz: Passo 2 do wizard — lista serviços ativos oferecidos por algum barbeiro ativo.
+
+GET /api/v1/pub/<slug>/barbeiros?servico_ids=
+O que faz: Passo 3 — lista barbeiros ativos; filtro opcional por servico_ids (interseção — barbeiro precisa oferecer TODOS os informados).
+
+GET /api/v1/pub/<slug>/barbeiros/<id>/servicos
+O que faz: variante do Passo 2 (fluxo alternativo: escolher profissional antes do serviço) — serviços que um barbeiro específico oferece.
+
+GET /api/v1/pub/<slug>/barbeiros/<id>/slots?data=&duracao=
+Proteção: rate limit (RL_SLOTS, default 60/min).
+O que faz: Passo 4 — calcula horários livres do barbeiro para uma data/duração, considerando agenda configurada, bloqueios e agendamentos existentes.
+Validações: data/duração obrigatórios; data não pode ser passada; não pode passar de antecedencia_maxima_dias (config do tenant, default 60).
+⚠️ Nota de design: barbeiro sem ConfiguracaoAgenda, com loja_aberta=False, ou dia inteiro bloqueado, respondem 200 (não erro) com slots:[] + indisponivel:true + motivo — de propósito, para não quebrar integrações externas (bot WhatsApp/n8n) com um código de erro.
+
+POST /api/v1/pub/<slug>/agendar
+Proteção: rate limit (RL_AGENDAR, default 10/min); BLOQUEADA (403) se a config da barbearia tiver quick_booking_sem_login=False ("Este estabelecimento exige login para agendar...").
+O que faz: Passo 5 (confirmação) — endpoint central de "quick booking": cria o agendamento de CONVIDADO, identificando o cliente só pelo telefone, sem exigir conta prévia.
+Validações: telefone obrigatório e normalizado; se telefone não corresponde a cliente existente, nome vira obrigatório (cria cliente novo); barbeiro_id/servicos/data_hora obrigatórios; dentro do core (mesmo usado por cliente/agendamento.py): feature pix_integrado se método pix; antecedência máxima; respeita permite_multi_servico; cada serviço precisa ser oferecido pelo barbeiro; checa conflito de horário (409, mostra o horário ocupado); revalida contra gerar_slots (422 "não está mais disponível"); rede de segurança extra via IntegrityError na constraint única de slot (409 "acabou de ser reservado").
+Efeitos colaterais: cria (ou reaproveita por telefone) um Cliente — NÃO cria Usuario/login/senha, é cadastro puramente de convidado; resolve cobertura automática por plano ativo (se o telefone já tem cliente com plano); aplica cupom opcional; cria Agendamento+AgendamentoServico; se plano usado, grava ClientePlanoUso (pode colidir com constraint única em corrida → 409 de limite atingido); se pix e valor>0, cria AgendamentoSolicitacaoPix + gera código PIX (só se a barbearia tiver chave PIX configurada, senão codigo_pix:null); se feature notificacoes ativa, chama notificar_cliente (hoje um stub, sem envio real); SEMPRE dispara webhook AGENDAMENTO_CRIADO, independente da feature de notificação.
+
+POST /api/v1/pub/<slug>/agendamentos/<id>/comprovante
+Proteção: rate limit (RL_COMPROVANTE, default 3/min); identificação só por slug+id do agendamento (sem confirmação de posse/telefone).
+O que faz: recebe upload do comprovante PIX pós-confirmação.
+Validações: agendamento precisa existir; método precisa ser PIX (400 senão); status precisa ser AGUARDANDO_COMPROVANTE ou AGUARDANDO_APROVACAO (422 — bloqueia reenvio em agendamento já decidido); JPEG/PNG até 5MB com validação de magic bytes reais.
+Efeitos colaterais: upload pro Cloudinary; grava URL; se estava AGUARDANDO_COMPROVANTE, avança para AGUARDANDO_APROVACAO; se já havia comprovante antes (reenvio), registra auditoria; SEMPRE dispara webhook COMPROVANTE_ENVIADO — inclui pode_aprovar_automaticamente (config do gestor) e, só quando essa auto-aprovação está ligada, o webhook_secret da barbearia (para a automação chamar de volta o endpoint de aprovação — ver Parte 0, webhook_inbound_bp).
+
+
+======================================================================
+ARQUIVO: pub/planos.py — blueprint pub_planos_bp (SEM url_prefix — cada rota
+registra o caminho completo explicitamente; 2 delas têm um alias legado
+"/pub/..." sem o "/api/v1" na frente, marcado "DEPRECATED: remover em v2")
+Alimenta a tela: pub/booking.html (link "Crie sua conta"/planos) e é
+reaproveitada pela tela Meus Planos do cliente logado.
+======================================================================
+
+GET /api/v1/pub/<slug>/planos?barbeiro_id=
+O que faz: lista planos ativos disponíveis para assinar. Filtro opcional por barbeiro_id (planos abertos OU vinculados a esse profissional).
+
+POST /api/v1/pub/<slug>/planos/<id>/solicitar
+Proteção: rate limit (RL_PLANO_SOLICITAR, default 5/min); "semi-autenticado" — se houver um JWT válido de cliente daquela barbearia, usa esse cliente; senão cai no fluxo por telefone.
+O que faz: cliente solicita assinatura. NÃO ativa na hora — cria ClientePlanoSolicitacao "pendente", só vira assinatura ativa após aprovação do gestor.
+Validações: se sem login, telefone obrigatório E o Cliente JÁ precisa existir previamente (400 "Faça um agendamento primeiro..." — diferente do quick-booking de agendamento, este NÃO cria cliente novo); plano precisa existir/ativo; checagem preventiva (sem lock) de limite de assinantes (403 se atingido — a garantia final fica no fluxo de aprovação); se plano vinculado a barbeiro específico, barbeiro_id enviado precisa bater (400 senão); bloqueia solicitação pendente duplicada do mesmo cliente pro mesmo plano (409); método inválido cai para "pix" por default; se pix, exige feature pix_integrado (403).
+Efeitos colaterais: cria a solicitação pendente; se pix e chave configurada, gera código PIX só na resposta (não persistido em tabela própria aqui).
+
+POST /api/v1/pub/<slug>/planos/solicitacoes/<id>/comprovante
+O que faz: upload de comprovante PIX de uma solicitação de plano pendente (mesmo padrão do de agendamento). Comentário no código indica que era um gap: o campo comprovante_url existia no model, mas nenhum endpoint escrevia nele até este ser criado.
+Validações: método precisa ser pix (400); status precisa ser "pendente" (422); mesma validação de arquivo (JPEG/PNG, 5MB, magic bytes).
+Diferença do endpoint equivalente de agendamento: este NÃO altera o status da solicitação e NÃO dispara webhook.
+
+
+======================================================================
+ARQUIVO: pub/whatsapp.py — blueprint pub_whatsapp_bp (/api/v1/pub)
+Apoio ao bot de agendamento via WhatsApp (n8n + Evolution API). Mesma
+filosofia de "confiança" do quick-booking: sem login, identificação por
+telefone — a premissa é que quem manda a mensagem no WhatsApp já provou
+ser dono daquele número dentro da própria conversa.
+======================================================================
+
+GET /api/v1/pub/barbearia-por-instancia?instance=&telefone=
+Proteção: rate limit fixo 60/min. NÃO escopada por slug — é justamente a rota que RESOLVE qual é a barbearia.
+O que faz: usada pelo n8n logo na entrada do workflow do bot, para identificar a qual barbearia pertence a instância do WhatsApp que recebeu a mensagem.
+Validações: "instance" obrigatório (422 senão); precisa existir uma Barbearia ativa com esse whatsapp_instance_id (404 senão); "telefone" opcional (erros de formato aqui são silenciosamente ignorados, não bloqueiam a resposta).
+Resposta: se telefone corresponde a um Cliente cadastrado, devolve o nome REAL de cadastro (para o bot cumprimentar corretamente, em vez do pushName do WhatsApp, que o dono do número pode alterar à vontade).
+
+GET /api/v1/pub/<slug>/clientes/<telefone>/proximo-agendamento
+Proteção: rate limit fixo 30/min.
+O que faz: usada pelo bot para responder qual é o próximo agendamento do cliente. Mesma definição de "próximo" do dashboard do cliente autenticado (primeiro futuro com status AGENDADO).
+Validações: telefone precisa ser normalizável (400 senão); se não houver cliente/agendamento correspondente, devolve resposta de SUCESSO indicando ausência ({tem_agendamento:false}), não erro.
+
+
+====================================================================
+ FIM DO DOCUMENTO
+====================================================================
