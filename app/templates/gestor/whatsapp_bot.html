@@ -1,0 +1,155 @@
+{% extends "gestor/base.html" %}
+{% block title %}Bot WhatsApp{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Bot WhatsApp</span>
+{% endblock %}
+
+{% block styles %}
+<style>
+.wb-container { max-width: 560px; }
+.wb-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:24px; margin-bottom:24px; }
+.wb-hint { font-size: 12px; color: var(--muted2); margin-top: 6px; }
+.wb-status { display:flex; align-items:center; gap:8px; font-size:14px; margin-bottom:16px; }
+.wb-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.wb-dot.on  { background:#4ade80; }
+.wb-dot.off { background:#888; }
+.wb-actions { display:flex; gap:10px; margin-top:16px; }
+.wb-qr-box { display:none; text-align:center; margin-top:16px; }
+.wb-qr-box img { max-width: 260px; border-radius: 8px; border:1px solid var(--border); }
+.wb-qr-hint { font-size:12px; color:var(--muted2); margin-top:10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wb-container">
+
+  <div class="wb-card">
+    <div class="wb-status">
+      <span class="wb-dot off" id="statusDot"></span>
+      <span id="statusTexto">Carregando…</span>
+    </div>
+    <div class="wb-hint">
+      O bot responde automaticamente no WhatsApp: mostra serviços, horários livres, cria agendamento
+      e informa o próximo horário do cliente — usando IA (configurada no workflow do n8n). Cada
+      barbearia usa um número próprio, conectado aqui via QR code.
+    </div>
+
+    <div class="wb-actions">
+      <button class="btn-icon" id="btnConectar" onclick="conectar()">Conectar WhatsApp</button>
+      <button class="btn-icon" id="btnDesconectar" onclick="desconectar()" style="display:none">Desconectar</button>
+      <button class="btn-icon" id="btnRemover" onclick="remover()" style="display:none">Remover instância</button>
+    </div>
+
+    <div class="wb-qr-box" id="qrBox">
+      <img id="qrImg" alt="QR code do WhatsApp">
+      <div class="wb-qr-hint">Abra o WhatsApp no celular do número da barbearia → Aparelhos conectados → Conectar um aparelho → aponte pra este QR code.</div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _polling = null;
+
+function pararPolling() {
+  if (_polling) { clearInterval(_polling); _polling = null; }
+}
+
+function renderStatus(s) {
+  const dot   = document.getElementById('statusDot');
+  const texto = document.getElementById('statusTexto');
+  const btnConectar    = document.getElementById('btnConectar');
+  const btnDesconectar = document.getElementById('btnDesconectar');
+  const btnRemover     = document.getElementById('btnRemover');
+  const qrBox = document.getElementById('qrBox');
+
+  if (s.conectado) {
+    dot.className = 'wb-dot on';
+    texto.textContent = 'Conectado (' + s.instance_id + ')';
+    btnConectar.style.display = 'none';
+    btnDesconectar.style.display = '';
+    btnRemover.style.display = '';
+    qrBox.style.display = 'none';
+    pararPolling();
+  } else if (s.instance_id) {
+    dot.className = 'wb-dot off';
+    texto.textContent = 'Aguardando leitura do QR code…';
+    btnConectar.style.display = 'none';
+    btnDesconectar.style.display = 'none';
+    btnRemover.style.display = '';
+  } else {
+    dot.className = 'wb-dot off';
+    texto.textContent = 'Nenhum número conectado.';
+    btnConectar.style.display = '';
+    btnDesconectar.style.display = 'none';
+    btnRemover.style.display = 'none';
+    qrBox.style.display = 'none';
+    pararPolling();
+  }
+}
+
+async function carregarStatus() {
+  try {
+    const s = await Bos.get('/gestor/whatsapp-bot');
+    renderStatus(s);
+    return s;
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function conectar() {
+  const btn = document.getElementById('btnConectar');
+  btn.disabled = true;
+  try {
+    const r = await Bos.post('/gestor/whatsapp-bot/conectar', {});
+    if (r.qrcode_base64) {
+      const img = document.getElementById('qrImg');
+      img.src = r.qrcode_base64.startsWith('data:') ? r.qrcode_base64 : `data:image/png;base64,${r.qrcode_base64}`;
+      document.getElementById('qrBox').style.display = 'block';
+    }
+    document.getElementById('btnRemover').style.display = '';
+    document.getElementById('statusTexto').textContent = 'Aguardando leitura do QR code…';
+
+    pararPolling();
+    _polling = setInterval(async () => {
+      const s = await carregarStatus();
+      if (s && s.conectado) toast('WhatsApp conectado!', 'success');
+    }, 4000);
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function desconectar() {
+  if (!(await Bos.confirmar('Desconectar este número? O bot para de responder até você escanear o QR code de novo.'))) return;
+  try {
+    await Bos.post('/gestor/whatsapp-bot/desconectar', {});
+    toast('Número desconectado.', 'success');
+    carregarStatus();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function remover() {
+  if (!(await Bos.confirmar('Remover a instância por completo? Use isso só se for trocar de número — vai precisar conectar um novo depois.'))) return;
+  try {
+    await Bos.delete('/gestor/whatsapp-bot');
+    toast('Instância removida.', 'success');
+    pararPolling();
+    carregarStatus();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+carregarStatus();
+</script>
+{% endblock %}
