@@ -32,9 +32,14 @@ class Barbearia(db.Model):
     pix_cidade       = db.Column(db.String(50))
     pix_banco        = db.Column(db.String(50))
     criado_em        = db.Column(db.DateTime, default=_utcnow)
-    # ── P2: WhatsApp Business API ─────────────────────────────────────────────
+    # ── P2: WhatsApp Business API (Meta Cloud API — reservado, ainda não usado) ─
     whatsapp_business_id      = db.Column(db.String(100))   # WABA ID (Meta)
     whatsapp_phone_number_id  = db.Column(db.String(100))   # Phone Number ID (Meta Cloud API)
+    # ── Bot de agendamento via WhatsApp (Evolution API self-hosted) ────────────
+    # Nome da instância Evolution API conectada a esta barbearia — é como o n8n
+    # identifica de qual segmento veio a mensagem do cliente (ver app/utils/evolution.py
+    # e .claude/n8n/workflows/barberos-bot-whatsapp.json). Único por instância.
+    whatsapp_instance_id      = db.Column(db.String(100), unique=True)
     # ── P2: Billing da plataforma (o que o estabelecimento paga À plataforma) ─
     billing_plano             = db.Column(db.String(50))    # basic / pro / enterprise / custom
     billing_mensalidade_valor = db.Column(db.Numeric(10, 2))
@@ -51,7 +56,10 @@ class Barbearia(db.Model):
     estado           = db.Column(db.String(2))
     cep              = db.Column(db.String(9))
     telefone_contato = db.Column(db.String(20))
+    email_contato    = db.Column(db.String(100))
     instagram        = db.Column(db.String(100))
+    horario_abertura   = db.Column(db.Time)  # informativo — cada barbeiro tem sua própria agenda (ConfiguracaoAgenda)
+    horario_fechamento = db.Column(db.Time)
     # ── Multi-segmento (Parte B) ───────────────────────────────────────────────
     segmento_id      = db.Column(db.Integer, db.ForeignKey('segmentos.id'), nullable=True)
 
@@ -655,6 +663,38 @@ class ClientePlanoSolicitacao(db.Model):
     motivo_rejeicao  = db.Column(db.String(500))
 
 
+class SolicitacaoCompraProduto(db.Model):
+    """Pedido de compra de produto feito pelo cliente pelo portal — vira uma
+    Venda de verdade (com baixa de estoque) só quando o gestor aprova, mesmo
+    modelo do ClientePlanoSolicitacao (pedido primeiro, efeito real depois)."""
+    __tablename__ = 'solicitacao_compra_produto'
+
+    id               = db.Column(db.Integer, primary_key=True)
+    barbearia_id     = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, index=True)
+    cliente_id       = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False, index=True)
+    venda_id         = db.Column(db.Integer, db.ForeignKey('venda.id'), nullable=True)  # preenchido na aprovação
+    valor_original   = db.Column(db.Numeric(10, 2), nullable=False)
+    valor_desconto   = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    valor_total      = db.Column(db.Numeric(10, 2), nullable=False)
+    cupom_codigo     = db.Column(db.String(30))  # o que o cliente digitou, preservado mesmo se o cupom mudar depois
+    comprovante_url  = db.Column(db.String(255))
+    metodo_pagamento = db.Column(db.String(20), nullable=False, default='pix')
+    status           = db.Column(db.String(20), nullable=False, default='pendente')  # pendente, aprovada, rejeitada
+    motivo_rejeicao  = db.Column(db.String(500))
+    criado_em        = db.Column(db.DateTime, default=_utcnow)
+    respondido_em    = db.Column(db.DateTime)
+
+
+class SolicitacaoCompraItem(db.Model):
+    __tablename__ = 'solicitacao_compra_item'
+
+    id              = db.Column(db.Integer, primary_key=True)
+    solicitacao_id  = db.Column(db.Integer, db.ForeignKey('solicitacao_compra_produto.id', ondelete='CASCADE'), nullable=False, index=True)
+    produto_id      = db.Column(db.Integer, db.ForeignKey('produtos.id'), nullable=False)
+    quantidade      = db.Column(db.Integer, nullable=False)
+    preco_unitario  = db.Column(db.Numeric(10, 2), nullable=False)  # snapshot no momento do pedido
+
+
 class PlanoBarbeiro(db.Model):
     __tablename__ = 'plano_barbeiros'
     __table_args__ = (
@@ -737,8 +777,57 @@ class Cupom(TenantMixin, db.Model):
     quantidade_maxima_usos  = db.Column(db.Integer)  # NULL = ilimitado
     quantidade_usos         = db.Column(db.Integer, nullable=False, default=0)
     ativo                   = db.Column(db.Boolean, nullable=False, default=True)
+    # Independentes um do outro: um cupom pode valer pra TODOS os serviços e
+    # SÓ um produto específico ao mesmo tempo, por exemplo. Quando False e
+    # não há nenhuma linha em CupomServico/CupomProduto pra essa dimensão,
+    # o cupom não vale pra NADA daquele tipo (nem serviço, nem produto).
+    aplica_todos_servicos   = db.Column(db.Boolean, nullable=False, default=False)
+    aplica_todos_produtos   = db.Column(db.Boolean, nullable=False, default=False)
     criado_em               = db.Column(db.DateTime, default=_utcnow)
     atualizado_em           = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class CupomServico(db.Model):
+    """Serviços aos quais um cupom se restringe. Sem nenhuma linha aqui (e
+    também sem linha em CupomProduto) = cupom vale pra qualquer serviço."""
+    __tablename__ = 'cupom_servico'
+    __table_args__ = (
+        db.UniqueConstraint('cupom_id', 'servico_id', name='uq_cupom_servico'),
+    )
+
+    id         = db.Column(db.Integer, primary_key=True)
+    cupom_id   = db.Column(db.Integer, db.ForeignKey('cupons.id', ondelete='CASCADE'), nullable=False, index=True)
+    servico_id = db.Column(db.Integer, db.ForeignKey('servicos.id'), nullable=False)
+
+
+class CupomProduto(db.Model):
+    """Produtos aos quais um cupom se restringe. Sem nenhuma linha aqui (e
+    também sem linha em CupomServico) = cupom vale pra qualquer produto."""
+    __tablename__ = 'cupom_produto'
+    __table_args__ = (
+        db.UniqueConstraint('cupom_id', 'produto_id', name='uq_cupom_produto'),
+    )
+
+    id         = db.Column(db.Integer, primary_key=True)
+    cupom_id   = db.Column(db.Integer, db.ForeignKey('cupons.id', ondelete='CASCADE'), nullable=False, index=True)
+    produto_id = db.Column(db.Integer, db.ForeignKey('produtos.id'), nullable=False)
+
+
+class CupomUso(db.Model):
+    """Histórico de cada aplicação de cupom — permite ao gestor ver quem usou,
+    quando, e quanto foi descontado (Cupom.quantidade_usos é só o contador)."""
+    __tablename__ = 'cupom_uso'
+
+    id              = db.Column(db.Integer, primary_key=True)
+    barbearia_id    = db.Column(db.Integer, db.ForeignKey('barbearias.id'), nullable=False, index=True)
+    cupom_id        = db.Column(db.Integer, db.ForeignKey('cupons.id'), nullable=False, index=True)
+    cliente_id      = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=True)
+    agendamento_id  = db.Column(db.Integer, db.ForeignKey('agendamentos.id'), nullable=True)
+    venda_id        = db.Column(db.Integer, db.ForeignKey('venda.id'), nullable=True)
+    valor_original  = db.Column(db.Numeric(10, 2), nullable=False)
+    valor_desconto  = db.Column(db.Numeric(10, 2), nullable=False)
+    valor_final     = db.Column(db.Numeric(10, 2), nullable=False)
+    criado_em       = db.Column(db.DateTime, default=_utcnow)
 
 
 # ── Feature Flags (v2: normalizado) ────────────────────────────────────────────
@@ -943,6 +1032,11 @@ class Notificacao(db.Model):
     # 'in_app' | 'email' | 'web_push'
     titulo         = db.Column(db.String(200), nullable=False)
     corpo          = db.Column(db.String(1000), nullable=False)
+    # Path relativo pra onde clicar na notificação deve levar (ex:
+    # '/gestor/agenda?agendamento_id=42', '/cliente/duvidas?id=7') — cada
+    # tela decide o que fazer com o query param, não é um contrato genérico.
+    # None = notificação sem destino navegável (ex: alguns lembretes).
+    link           = db.Column(db.String(255), nullable=True)
     lida           = db.Column(db.Boolean, nullable=False, default=False)
     # lida=True só faz sentido para in_app; email/web_push usam enviada
     enviada        = db.Column(db.Boolean, nullable=False, default=False)
@@ -1071,3 +1165,148 @@ class WebhookLog(db.Model):
     sucesso       = db.Column(db.Boolean, nullable=False, default=False)
     erro_mensagem = db.Column(db.Text)
     criado_em     = db.Column(db.DateTime, default=_utcnow, index=True)
+
+
+# ── Dúvidas do Cliente (chat de suporte) ────────────────────────────────────
+# Thread (ClienteDuvida) + mensagens (ClienteDuvidaMensagem), com imagem
+# opcional dos dois lados — ver app/utils/duvidas.py pro núcleo de criação
+# de mensagem (validação + upload Cloudinary) compartilhado entre
+# app/routes/cliente/duvidas.py e app/routes/gestor/duvidas.py.
+
+class ClienteDuvida(TenantMixin, db.Model):
+    """Uma thread/ticket de suporte entre um cliente e o estabelecimento.
+
+    v2 (triagem completa): categoria/prioridade classificam o ticket;
+    direcionado_para_* registra pra quem o cliente endereçou (funcionário
+    específico ou a fila geral do gestor — categoria 'erro' força gestor,
+    ver app.utils.duvidas.resolver_direcionamento); atribuido_a_usuario_id
+    só é usado pela fila cross-tenant do admin (super_admin se atribui um
+    ticket); nota/comentario_satisfacao são o CSAT opcional pós-conclusão.
+    """
+    __tablename__ = 'cliente_duvida'
+    __table_args__ = (
+        db.CheckConstraint(
+            "status IN ('pendente','concluida','cancelada')",
+            name='ck_cliente_duvida_status_valido',
+        ),
+        db.CheckConstraint(
+            "categoria IN ('duvida','erro','financeiro','sugestao','treinamento','integracao','conta','outro')",
+            name='ck_cliente_duvida_categoria_valida',
+        ),
+        db.CheckConstraint(
+            "prioridade IN ('baixa','normal','alta','urgente')",
+            name='ck_cliente_duvida_prioridade_valida',
+        ),
+        db.CheckConstraint(
+            "direcionado_para_tipo IN ('gestor','barbeiro')",
+            name='ck_cliente_duvida_direcionado_tipo_valido',
+        ),
+        db.CheckConstraint(
+            'nota_satisfacao IS NULL OR (nota_satisfacao >= 1 AND nota_satisfacao <= 5)',
+            name='ck_cliente_duvida_nota_satisfacao_range',
+        ),
+    )
+
+    id                    = db.Column(db.Integer, primary_key=True)
+    cliente_id            = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False, index=True)
+    aberta_por_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    assunto               = db.Column(db.String(150))
+    categoria             = db.Column(db.String(20), nullable=False, default='duvida')
+    prioridade            = db.Column(db.String(10), nullable=False, default='normal')
+    # pendente, concluida, cancelada — ver app.constants.StatusClienteDuvida
+    status                = db.Column(db.String(20), nullable=False, default='pendente')
+    # 'gestor' = fila geral (sem dono); 'barbeiro' = funcionário específico
+    # escolhido pelo cliente na abertura (direcionado_para_usuario_id).
+    direcionado_para_tipo       = db.Column(db.String(20), nullable=False, default='gestor')
+    direcionado_para_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=True, index=True)
+    # Só relevante pra fila cross-tenant do super_admin (times maiores podem
+    # ter mais de um admin no futuro) — nunca usado pelo lado gestor/barbeiro.
+    atribuido_a_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=True, index=True)
+    # True quando um gestor/barbeiro explicitamente destaca o ticket pro
+    # admin (evento DIRECIONADO_ADMIN) — o admin já enxerga TODOS os tickets
+    # de todas as barbearias por padrão (fila cross-tenant), isso aqui é só
+    # um realce/filtro dentro dessa fila, não um portão de visibilidade.
+    encaminhado_admin     = db.Column(db.Boolean, nullable=False, default=False)
+    # CSAT opcional — preenchido uma única vez pelo cliente após concluida.
+    nota_satisfacao       = db.Column(db.Integer, nullable=True)
+    comentario_satisfacao = db.Column(db.String(500), nullable=True)
+    criado_em             = db.Column(db.DateTime, default=_utcnow)
+    atualizado_em         = db.Column(db.DateTime, default=_utcnow, onupdate=_utcnow)
+    # Denormalizado a partir da última ClienteDuvidaMensagem — evita um
+    # JOIN+agregação toda vez que a lista de threads precisa ordenar por
+    # "mais recente primeiro" (mesmo motivo de Agendamento.valor_total já
+    # vir calculado em vez de somado toda leitura).
+    ultima_mensagem_em    = db.Column(db.DateTime, default=_utcnow)
+    # Badges independentes por lado — zerado quando aquele lado abre a
+    # thread (GET .../duvidas/<id>), setado quando o OUTRO lado escreve.
+    nao_lida_gestor       = db.Column(db.Boolean, nullable=False, default=False)
+    nao_lida_cliente      = db.Column(db.Boolean, nullable=False, default=False)
+
+
+class ClienteDuvidaMensagem(TenantMixin, db.Model):
+    """Uma mensagem dentro de uma ClienteDuvida — texto e/ou até 3 imagens
+    (ClienteDuvidaMensagemImagem). O invariante "nunca vazia" (texto OU ao
+    menos 1 imagem) não dá pra expressar como CHECK constraint depois que a
+    imagem virou tabela filha — é validado em app.utils.duvidas.criar_mensagem."""
+    __tablename__ = 'cliente_duvida_mensagem'
+    __table_args__ = (
+        db.CheckConstraint(
+            "autor_tipo IN ('cliente','gestor','barbeiro','admin')",
+            name='ck_cliente_duvida_mensagem_autor_tipo_valido',
+        ),
+    )
+
+    id                = db.Column(db.Integer, primary_key=True)
+    duvida_id         = db.Column(db.Integer, db.ForeignKey('cliente_duvida.id', ondelete='CASCADE'), nullable=False, index=True)
+    autor_usuario_id  = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    autor_tipo        = db.Column(db.String(20), nullable=False)  # cliente, gestor, barbeiro, admin
+    texto             = db.Column(db.String(2000))
+    criado_em         = db.Column(db.DateTime, default=_utcnow, index=True)
+
+    imagens = db.relationship(
+        'ClienteDuvidaMensagemImagem', backref='mensagem',
+        order_by='ClienteDuvidaMensagemImagem.ordem', viewonly=True, lazy='select',
+    )
+
+
+class ClienteDuvidaMensagemImagem(TenantMixin, db.Model):
+    """Até 3 imagens por ClienteDuvidaMensagem (validado em app.utils.duvidas).
+    Cada uma sobe pro Cloudinary com public_id determinístico
+    (duvida_<id>_msg_<id>_img_<id>) e NUNCA é devolvida direto pro
+    navegador — sempre via proxy assinado (comprovante_bp, tipo='duvida_msg')."""
+    __tablename__ = 'cliente_duvida_mensagem_imagem'
+    __table_args__ = (
+        db.UniqueConstraint('mensagem_id', 'ordem', name='uq_duvida_msg_imagem_ordem'),
+    )
+
+    id           = db.Column(db.Integer, primary_key=True)
+    mensagem_id  = db.Column(db.Integer, db.ForeignKey('cliente_duvida_mensagem.id', ondelete='CASCADE'), nullable=False, index=True)
+    imagem_url   = db.Column(db.String(255), nullable=False)
+    ordem        = db.Column(db.Integer, nullable=False, default=0)  # 0, 1, 2 — ordem de anexo
+    criado_em    = db.Column(db.DateTime, default=_utcnow)
+
+
+class ClienteDuvidaEvento(TenantMixin, db.Model):
+    """Timeline de auditoria própria do ticket (além do AuditoriaLog geral
+    do sistema) — toda mudança de categoria/prioridade/situação/
+    direcionamento/atribuição grava uma linha aqui, exibida na lateral da
+    conversa pra dar contexto rápido sem ler a thread inteira."""
+    __tablename__ = 'cliente_duvida_evento'
+    __table_args__ = (
+        db.CheckConstraint(
+            "tipo IN ('categoria_alterada','prioridade_alterada','situacao_alterada',"
+            "'direcionado_admin','reaberto','atribuido')",
+            name='ck_cliente_duvida_evento_tipo_valido',
+        ),
+    )
+
+    id               = db.Column(db.Integer, primary_key=True)
+    duvida_id        = db.Column(db.Integer, db.ForeignKey('cliente_duvida.id', ondelete='CASCADE'), nullable=False, index=True)
+    tipo             = db.Column(db.String(30), nullable=False)
+    valor_anterior   = db.Column(db.String(100))
+    valor_novo       = db.Column(db.String(100))
+    # NULL = evento gerado pelo sistema (ex: reabertura automática), não
+    # por uma pessoa — mesmo padrão de WebhookLog/AuditoriaLog não terem
+    # ator quando é automação.
+    autor_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id', ondelete='SET NULL'), nullable=True)
+    criado_em        = db.Column(db.DateTime, default=_utcnow, index=True)

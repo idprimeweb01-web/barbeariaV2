@@ -50,6 +50,14 @@ class StatusSolicitacaoPlano:
     TODOS = frozenset({PENDENTE, APROVADO, REJEITADO})
 
 
+class StatusSolicitacaoCompra:
+    PENDENTE = 'pendente'
+    APROVADA = 'aprovada'
+    REJEITADA = 'rejeitada'
+
+    TODOS = frozenset({PENDENTE, APROVADA, REJEITADA})
+
+
 class StatusTransferencia:
     """Status de TransferenciaAgendamento (Script 17)."""
     PENDENTE = 'pendente'
@@ -122,8 +130,102 @@ class TipoEventoWebhook:
     # chamar de volta POST /api/v1/webhook/agendamentos/<id>/aprovar
     # (ver app/routes/webhook_inbound.py) pra aprovar sozinha.
     COMPROVANTE_ENVIADO   = 'comprovante_enviado'
+    # Dúvidas do Cliente (chat de suporte) — dispara quando o cliente abre
+    # uma dúvida nova e a cada mensagem nova de qualquer lado da conversa,
+    # pra automação (n8n) poder avisar o gestor no WhatsApp.
+    DUVIDA_CRIADA         = 'duvida_criada'
+    DUVIDA_NOVA_MENSAGEM  = 'duvida_nova_mensagem'
+    # Dispara quando um ticket nasce ou é reclassificado como prioridade
+    # urgente — hook pronto pro n8n alertar alguém na hora (ex: WhatsApp
+    # pro gestor), mesmo sem nenhum workflow configurado ainda pra ele
+    # (disparar_webhook() já é um no-op seguro se o evento não estiver
+    # marcado como ativo na config da barbearia).
+    DUVIDA_URGENTE        = 'duvida_urgente'
 
     TODOS = frozenset({
         AGENDAMENTO_CRIADO, AGENDAMENTO_APROVADO, AGENDAMENTO_CANCELADO,
         PLANO_ATIVADO, VENDA_CONCLUIDA, COMPROVANTE_ENVIADO,
+        DUVIDA_CRIADA, DUVIDA_NOVA_MENSAGEM, DUVIDA_URGENTE,
+    })
+
+
+class StatusClienteDuvida:
+    """Situação de ClienteDuvida (ticket de suporte). v2: renomeado de
+    aberta/fechada pra um ciclo de vida de 3 estados — 'cancelada' é
+    terminal e NUNCA reabre sozinho (só ação explícita de gestor/barbeiro/
+    admin); 'concluida' reabre automaticamente pra 'pendente' se chegar
+    mensagem nova (ver app.utils.duvidas.criar_mensagem)."""
+    PENDENTE  = 'pendente'
+    CONCLUIDA = 'concluida'
+    CANCELADA = 'cancelada'
+
+    TODOS = frozenset({PENDENTE, CONCLUIDA, CANCELADA})
+
+
+class AutorTipoDuvida:
+    """Quem escreveu uma ClienteDuvidaMensagem."""
+    CLIENTE  = 'cliente'
+    GESTOR   = 'gestor'
+    BARBEIRO = 'barbeiro'
+    ADMIN    = 'admin'  # super_admin respondendo pela fila cross-tenant
+
+    TODOS = frozenset({CLIENTE, GESTOR, BARBEIRO, ADMIN})
+
+
+class CategoriaDuvida:
+    """Catálogo de categorias de ticket — cada uma tem rótulo+ícone
+    consistente na UI (ver ROTULOS no frontend/template). 'ERRO' é especial:
+    força direcionamento pro gestor mesmo se o cliente tiver escolhido um
+    funcionário específico (ver app.utils.duvidas.resolver_direcionamento)."""
+    DUVIDA      = 'duvida'
+    ERRO        = 'erro'
+    FINANCEIRO  = 'financeiro'
+    SUGESTAO    = 'sugestao'
+    TREINAMENTO = 'treinamento'
+    INTEGRACAO  = 'integracao'
+    CONTA       = 'conta'
+    OUTRO       = 'outro'
+
+    TODOS = frozenset({
+        DUVIDA, ERRO, FINANCEIRO, SUGESTAO, TREINAMENTO, INTEGRACAO, CONTA, OUTRO,
+    })
+
+
+class PrioridadeDuvida:
+    """Quem abre sugere; gestor/barbeiro/admin podem reclassificar. ORDEM é
+    usado pra ordenar a fila (urgente > alta > normal > baixa, depois por
+    ultima_mensagem_em) — menor valor = mais prioritário."""
+    BAIXA   = 'baixa'
+    NORMAL  = 'normal'
+    ALTA    = 'alta'
+    URGENTE = 'urgente'
+
+    TODOS = frozenset({BAIXA, NORMAL, ALTA, URGENTE})
+    ORDEM  = {URGENTE: 0, ALTA: 1, NORMAL: 2, BAIXA: 3}
+
+
+class DirecionadoTipo:
+    """Pra quem um ticket foi endereçado pelo cliente na abertura —
+    'barbeiro' é um funcionário específico (direcionado_para_usuario_id
+    preenchido); 'gestor' é a fila geral do estabelecimento (sem dono
+    específico, qualquer gestor/barbeiro com acesso pode responder)."""
+    GESTOR   = 'gestor'
+    BARBEIRO = 'barbeiro'
+
+    TODOS = frozenset({GESTOR, BARBEIRO})
+
+
+class TipoEventoDuvida:
+    """Tipo de ClienteDuvidaEvento — timeline de auditoria própria do
+    ticket, além do AuditoriaLog geral do sistema."""
+    CATEGORIA_ALTERADA  = 'categoria_alterada'
+    PRIORIDADE_ALTERADA = 'prioridade_alterada'
+    SITUACAO_ALTERADA   = 'situacao_alterada'
+    DIRECIONADO_ADMIN   = 'direcionado_admin'
+    REABERTO            = 'reaberto'
+    ATRIBUIDO           = 'atribuido'
+
+    TODOS = frozenset({
+        CATEGORIA_ALTERADA, PRIORIDADE_ALTERADA, SITUACAO_ALTERADA,
+        DIRECIONADO_ADMIN, REABERTO, ATRIBUIDO,
     })
