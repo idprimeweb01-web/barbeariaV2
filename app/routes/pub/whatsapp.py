@@ -1,10 +1,15 @@
 """
-Endpoints públicos de apoio ao bot de agendamento via WhatsApp (n8n + Evolution
-API). Mesma filosofia de confiança do quick-booking em pub/agendamento.py:
-sem login, identificação por telefone (quem manda a mensagem já provou ser
-dono do número, na própria conversa do WhatsApp).
+Endpoints de apoio ao bot de agendamento via WhatsApp (n8n + Evolution API).
+NÃO são públicos de verdade apesar do prefixo /pub — exigem o header
+X-Bot-Secret (ver _autenticar_bot abaixo). Quem manda a mensagem no WhatsApp
+prova ser dono do número na própria conversa, mas isso só vale DENTRO do
+workflow do n8n; sem o secret, essas rotas HTTP virariam um jeito de
+qualquer um consultar a agenda de qualquer cliente só sabendo o telefone
+(achado #2 do checkup de segurança — AUDITORIA_PRODUCAO.md).
 """
-from flask import Blueprint, request, jsonify
+import hmac
+import os
+from flask import Blueprint, request, jsonify, abort
 from app.extensions import db, limiter
 from app.models import Barbearia, Cliente, Agendamento, AgendamentoServico, Servico, Barbeiro, Usuario, Segmento
 from app.exceptions import APIError
@@ -14,6 +19,19 @@ from app.constants import StatusAgendamento
 from app.labels import L
 
 pub_whatsapp_bp = Blueprint('pub_whatsapp', __name__, url_prefix='/api/v1/pub')
+
+
+def _autenticar_bot():
+    """Exige o header X-Bot-Secret batendo com N8N_BOT_API_SECRET, comparado
+    em tempo constante (mesmo padrão de webhook_inbound.py). Falha FECHADO:
+    sem a env var configurada, nega tudo — nunca libera por omissão (um
+    hmac.compare_digest('', '') sozinho retornaria True, por isso o `not
+    segredo_esperado` vem primeiro e curto-circuita antes de comparar).
+    404 (não 401/403) pra não confirmar a quem sondar que a rota existe."""
+    segredo_esperado = os.environ.get('N8N_BOT_API_SECRET', '')
+    segredo_recebido = request.headers.get('X-Bot-Secret', '')
+    if not segredo_esperado or not hmac.compare_digest(segredo_recebido, segredo_esperado):
+        abort(404)
 
 
 # ── GET /api/v1/pub/barbearia-por-instancia?instance=...&telefone=... ────────
@@ -29,6 +47,8 @@ pub_whatsapp_bp = Blueprint('pub_whatsapp', __name__, url_prefix='/api/v1/pub')
 @pub_whatsapp_bp.get('/barbearia-por-instancia')
 @limiter.limit('60 per minute')
 def barbearia_por_instancia():
+    _autenticar_bot()
+
     instance = (request.args.get('instance') or '').strip()
     if not instance:
         raise APIError('Parâmetro "instance" é obrigatório.', 422)
@@ -64,6 +84,8 @@ def barbearia_por_instancia():
 @pub_whatsapp_bp.get('/<slug>/clientes/<telefone>/proximo-agendamento')
 @limiter.limit('30 per minute')
 def proximo_agendamento(slug, telefone):
+    _autenticar_bot()
+
     barbearia = Barbearia.query.filter_by(slug=slug, ativo=True).first()
     if not barbearia:
         raise APIError(f'{L("tenant")} não encontrada ou inativa.', 404)

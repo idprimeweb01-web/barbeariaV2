@@ -15,7 +15,7 @@ apenas leitura e relatório, conforme pedido.
 | # | Severidade | Item | Arquivo:linha |
 |---|---|---|---|
 | 1 | 🔴 CRÍTICO | Sequestro de conta via telefone sem verificação por código | `app/routes/views/auth.py:724-748` |
-| 2 | 🔴 CRÍTICO | Endpoint público vaza próximo agendamento por telefone, sem autenticação | `app/routes/pub/whatsapp.py:64-109` |
+| 2 | ✅ RESOLVIDO | ~~Endpoint público vaza próximo agendamento por telefone, sem autenticação~~ | `app/routes/pub/whatsapp.py:64-109` |
 | 3 | 🟠 ALTO | Cookies de sessão (`bos_at`/`bos_rt`) nunca recebem a flag `Secure`, nem em produção | `app/routes/views/auth.py:26,136,139,167,665-667,766-767` |
 | 4 | 🟠 ALTO | Upload de comprovante PIX anônimo não valida dono do agendamento | `app/routes/pub/agendamento.py:737-771` |
 | 5 | 🟠 ALTO | Normalização de telefone não trata DDI/nono dígito — mesmo número pode virar 2 clientes diferentes | `app/utils/telefone.py:4-11` |
@@ -81,7 +81,14 @@ reduz a superfície.
 
 ---
 
-### 2. Endpoint público vaza o próximo agendamento de qualquer cliente, sem autenticação
+### 2. ~~Endpoint público vaza o próximo agendamento de qualquer cliente, sem autenticação~~ ✅ RESOLVIDO
+
+**Resolução (Fase 2, Bloco 2):** as duas rotas agora exigem header
+`X-Bot-Secret` batendo com `N8N_BOT_API_SECRET` (comparação em tempo
+constante, mesmo padrão do `webhook_inbound.py`), falha fechado se a env
+var não estiver configurada, e devolvem 404 (não 401/403) em qualquer
+rejeição. Ver `app/routes/pub/whatsapp.py:_autenticar_bot`.
+
 
 **O que está errado:** `GET /api/v1/pub/<slug>/clientes/<telefone>/proximo-agendamento`
 (`app/routes/pub/whatsapp.py:64-109`) não tem NENHUM decorator de autenticação
