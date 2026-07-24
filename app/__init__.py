@@ -137,6 +137,55 @@ def create_app(config=None):
     from .context import load_user_context
     app.before_request(load_user_context)
 
+    # ── Aviso de rate limit por-worker (PROD-01) ─────────────────────────────
+    # "memory://" (padrão do Flask-Limiter) não é compartilhado entre workers
+    # do gunicorn — cada um conta separado, então em produção com múltiplos
+    # workers (Procfile usa -w 2) os limites (login, agendar, reset de senha
+    # etc.) valem o dobro do configurado e resetam a cada restart. Só loga —
+    # não bloqueia o boot, porque um Redis pode não estar pronto ainda em
+    # alguns pipelines de deploy.
+    if (
+        os.environ.get('FLASK_ENV') == 'production'
+        and os.environ.get('RATELIMIT_STORAGE_URI', 'memory://') == 'memory://'
+    ):
+        logging.getLogger(__name__).warning(
+            'RATELIMIT_STORAGE_URI não configurado em produção — o rate '
+            'limiter está usando "memory://", que NÃO é compartilhado entre '
+            'workers do gunicorn. Configure um Redis compartilhado '
+            '(ex: plugin do Railway) via RATELIMIT_STORAGE_URI para os '
+            'limites funcionarem corretamente com múltiplos workers.'
+        )
+
+    # ── Headers de segurança (checkup de segurança, achado: nenhum header
+    # estava configurado) ────────────────────────────────────────────────────
+    # CSP permite 'unsafe-inline' em script/style porque o projeto usa <script>
+    # inline em quase toda tela Jinja (sem infraestrutura de nonce) — uma CSP
+    # estrita exigiria mover todo esse JS pra arquivos externos, refactor maior
+    # fora do escopo deste checkup. Mesmo assim já bloqueia object/base-uri e
+    # nega frame-ancestors, cobrindo os vetores mais graves (clickjacking,
+    # injeção de <base>, plugins). Ver DT-009 na memória do projeto.
+    _CSP = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "img-src 'self' data: https://res.cloudinary.com https://api.qrserver.com; "
+        "font-src 'self' data: https://fonts.gstatic.com; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "frame-ancestors 'none'"
+    )
+
+    @app.after_request
+    def _headers_seguranca(resp):
+        resp.headers['X-Frame-Options'] = 'DENY'
+        resp.headers['X-Content-Type-Options'] = 'nosniff'
+        resp.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        resp.headers['Content-Security-Policy'] = _CSP
+        if os.environ.get('FLASK_ENV') == 'production':
+            resp.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        return resp
+
     # ── Handlers de erro ──────────────────────────────────────────────────────
     from .exceptions import APIError
 
