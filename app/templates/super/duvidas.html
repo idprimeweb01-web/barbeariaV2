@@ -1,28 +1,24 @@
-{% extends "gestor/base.html" %}
-{% block title %}Dúvidas do Cliente{% endblock %}
-{% block breadcrumb %}
-<a href="/gestor/dashboard">Dashboard</a>
-<span class="breadcrumb-sep">›</span>
-<span class="breadcrumb-current">Dúvidas do Cliente</span>
-{% endblock %}
+{% extends "super/base.html" %}
+{% block title %}Suporte{% endblock %}
+{% block page_title %}Suporte{% endblock %}
 
 {% block styles %}
 <style>
-.dv-container { max-width: 1000px; }
+.dv-container { max-width: 1050px; }
 
 .dv-filtros { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
 .dv-filtros .field { margin-bottom: 0; min-width: 140px; }
-.dv-filtros label { display:block;font-size:11px;color:var(--muted2);font-weight:700;margin-bottom:4px;text-transform:uppercase; }
+.dv-filtros label { display:block;font-size:11px;color:#666;font-weight:700;margin-bottom:4px;text-transform:uppercase; }
 .dv-filtros select, .dv-filtros input[type=date], .dv-filtros input[type=text] {
-  padding: 8px 10px; background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 6px; color: var(--text); font-family: inherit; font-size: 13px;
+  padding: 8px 10px; background: #1e1e1e; border: 1.5px solid #2a2a2a;
+  border-radius: 6px; color: #fff; font-family: inherit; font-size: 13px;
 }
 .dv-filtros input[type=text] { min-width: 220px; }
-.dv-check { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-secundario); padding-bottom:9px; white-space:nowrap; }
+.dv-check { display:flex; align-items:center; gap:6px; font-size:12px; color:#aaa; padding-bottom:9px; white-space:nowrap; }
 
 .dv-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
 .dv-chip {
-  background: var(--surface2); border: 1px solid var(--border); color: var(--text-secundario);
+  background: #1e1e1e; border: 1px solid #2a2a2a; color: #aaa;
   border-radius: 999px; padding: 5px 12px; font-size: 12px; cursor: pointer; font-family: inherit;
   display: flex; align-items: center; gap: 5px;
 }
@@ -30,56 +26,73 @@
 
 .dv-list { display: flex; flex-direction: column; gap: 10px; }
 .dv-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px;
   padding: 14px 16px; cursor: pointer; position: relative;
 }
 .dv-card:hover { border-color: var(--cor-primaria); }
 .dv-card.urgente { border-left: 3px solid #ef4444; }
 .dv-badge-dot { position:absolute; top:14px; right:14px; width:9px; height:9px; border-radius:50%; background:#3b82f6; }
 .dv-topline { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
-.dv-assunto { font-weight: 700; font-size: 14px; padding-right: 20px; }
-.dv-preview { font-size: 12px; color: var(--muted2); margin: 4px 0 8px; }
-.dv-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--muted2); flex-wrap: wrap; gap: 6px; }
+.dv-barbearia { font-size: 11px; color: var(--cor-primaria); font-weight: 700; margin-bottom: 3px; }
+.dv-assunto { font-weight: 700; font-size: 14px; color: #ddd; padding-right: 20px; }
+.dv-preview { font-size: 12px; color: #777; margin: 4px 0 8px; }
+.dv-meta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #666; flex-wrap: wrap; gap: 6px; }
 .dv-meta-esq { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
-.dv-empty { text-align: center; padding: 60px 20px; color: var(--muted2); }
+.dv-empty { text-align: center; padding: 60px 20px; color: #555; }
 
-.pg-controls { display: flex; justify-content: center; gap: 10px; margin-top: 16px; align-items: center; font-size: 13px; color: var(--muted); }
-.pg-controls button { background: none; border: 1px solid var(--border); color: var(--text-secundario); border-radius: 6px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
+.badge { border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.badge-green  { background: rgba(34,197,94,.15);  color: #4ade80; }
+.badge-gray   { background: rgba(255,255,255,.07); color: #888; }
+.badge-orange { background: rgba(243,156,18,.15);  color: #fbbf24; }
+.badge-red    { background: rgba(220,38,38,.15);   color: #f87171; }
+.badge-blue   { background: rgba(59,130,246,.15);   color: #93c5fd; }
+
+.pg-controls { display: flex; justify-content: center; gap: 10px; margin-top: 16px; align-items: center; font-size: 13px; color: #888; }
+.pg-controls button { background: none; border: 1px solid #2a2a2a; color: #aaa; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
 .pg-controls button:disabled { opacity: .4; cursor: not-allowed; }
+
+.btn-icon {
+  padding: 8px 14px; border-radius: 6px; border: 1.5px solid var(--cor-primaria);
+  background: none; color: var(--cor-primaria); font-size: 12px; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+}
+.btn-icon:hover { background: rgba(186,117,23,.1); }
+.btn-icon.danger { border-color: #dc2626; color: #f87171; }
+.btn-icon.danger:hover { background: rgba(220,38,38,.1); }
 
 /* ── Conversa ── */
 .dv-conversa-layout { display: flex; gap: 16px; align-items: flex-start; }
 .dv-conversa { display: flex; flex-direction: column; height: 74vh; flex: 1; min-width: 0; }
-.dv-conversa-header { display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:10px; flex-wrap: wrap; }
+.dv-conversa-header { display:flex; align-items:center; gap:10px; border-bottom:1px solid #2a2a2a; padding-bottom:12px; margin-bottom:10px; flex-wrap: wrap; }
 .dv-conversa-acoes { display: flex; gap: 6px; flex-wrap: wrap; }
-.dv-conversa-meta { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.dv-conversa-meta { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
 .dv-conversa-meta select {
-  padding: 6px 8px; background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 6px; color: var(--text); font-family: inherit; font-size: 12px;
+  padding: 6px 8px; background: #1e1e1e; border: 1px solid #2a2a2a;
+  border-radius: 6px; color: #fff; font-family: inherit; font-size: 12px;
 }
 .dv-conversa-msgs { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:4px 2px; }
 .dv-bubble { max-width: 70%; border-radius: 12px; padding: 8px 12px; font-size: 13px; word-break: break-word; }
-.dv-bubble.cliente { align-self: flex-start; background: var(--surface2); color: var(--text); }
+.dv-bubble.cliente { align-self: flex-start; background: #1e1e1e; color: #eee; }
 .dv-bubble.gestor, .dv-bubble.barbeiro, .dv-bubble.admin { align-self: flex-end; background: var(--cor-primaria); color: #1a1a1a; }
 .dv-bubble-autor { font-size: 10px; font-weight: 700; opacity: .7; margin-bottom: 3px; text-transform: uppercase; }
 .dv-bubble img { max-width: 160px; border-radius: 8px; margin-top: 6px; margin-right: 4px; display: inline-block; cursor: pointer; }
 .dv-bubble-time { font-size: 10px; opacity: .7; margin-top: 4px; text-align: right; }
-.dv-input-row { display:flex; gap:8px; align-items:flex-end; border-top:1px solid var(--border); padding-top:10px; margin-top:10px; }
-.dv-input-row textarea { flex:1; resize:none; padding:8px 10px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:inherit; font-size:13px; }
+.dv-input-row { display:flex; gap:8px; align-items:flex-end; border-top:1px solid #2a2a2a; padding-top:10px; margin-top:10px; }
+.dv-input-row textarea { flex:1; resize:none; padding:8px 10px; background:#1e1e1e; border:1px solid #2a2a2a; border-radius:6px; color:#fff; font-family:inherit; font-size:13px; }
 .dv-previews { display: flex; gap: 8px; margin-bottom: 8px; }
 .dv-preview-img { position:relative; display:inline-block; }
 .dv-preview-img img { max-width:80px; max-height: 80px; object-fit: cover; border-radius:8px; display:block; }
 .dv-preview-img button { position:absolute; top:-6px; right:-6px; width:20px;height:20px; border-radius:50%; border:none; background:#dc2626; color:#fff; cursor:pointer; font-size:12px; line-height:1; padding:0; }
 
 /* ── Timeline lateral ── */
-.dv-timeline { width: 260px; flex-shrink: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; height: 74vh; overflow-y: auto; }
-.dv-timeline-title { font-size: 12px; font-weight: 700; color: var(--muted2); text-transform: uppercase; margin-bottom: 10px; }
-.dv-evento { border-left: 2px solid var(--border); padding: 0 0 12px 10px; margin-left: 4px; position: relative; }
+.dv-timeline { width: 260px; flex-shrink: 0; background: #1e1e1e; border: 1px solid #2a2a2a; border-radius: 10px; padding: 14px; height: 74vh; overflow-y: auto; }
+.dv-timeline-title { font-size: 12px; font-weight: 700; color: #666; text-transform: uppercase; margin-bottom: 10px; }
+.dv-evento { border-left: 2px solid #2a2a2a; padding: 0 0 12px 10px; margin-left: 4px; position: relative; }
 .dv-evento::before { content: ''; position: absolute; left: -5px; top: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--cor-primaria); }
-.dv-evento-tipo { font-size: 12px; font-weight: 700; color: var(--text); }
-.dv-evento-valor { font-size: 11px; color: var(--muted2); margin-top: 2px; }
-.dv-evento-meta { font-size: 10px; color: var(--muted2); margin-top: 3px; }
+.dv-evento-tipo { font-size: 12px; font-weight: 700; color: #ddd; }
+.dv-evento-valor { font-size: 11px; color: #777; margin-top: 2px; }
+.dv-evento-meta { font-size: 10px; color: #666; margin-top: 3px; }
 @media (max-width: 900px) { .dv-conversa-layout { flex-direction: column; } .dv-timeline { width: 100%; height: auto; max-height: 260px; } }
 </style>
 {% endblock %}
@@ -114,10 +127,15 @@
         <input type="checkbox" id="fPrecisaResposta" onchange="recarregar()">
         Só aguardando resposta
       </label>
+      <label class="dv-check">
+        <input type="checkbox" id="fEncaminhado" onchange="recarregar()">
+        Só encaminhados
+      </label>
       <button class="btn-icon" onclick="recarregar()">Filtrar</button>
       <button class="btn-icon" onclick="exportarExcel()" style="margin-left:auto">↓ Exportar Excel</button>
     </div>
 
+    <div class="dv-chips" id="chipsAtribuicao"></div>
     <div class="dv-chips" id="chipsCategoria"></div>
     <div class="dv-chips" id="chipsPrioridade"></div>
 
@@ -138,9 +156,9 @@
 
 {% block scripts %}
 <script>
-const DV_API = '/gestor/duvidas';
-const DV_VIEW_URL = '/gestor/duvidas-cliente';
-const DV_MOSTRAR_ENCAMINHAR_ADMIN = true;
+const DV_API = '/super/duvidas';
+const DV_VIEW_URL = '/super/duvidas';
+const DV_MOSTRAR_ENCAMINHAR_ADMIN = false;
 
 const CATEGORIA_META = {
   duvida:      { icone: '❓', label: 'Dúvida' },
@@ -178,6 +196,7 @@ let _duvidaAtual  = null;
 let _imagensSelecionadas = [];
 let _categoriasAtivas  = new Set();
 let _prioridadesAtivas = new Set();
+let _atribuicaoAtiva   = null; // 'me' | 'nenhum' | null
 
 function hojeISO() { return new Date().toISOString().slice(0, 10); }
 function primeiroDiaMesISO() {
@@ -186,6 +205,10 @@ function primeiroDiaMesISO() {
 }
 
 function montarChips() {
+  document.getElementById('chipsAtribuicao').innerHTML = `
+    <button type="button" class="dv-chip" data-atrib="me" onclick="toggleAtribuicao('me', this)">👤 Meus tickets</button>
+    <button type="button" class="dv-chip" data-atrib="nenhum" onclick="toggleAtribuicao('nenhum', this)">Não atribuídos</button>
+  `;
   document.getElementById('chipsCategoria').innerHTML = Object.entries(CATEGORIA_META).map(([k, m]) => `
     <button type="button" class="dv-chip" data-cat="${k}" onclick="toggleChip('categoria','${k}',this)">${m.icone} ${m.label}</button>
   `).join('');
@@ -201,6 +224,14 @@ function toggleChip(tipo, valor, btn) {
   recarregar();
 }
 
+function toggleAtribuicao(valor, btn) {
+  const jaAtivo = _atribuicaoAtiva === valor;
+  document.querySelectorAll('#chipsAtribuicao .dv-chip').forEach(b => b.classList.remove('active'));
+  _atribuicaoAtiva = jaAtivo ? null : valor;
+  if (!jaAtivo) btn.classList.add('active');
+  recarregar();
+}
+
 function recarregar() {
   _paginaAtual = 1;
   carregarLista();
@@ -212,9 +243,11 @@ function filtrosAtuais() {
     de: document.getElementById('fDe').value,
     ate: document.getElementById('fAte').value,
     precisa_resposta: document.getElementById('fPrecisaResposta').checked,
+    encaminhado: document.getElementById('fEncaminhado').checked,
     q: document.getElementById('fBusca').value.trim(),
     categoria: Array.from(_categoriasAtivas).join(','),
     prioridade: Array.from(_prioridadesAtivas).join(','),
+    atribuido: _atribuicaoAtiva,
   };
 }
 
@@ -224,9 +257,11 @@ function paramsDeFiltros(f) {
   if (f.de) params.set('de', f.de);
   if (f.ate) params.set('ate', f.ate);
   if (f.precisa_resposta) params.set('precisa_resposta', '1');
+  if (f.encaminhado) params.set('encaminhado', '1');
   if (f.q) params.set('q', f.q);
   if (f.categoria) params.set('categoria', f.categoria);
   if (f.prioridade) params.set('prioridade', f.prioridade);
+  if (f.atribuido) params.set('atribuido', f.atribuido);
   return params;
 }
 
@@ -276,12 +311,14 @@ async function carregarLista() {
     }
     listEl.innerHTML = r.dados.map(d => `
       <div class="dv-card ${d.prioridade === 'urgente' ? 'urgente' : ''}" onclick="abrirConversa(${d.id})">
-        ${d.nao_lida_gestor ? '<span class="dv-badge-dot"></span>' : ''}
+        <div class="dv-barbearia">${esc(d.barbearia?.nome || '—')}</div>
         <div class="dv-topline">
           ${badgeCategoria(d.categoria)}
           ${badgePrioridade(d.prioridade)}
           ${badgeStatus(d.status)}
           ${d.precisa_resposta ? '<span class="badge badge-blue">Precisa resposta</span>' : ''}
+          ${d.encaminhado_admin ? '<span class="badge badge-blue">📤 Encaminhado</span>' : ''}
+          ${d.atribuido_a ? `<span class="badge badge-gray">👤 ${esc(d.atribuido_a.nome)}</span>` : ''}
           ${d.nota_satisfacao ? `<span class="badge badge-green">⭐ ${d.nota_satisfacao}/5</span>` : ''}
         </div>
         <div class="dv-assunto">${esc(d.assunto || 'Dúvida sem assunto')} — ${esc(d.cliente?.nome || '?')}</div>
@@ -338,7 +375,7 @@ async function carregarConversa() {
 
 function renderTimeline(eventos) {
   if (!eventos || !eventos.length) {
-    return '<div style="font-size:12px;color:var(--muted2)">Nenhum evento registrado ainda.</div>';
+    return '<div style="font-size:12px;color:#666">Nenhum evento registrado ainda.</div>';
   }
   return eventos.map(ev => `
     <div class="dv-evento">
@@ -355,10 +392,10 @@ function renderConversa(d) {
   const acoes = [];
   if (pendente) acoes.push(`<button class="btn-icon" onclick="concluirConversa()">✓ Concluir</button>`);
   if (d.status !== 'cancelada') acoes.push(`<button class="btn-icon danger" onclick="cancelarConversa()">✕ Cancelar</button>`);
-  if (DV_MOSTRAR_ENCAMINHAR_ADMIN && !d.encaminhado_admin) {
-    acoes.push(`<button class="btn-icon" onclick="encaminharAdmin()">📤 Encaminhar ao admin</button>`);
-  } else if (DV_MOSTRAR_ENCAMINHAR_ADMIN && d.encaminhado_admin) {
-    acoes.push(`<span class="badge badge-blue">📤 Encaminhado ao admin</span>`);
+  if (d.atribuido_a_usuario_id) {
+    acoes.push(`<button class="btn-icon" onclick="desatribuirConversa()">Remover atribuição</button>`);
+  } else {
+    acoes.push(`<button class="btn-icon" onclick="atribuirConversa()">Atribuir a mim</button>`);
   }
 
   viewEl.innerHTML = `
@@ -367,7 +404,8 @@ function renderConversa(d) {
         <div class="dv-conversa-header">
           <button class="btn-icon" onclick="fecharConversa()">← Voltar</button>
           <div style="flex:1">
-            <div style="font-weight:700;font-size:14px">${esc(d.assunto || 'Dúvida sem assunto')} — ${esc(d.cliente?.nome || '?')}</div>
+            <div class="dv-barbearia">${esc(d.barbearia?.nome || '—')}</div>
+            <div style="font-weight:700;font-size:14px;color:#eee">${esc(d.assunto || 'Dúvida sem assunto')} — ${esc(d.cliente?.nome || '?')}</div>
             ${badgeStatus(d.status)}
           </div>
           <div class="dv-conversa-acoes">${acoes.join('')}</div>
@@ -404,7 +442,7 @@ function renderConversa(d) {
             <textarea id="dvTexto" rows="2" maxlength="2000" placeholder="Digite sua resposta…"></textarea>
             <button class="btn-icon" id="btnEnviarResposta" onclick="enviarResposta()" style="flex-shrink:0">Enviar</button>
           </div>
-        ` : `<div style="text-align:center;color:#666;font-size:12px;padding-top:10px;border-top:1px solid var(--border)">Este ticket foi cancelado — não aceita novas mensagens.</div>`}
+        ` : `<div style="text-align:center;color:#666;font-size:12px;padding-top:10px;border-top:1px solid #2a2a2a">Este ticket foi cancelado — não aceita novas mensagens.</div>`}
       </div>
 
       <div class="dv-timeline">
@@ -480,10 +518,18 @@ async function cancelarConversa() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-async function encaminharAdmin() {
+async function atribuirConversa() {
   try {
-    await Bos.put(`${DV_API}/` + _duvidaAtual + '/encaminhar-admin', {});
-    toast('Ticket encaminhado ao suporte da plataforma.', 'success');
+    await Bos.put(`${DV_API}/` + _duvidaAtual + '/atribuir', {});
+    toast('Ticket atribuído a você.', 'success');
+    carregarConversa();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function desatribuirConversa() {
+  try {
+    await Bos.put(`${DV_API}/` + _duvidaAtual + '/desatribuir', {});
+    toast('Atribuição removida.', 'success');
     carregarConversa();
   } catch (e) { toast(e.message, 'error'); }
 }

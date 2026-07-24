@@ -1,7 +1,7 @@
-{% extends "gestor/base.html" %}
+{% extends "barbeiro/base.html" %}
 {% block title %}Dúvidas do Cliente{% endblock %}
 {% block breadcrumb %}
-<a href="/gestor/dashboard">Dashboard</a>
+<a href="/barbeiro/dashboard">Dashboard</a>
 <span class="breadcrumb-sep">›</span>
 <span class="breadcrumb-current">Dúvidas do Cliente</span>
 {% endblock %}
@@ -87,6 +87,10 @@
 {% block content %}
 <div class="dv-container">
 
+  <p style="font-size: 12px; color: var(--muted2); margin-bottom: 12px;">
+    Tickets que o cliente direcionou pra você especificamente. Você pode responder, reclassificar e encerrar.
+  </p>
+
   <div id="viewLista">
     <div class="dv-filtros">
       <div class="field">
@@ -139,7 +143,7 @@
 {% block scripts %}
 <script>
 const DV_API = '/gestor/duvidas';
-const DV_VIEW_URL = '/gestor/duvidas-cliente';
+const DV_VIEW_URL = '/barbeiro/duvidas-cliente';
 const DV_MOSTRAR_ENCAMINHAR_ADMIN = true;
 
 const CATEGORIA_META = {
