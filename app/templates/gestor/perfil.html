@@ -1,0 +1,253 @@
+{% extends "gestor/base.html" %}
+{% block title %}Meu Perfil{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Meu Perfil</span>
+{% endblock %}
+
+{% block styles %}
+<style>
+.perfil-container { max-width: 640px; }
+.perfil-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:24px; margin-bottom:24px; }
+.perfil-card h3 { font-size: 14px; margin: 0 0 16px; }
+.form-group { margin-bottom: 16px; }
+.form-label { display: block; font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.form-input {
+  width: 100%; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font-family: inherit; font-size: 13px;
+  outline: none; box-sizing: border-box; transition: border-color .2s;
+}
+.form-input:focus { border-color: var(--cor-primaria); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-row-3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; }
+.form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+.logo-preview { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.logo-preview img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); }
+.logo-preview .sem-logo { width: 64px; height: 64px; border-radius: 10px; border: 1px dashed var(--border); display:flex; align-items:center; justify-content:center; font-size: 11px; color: var(--muted); text-align:center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="perfil-container">
+
+  <div class="perfil-card">
+    <h3>Dados da barbearia</h3>
+    <div class="logo-preview">
+      <div id="logoPreviewBox"><div class="sem-logo">Sem logo</div></div>
+      <div>
+        <input type="file" id="fLogoArquivo" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="uploadLogo()">
+        <button class="btn-icon" onclick="document.getElementById('fLogoArquivo').click()">Trocar logo</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Nome de exibição</label>
+      <input class="form-input" id="fNomeExibicao" placeholder="Nome que aparece pro cliente">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Telefone principal</label>
+        <input class="form-input" id="fTelefone" placeholder="(XX) XXXXX-XXXX">
+      </div>
+      <div class="form-group">
+        <label class="form-label">E-mail de contato</label>
+        <input class="form-input" id="fEmailContato" type="email" placeholder="contato@suabarbearia.com">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Instagram</label>
+      <input class="form-input" id="fInstagram" placeholder="@suabarbearia">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Abre às</label>
+        <input class="form-input" id="fHorarioAbertura" type="time">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fecha às</label>
+        <input class="form-input" id="fHorarioFechamento" type="time">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Rua</label>
+      <input class="form-input" id="fRua" placeholder="Nome da rua">
+    </div>
+    <div class="form-row-3">
+      <div class="form-group">
+        <label class="form-label">Bairro</label>
+        <input class="form-input" id="fBairro">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Número</label>
+        <input class="form-input" id="fNumero">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Complemento</label>
+        <input class="form-input" id="fComplemento">
+      </div>
+    </div>
+    <div class="form-row-3">
+      <div class="form-group">
+        <label class="form-label">Cidade</label>
+        <input class="form-input" id="fCidade">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Estado</label>
+        <input class="form-input" id="fEstado" maxlength="2" placeholder="UF">
+      </div>
+      <div class="form-group">
+        <label class="form-label">CEP</label>
+        <input class="form-input" id="fCep">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-icon" id="btnSalvarBarbearia" onclick="salvarBarbearia()">Salvar dados da barbearia</button>
+    </div>
+  </div>
+
+  <div class="perfil-card">
+    <h3>Seus dados pessoais</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Nome</label>
+        <input class="form-input" id="fContaNome">
+      </div>
+      <div class="form-group">
+        <label class="form-label">E-mail (usado pra entrar)</label>
+        <input class="form-input" id="fContaEmail" type="email">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-icon" id="btnSalvarConta" onclick="salvarConta()">Salvar meus dados</button>
+    </div>
+  </div>
+
+  <div class="perfil-card">
+    <h3>Alterar senha</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Senha atual</label>
+        <input class="form-input" id="fSenhaAtual" type="password">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nova senha (mínimo 8 caracteres)</label>
+        <input class="form-input" id="fSenhaNova" type="password">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn-icon" id="btnSenha" onclick="trocarSenha()">Alterar senha</button>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function carregar() {
+  try {
+    const r = await Bos.get('/gestor/perfil');
+    const b = r.barbearia;
+    document.getElementById('fNomeExibicao').value     = b.nome_exibicao || '';
+    document.getElementById('fTelefone').value         = b.telefone_contato || '';
+    document.getElementById('fEmailContato').value     = b.email_contato || '';
+    document.getElementById('fInstagram').value        = b.instagram || '';
+    document.getElementById('fHorarioAbertura').value  = b.horario_abertura || '';
+    document.getElementById('fHorarioFechamento').value = b.horario_fechamento || '';
+    document.getElementById('fRua').value        = b.rua || '';
+    document.getElementById('fNumero').value     = b.numero || '';
+    document.getElementById('fComplemento').value = b.complemento || '';
+    document.getElementById('fBairro').value     = b.bairro || '';
+    document.getElementById('fCidade').value     = b.cidade || '';
+    document.getElementById('fEstado').value     = b.estado || '';
+    document.getElementById('fCep').value        = b.cep || '';
+
+    document.getElementById('fContaNome').value  = r.conta.nome || '';
+    document.getElementById('fContaEmail').value = r.conta.email || '';
+
+    const box = document.getElementById('logoPreviewBox');
+    box.innerHTML = b.logo_url
+      ? `<img src="${b.logo_url}" alt="Logo">`
+      : '<div class="sem-logo">Sem logo</div>';
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function salvarBarbearia() {
+  const dados = {
+    nome_exibicao:      document.getElementById('fNomeExibicao').value.trim(),
+    telefone_contato:   document.getElementById('fTelefone').value.trim(),
+    email_contato:      document.getElementById('fEmailContato').value.trim(),
+    instagram:          document.getElementById('fInstagram').value.trim(),
+    horario_abertura:   document.getElementById('fHorarioAbertura').value || null,
+    horario_fechamento: document.getElementById('fHorarioFechamento').value || null,
+    rua:         document.getElementById('fRua').value.trim(),
+    numero:      document.getElementById('fNumero').value.trim(),
+    complemento: document.getElementById('fComplemento').value.trim(),
+    bairro:      document.getElementById('fBairro').value.trim(),
+    cidade:      document.getElementById('fCidade').value.trim(),
+    estado:      document.getElementById('fEstado').value.trim().toUpperCase(),
+    cep:         document.getElementById('fCep').value.trim(),
+  };
+  if (!dados.nome_exibicao) { toast('Informe o nome de exibição.', 'error'); return; }
+
+  const btn = document.getElementById('btnSalvarBarbearia');
+  btn.disabled = true;
+  try {
+    await Bos.patch('/gestor/perfil/barbearia', dados);
+    toast('Dados da barbearia atualizados.', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+
+async function salvarConta() {
+  const nome  = document.getElementById('fContaNome').value.trim();
+  const email = document.getElementById('fContaEmail').value.trim();
+  if (!nome)  { toast('Informe seu nome.', 'error'); return; }
+  if (!email) { toast('Informe seu e-mail.', 'error'); return; }
+
+  const btn = document.getElementById('btnSalvarConta');
+  btn.disabled = true;
+  try {
+    await Bos.patch('/gestor/perfil/conta', { nome, email });
+    toast('Seus dados foram atualizados.', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+
+async function trocarSenha() {
+  const senha_atual = document.getElementById('fSenhaAtual').value;
+  const senha_nova  = document.getElementById('fSenhaNova').value;
+  if (!senha_atual) { toast('Informe a senha atual.', 'error'); return; }
+  if (senha_nova.length < 8) { toast('A nova senha deve ter no mínimo 8 caracteres.', 'error'); return; }
+
+  const btn = document.getElementById('btnSenha');
+  btn.disabled = true;
+  try {
+    await Bos.post('/gestor/perfil/senha', { senha_atual, senha_nova });
+    toast('Senha alterada com sucesso.', 'success');
+    document.getElementById('fSenhaAtual').value = '';
+    document.getElementById('fSenhaNova').value  = '';
+  } catch (e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+
+async function uploadLogo() {
+  const arq = document.getElementById('fLogoArquivo').files[0];
+  if (!arq) return;
+  const fd = new FormData();
+  fd.append('arquivo', arq);
+  try {
+    const r = await fetch('/api/v1/gestor/perfil/logo', { method: 'POST', credentials: 'same-origin', body: fd });
+    const dados = await r.json();
+    if (!r.ok) throw new Error(dados.erro || 'Erro ao enviar logo.');
+    document.getElementById('logoPreviewBox').innerHTML = `<img src="${dados.logo_url}" alt="Logo">`;
+    toast('Logo atualizada.', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+carregar();
+</script>
+{% endblock %}
