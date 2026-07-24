@@ -1,15 +1,21 @@
 from sqlalchemy import text
 from app.extensions import db
-from app.models import Cupom
+from app.models import Cupom, CupomServico, CupomProduto, CupomUso
 from app.exceptions import APIError
 from app.utils.features import feature_ativa
 from app.utils.tz import hoje_brasilia
 
 
-def validar_cupom(barbearia_id: int, codigo: str, subtotal: float) -> tuple[Cupom, float]:
+def validar_cupom(barbearia_id: int, codigo: str, itens: list[dict]) -> tuple[Cupom, float]:
     """
     Valida um código de cupom para a barbearia e retorna (cupom, valor_desconto).
     Levanta APIError (422) com mensagem específica em qualquer condição inválida.
+
+    itens: [{'tipo': 'servico'|'produto', 'ref_id': int, 'valor': float}, ...]
+    — cada linha da compra atual, com `valor` = preço unitário × quantidade.
+    O desconto é calculado só sobre a fatia elegível (serviços/produtos aos
+    quais o cupom está vinculado) — nunca sobre o total do carrinho inteiro,
+    a menos que o cupom não tenha nenhum vínculo (aí vale pra tudo).
     """
     if not feature_ativa(barbearia_id, 'cupons'):
         raise APIError('Cupons não estão disponíveis para esta barbearia.', 403)
@@ -28,8 +34,61 @@ def validar_cupom(barbearia_id: int, codigo: str, subtotal: float) -> tuple[Cupo
     if cupom.quantidade_maxima_usos is not None and cupom.quantidade_usos >= cupom.quantidade_maxima_usos:
         raise APIError('Este cupom atingiu o limite de utilizações.', 422)
 
-    desconto = calcular_desconto(cupom, subtotal)
+    subtotal_elegivel = _subtotal_elegivel(cupom, itens)
+    if subtotal_elegivel <= 0:
+        alvos = _descricao_alvos(cupom)
+        raise APIError(f'Este cupom só vale para {alvos}.' if alvos else 'Este cupom não se aplica a nenhum item deste pedido.', 422)
+
+    desconto = calcular_desconto(cupom, subtotal_elegivel)
     return cupom, desconto
+
+
+def _subtotal_elegivel(cupom: Cupom, itens: list[dict]) -> float:
+    """Soma só o valor das linhas do carrinho que o cupom cobre.
+
+    Serviços e produtos são dimensões INDEPENDENTES — um cupom pode valer pra
+    TODOS os serviços e, ao mesmo tempo, só um produto específico. Pra cada
+    dimensão, o gestor escolhe um dos três modos (ver gestor/cupons.py):
+      • aplica_todos_* = True         → cobre qualquer item dessa dimensão
+      • existe linha em CupomServico/CupomProduto → cobre só os selecionados
+      • nenhum dos dois (padrão)      → não cobre NADA dessa dimensão
+    """
+    servico_ids = {cs.servico_id for cs in CupomServico.query.filter_by(cupom_id=cupom.id).all()}
+    produto_ids = {cp.produto_id for cp in CupomProduto.query.filter_by(cupom_id=cupom.id).all()}
+
+    total = 0.0
+    for i in itens:
+        if i.get('tipo') == 'servico':
+            if cupom.aplica_todos_servicos or i.get('ref_id') in servico_ids:
+                total += i['valor']
+        elif i.get('tipo') == 'produto':
+            if cupom.aplica_todos_produtos or i.get('ref_id') in produto_ids:
+                total += i['valor']
+    return total
+
+
+def _descricao_alvos(cupom: Cupom) -> str:
+    """Monta 'todos os serviços e Shampoo Premium' etc. pra mensagem de erro."""
+    from app.models import Servico, Produto
+    partes = []
+
+    if cupom.aplica_todos_servicos:
+        partes.append('qualquer serviço')
+    else:
+        ids = [cs.servico_id for cs in CupomServico.query.filter_by(cupom_id=cupom.id).all()]
+        if ids:
+            nomes = [s.nome for s in Servico.query.filter(Servico.id.in_(ids)).all()]
+            partes.append(' ou '.join(nomes) if len(nomes) == 1 else ', '.join(nomes[:-1]) + ' ou ' + nomes[-1])
+
+    if cupom.aplica_todos_produtos:
+        partes.append('qualquer produto')
+    else:
+        ids = [cp.produto_id for cp in CupomProduto.query.filter_by(cupom_id=cupom.id).all()]
+        if ids:
+            nomes = [p.nome for p in Produto.query.filter(Produto.id.in_(ids)).all()]
+            partes.append(' ou '.join(nomes) if len(nomes) == 1 else ', '.join(nomes[:-1]) + ' ou ' + nomes[-1])
+
+    return ' e '.join(partes)
 
 
 def calcular_desconto(cupom: Cupom, subtotal: float) -> float:
@@ -61,3 +120,21 @@ def decrementar_uso_cupom(cupom_id: int, barbearia_id: int):
         UPDATE cupons SET quantidade_usos = quantidade_usos - 1
         WHERE id = :id AND barbearia_id = :bk AND quantidade_usos > 0
     '''), {'id': cupom_id, 'bk': barbearia_id})
+
+
+def registrar_uso_cupom(cupom_id: int, barbearia_id: int, valor_original: float, valor_desconto: float,
+                         cliente_id: int | None = None, agendamento_id: int | None = None,
+                         venda_id: int | None = None):
+    """Grava uma linha de histórico pra cada aplicação bem-sucedida de cupom —
+    é o que alimenta o relatório de uso (quem usou, quando, quanto foi descontado).
+    Chamar sempre junto com incrementar_uso_cupom(), na mesma transação."""
+    db.session.add(CupomUso(
+        barbearia_id=barbearia_id,
+        cupom_id=cupom_id,
+        cliente_id=cliente_id,
+        agendamento_id=agendamento_id,
+        venda_id=venda_id,
+        valor_original=round(valor_original, 2),
+        valor_desconto=round(valor_desconto, 2),
+        valor_final=round(valor_original - valor_desconto, 2),
+    ))

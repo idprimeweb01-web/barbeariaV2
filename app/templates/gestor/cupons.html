@@ -11,6 +11,9 @@
 .pg-controls { display: flex; justify-content: center; gap: 10px; margin-top: 16px; align-items: center; font-size: 13px; color: var(--muted); }
 .pg-controls button { background: none; border: 1px solid var(--border); color: var(--text-secundario); border-radius: 6px; padding: 6px 14px; cursor: pointer; font-family: inherit; }
 .pg-controls button:disabled { opacity: .4; cursor: not-allowed; }
+.modo-row { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-secundario); }
+.modo-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 400; text-transform: none; letter-spacing: normal; }
+.modo-row input[type=radio] { accent-color: var(--cor-primaria); cursor: pointer; }
 </style>
 {% endblock %}
 
@@ -56,6 +59,24 @@
       <div class="field"><label>Valor *</label><input type="number" id="fValor" min="0.01" step="0.01" required></div>
       <div class="field"><label>Data de Expiração *</label><input type="date" id="fData" required></div>
       <div class="field"><label>Quantidade Máxima de Utilizações</label><input type="number" id="fMax" min="1" step="1" placeholder="Deixe vazio para ilimitado"></div>
+      <div class="field">
+        <label>Serviços</label>
+        <div class="modo-row">
+          <label><input type="radio" name="modoServico" value="nenhum" onchange="atualizarModoServico()"> Nenhum</label>
+          <label><input type="radio" name="modoServico" value="todos" onchange="atualizarModoServico()"> Todos os serviços</label>
+          <label><input type="radio" name="modoServico" value="selecionar" onchange="atualizarModoServico()"> Selecionar quais</label>
+        </div>
+        <div class="check-list" id="fServicosList" style="display:none;margin-top:8px"></div>
+      </div>
+      <div class="field">
+        <label>Produtos</label>
+        <div class="modo-row">
+          <label><input type="radio" name="modoProduto" value="nenhum" onchange="atualizarModoProduto()"> Nenhum</label>
+          <label><input type="radio" name="modoProduto" value="todos" onchange="atualizarModoProduto()"> Todos os produtos</label>
+          <label><input type="radio" name="modoProduto" value="selecionar" onchange="atualizarModoProduto()"> Selecionar quais</label>
+        </div>
+        <div class="check-list" id="fProdutosList" style="display:none;margin-top:8px"></div>
+      </div>
       <div class="field" id="wrAtivo" style="display:none">
         <label class="toggle-label">
           <input type="checkbox" id="fAtivo" checked>
@@ -70,6 +91,18 @@
     </form>
   </div>
 </div>
+
+<!-- Modal Relatório de uso -->
+<div class="modal-overlay" id="modalRelatorio" onclick="if(event.target===this)fecharModal('modalRelatorio')">
+  <div class="modal-box" style="max-width:640px">
+    <div class="modal-header">
+      <h3 id="relTitulo">Relatório</h3>
+      <button class="modal-close" onclick="fecharModal('modalRelatorio')">×</button>
+    </div>
+    <div id="relLoading" style="text-align:center;padding:32px;color:#555">Carregando…</div>
+    <div id="relConteudo" style="display:none"></div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -78,6 +111,60 @@
   let _editId = null;
   let _paginaAtual  = 1;
   let _totalPaginas = 1;
+  let _servicos = [];
+  let _produtos = [];
+
+  async function carregarServicosProdutos() {
+    try { _servicos = await Bos.get('/gestor/servicos'); } catch (e) { _servicos = []; }
+    try { _produtos = await Bos.get('/gestor/produtos'); } catch (e) { _produtos = []; }
+  }
+
+  function renderizarCheckServicos(idsMarcados = []) {
+    const box = document.getElementById('fServicosList');
+    if (!_servicos.length) { box.innerHTML = '<div style="font-size:12px;color:#555">Nenhum serviço cadastrado.</div>'; return; }
+    box.innerHTML = _servicos.map(s => `
+      <label class="check-item">
+        <input type="checkbox" class="chk-servico" value="${s.id}" ${idsMarcados.includes(s.id) ? 'checked' : ''}>
+        ${esc(s.nome)}
+      </label>
+    `).join('');
+  }
+
+  function renderizarCheckProdutos(idsMarcados = []) {
+    const box = document.getElementById('fProdutosList');
+    if (!_produtos.length) { box.innerHTML = '<div style="font-size:12px;color:#555">Nenhum produto cadastrado.</div>'; return; }
+    box.innerHTML = _produtos.map(p => `
+      <label class="check-item">
+        <input type="checkbox" class="chk-produto" value="${p.id}" ${idsMarcados.includes(p.id) ? 'checked' : ''}>
+        ${esc(p.nome)}
+      </label>
+    `).join('');
+  }
+
+  function servicosMarcados() {
+    return [...document.querySelectorAll('.chk-servico:checked')].map(el => parseInt(el.value));
+  }
+
+  function produtosMarcados() {
+    return [...document.querySelectorAll('.chk-produto:checked')].map(el => parseInt(el.value));
+  }
+
+  function modoSelecionado(nomeRadio) {
+    return document.querySelector(`input[name="${nomeRadio}"]:checked`)?.value || 'nenhum';
+  }
+
+  function setModo(nomeRadio, valor) {
+    const el = document.querySelector(`input[name="${nomeRadio}"][value="${valor}"]`);
+    if (el) el.checked = true;
+  }
+
+  function atualizarModoServico() {
+    document.getElementById('fServicosList').style.display = modoSelecionado('modoServico') === 'selecionar' ? '' : 'none';
+  }
+
+  function atualizarModoProduto() {
+    document.getElementById('fProdutosList').style.display = modoSelecionado('modoProduto') === 'selecionar' ? '' : 'none';
+  }
 
   async function carregar() {
     try {
@@ -123,6 +210,7 @@
         <td>${c.ativo ? '<span class="badge-green">Ativo</span>' : '<span class="badge-gray">Inativo</span>'}</td>
         <td><div class="td-actions">
           <button class="btn-icon" onclick="editarModal(${c.id})">Editar</button>
+          <button class="btn-icon" onclick="verRelatorio(${c.id})">Relatório</button>
           <button class="btn-icon danger" onclick="deletar(${c.id})">Remover</button>
         </div></td>
       </tr>
@@ -134,6 +222,12 @@
     document.getElementById('modalTitulo').textContent = 'Novo Cupom';
     document.getElementById('form').reset();
     document.getElementById('fTipo').value = 'percentual';
+    setModo('modoServico', 'nenhum');
+    setModo('modoProduto', 'nenhum');
+    renderizarCheckServicos([]);
+    renderizarCheckProdutos([]);
+    atualizarModoServico();
+    atualizarModoProduto();
     document.getElementById('wrAtivo').style.display = 'none';
     abrirModal('modal');
   }
@@ -150,8 +244,69 @@
     document.getElementById('fData').value   = c.data_expiracao;
     document.getElementById('fMax').value    = c.quantidade_maxima_usos ?? '';
     document.getElementById('fAtivo').checked = c.ativo;
+    setModo('modoServico', c.servicos_modo || 'nenhum');
+    setModo('modoProduto', c.produtos_modo || 'nenhum');
+    renderizarCheckServicos((c.servicos || []).map(s => s.id));
+    renderizarCheckProdutos((c.produtos || []).map(p => p.id));
+    atualizarModoServico();
+    atualizarModoProduto();
     document.getElementById('wrAtivo').style.display = '';
     abrirModal('modal');
+  }
+
+  async function verRelatorio(id) {
+    const c = _todos.find(x => x.id === id);
+    if (!c) return;
+    document.getElementById('relTitulo').textContent = `Relatório — ${c.nome}`;
+    document.getElementById('relLoading').style.display = '';
+    document.getElementById('relConteudo').style.display = 'none';
+    abrirModal('modalRelatorio');
+    try {
+      const r = await Bos.get('/gestor/cupons/' + id + '/uso');
+      document.getElementById('relLoading').style.display = 'none';
+      const el = document.getElementById('relConteudo');
+      const cp = r.cupom;
+      const txtServico = cp.servicos_modo === 'todos' ? 'Todos os serviços'
+        : cp.servicos_modo === 'selecionar' ? `Serviços: ${cp.servicos.map(s => esc(s.nome)).join(', ')}`
+        : 'Nenhum serviço';
+      const txtProduto = cp.produtos_modo === 'todos' ? 'Todos os produtos'
+        : cp.produtos_modo === 'selecionar' ? `Produtos: ${cp.produtos.map(p => esc(p.nome)).join(', ')}`
+        : 'Nenhum produto';
+      const restricoes = `${txtServico} · ${txtProduto}`;
+      el.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;font-size:13px">
+          <div><b>Status:</b> ${cp.expirado ? '<span style="color:#e06060">Expirado</span>' : (cp.ativo ? '<span class="badge-green">Ativo</span>' : '<span class="badge-gray">Inativo</span>')}</div>
+          <div><b>Expira em:</b> ${fmtData(cp.data_expiracao)}</div>
+          <div><b>Usos:</b> ${cp.quantidade_usos}${cp.quantidade_maxima_usos ? ' / ' + cp.quantidade_maxima_usos : ' (ilimitado)'}</div>
+          <div><b>Restam:</b> ${r.usos_restantes ?? 'Ilimitado'}</div>
+          <div><b>Restrição:</b> ${restricoes}</div>
+          <div><b>Total descontado:</b> R$ ${r.valor_total_descontado.toFixed(2)}</div>
+        </div>
+        ${!r.usos.length
+          ? '<div class="empty-state"><p>Ninguém usou este cupom ainda.</p></div>'
+          : `<table style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead><tr style="color:#888;font-size:11px;text-transform:uppercase">
+                <th style="text-align:left;padding:6px 8px">Cliente</th>
+                <th style="text-align:left;padding:6px 8px">Quando</th>
+                <th style="text-align:right;padding:6px 8px">Original</th>
+                <th style="text-align:right;padding:6px 8px">Desconto</th>
+                <th style="text-align:right;padding:6px 8px">Final</th>
+              </tr></thead>
+              <tbody>${r.usos.map(u => `
+                <tr style="border-top:1px solid var(--border)">
+                  <td style="padding:8px">${esc(u.cliente_nome)}</td>
+                  <td style="padding:8px;color:#888">${new Date(u.criado_em).toLocaleDateString('pt-BR')}</td>
+                  <td style="padding:8px;text-align:right">R$ ${u.valor_original.toFixed(2)}</td>
+                  <td style="padding:8px;text-align:right;color:#e06060">- R$ ${u.valor_desconto.toFixed(2)}</td>
+                  <td style="padding:8px;text-align:right">R$ ${u.valor_final.toFixed(2)}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>`}
+      `;
+      el.style.display = '';
+    } catch (e) {
+      document.getElementById('relLoading').textContent = 'Erro: ' + e.message;
+    }
   }
 
   async function salvar(e) {
@@ -166,6 +321,10 @@
       valor_desconto:         parseFloat(document.getElementById('fValor').value),
       data_expiracao:         document.getElementById('fData').value,
       quantidade_maxima_usos: max ? parseInt(max) : null,
+      servicos_modo:          modoSelecionado('modoServico'),
+      servico_ids:            servicosMarcados(),
+      produtos_modo:          modoSelecionado('modoProduto'),
+      produto_ids:            produtosMarcados(),
     };
     if (_editId) dados.ativo = document.getElementById('fAtivo').checked;
     try {
@@ -180,7 +339,7 @@
 
   async function deletar(id) {
     const c = _todos.find(x => x.id === id);
-    if (!confirm(`Desativar o cupom "${c?.nome}"?`)) return;
+    if (!(await Bos.confirmar(`Desativar o cupom "${c?.nome}"?`))) return;
     try {
       await Bos.delete('/gestor/cupons/' + id);
       toast('Cupom desativado.');
@@ -188,8 +347,11 @@
     } catch(e) { toast(e.message, 'error'); }
   }
 
-  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
-  carregar();
+  (async function() {
+    await carregarServicosProdutos();
+    await carregar();
+  })();
 </script>
 {% endblock %}

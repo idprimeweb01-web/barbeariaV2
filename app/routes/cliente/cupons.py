@@ -24,7 +24,14 @@ def validar_cupom_cliente():
     except (TypeError, ValueError, AssertionError):
         raise APIError('"subtotal" é obrigatório e deve ser um número não negativo.')
 
-    cupom, desconto = validar_cupom(g.barbearia_id, codigo, subtotal)
+    # itens: [{'tipo': 'servico'|'produto', 'ref_id': int, 'valor': float}, ...] —
+    # se o chamador só souber o subtotal (uso simplificado), cai num item único
+    # sem tipo, que só bate com cupons sem nenhuma restrição.
+    itens = dados.get('itens')
+    if not itens:
+        itens = [{'tipo': None, 'ref_id': None, 'valor': subtotal}]
+
+    cupom, desconto = validar_cupom(g.barbearia_id, codigo, itens)
 
     return jsonify({
         'cupom_id':       cupom.id,
