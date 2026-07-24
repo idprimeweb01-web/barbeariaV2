@@ -70,6 +70,25 @@
 }
 .kpi-pix-btn:hover { background: rgba(243,156,18,.1); }
 
+/* Card Dúvidas */
+.kpi-duvidas { border-color: rgba(59,130,246,.3); }
+.kpi-duvidas .kpi-val { color: #93c5fd; }
+.kpi-duvidas-btn {
+  margin-top: 4px;
+  background: none;
+  border: 1px solid rgba(59,130,246,.4);
+  border-radius: 6px;
+  color: #60a5fa;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  width: fit-content;
+  transition: all .15s;
+}
+.kpi-duvidas-btn:hover { background: rgba(59,130,246,.1); }
+
 /* ── Linha secundária ── */
 .dash-row2 {
   display: grid;
@@ -146,6 +165,13 @@
       <div class="kpi-sub" id="dTicket"></div>
     </div>
 
+    <!-- Card 5: Dúvidas aguardando resposta (só se feature ativa e > 0) -->
+    <div class="kpi-card kpi-duvidas" id="duvidasCard" style="display:none">
+      <div class="kpi-label">💬 Dúvidas Aguardando Resposta</div>
+      <div class="kpi-val" id="dDuvidas">0</div>
+      <button class="kpi-duvidas-btn" onclick="location.href='/gestor/duvidas-cliente'">Ver dúvidas →</button>
+    </div>
+
   </div>
 
   <!-- ── Linha 2: Gráfico 7 dias + Estoque crítico ── -->
@@ -163,6 +189,12 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- ── Linha 3: Notificações recentes ── -->
+  <div class="info-card" style="margin-top:14px">
+    <div class="info-title">🔔 Notificações Recentes</div>
+    <div id="notifDashLista"><div class="notif-empty">Carregando…</div></div>
   </div>
 
 </div>
@@ -203,6 +235,13 @@
       document.getElementById('pixCard').style.display = '';
     }
 
+    // Card 5 — Dúvidas aguardando resposta (null = feature desligada)
+    const duvidas = d.duvidas_precisam_resposta;
+    if (duvidas > 0) {
+      document.getElementById('dDuvidas').textContent = duvidas;
+      document.getElementById('duvidasCard').style.display = '';
+    }
+
     // Card 4 — Receita
     const rec = d.mes?.receita ?? 0;
     const tk  = d.mes?.ticket_medio ?? 0;
@@ -221,6 +260,21 @@
 
     // ── Gráfico 7 dias ──
     await carregarChart7Dias();
+
+    // ── Notificações recentes ──
+    try {
+      const rn = await Bos.get('/gestor/notificacoes?per_page=6');
+      const itens = rn.notificacoes || [];
+      document.getElementById('notifDashLista').innerHTML = itens.length ? itens.map(n => `
+        <div class="notif-item ${n.lida ? '' : 'nao-lida'}" onclick="clicarNotif(${n.id}, this, '${(n.link || '').replace(/'/g, "\\'")}')">
+          <div class="notif-item-titulo">${esc(n.titulo)}</div>
+          <div class="notif-item-corpo">${esc(n.corpo || '')}</div>
+          <div class="notif-item-data">${n.criado_em || ''}</div>
+        </div>
+      `).join('') : '<div class="notif-empty">Nenhuma notificação.</div>';
+    } catch (e) {
+      document.getElementById('notifDashLista').innerHTML = `<div class="notif-empty">Erro: ${esc(e.message)}</div>`;
+    }
 
   } catch(e) {
     document.getElementById('loadEl').textContent = 'Erro ao carregar: ' + e.message;

@@ -65,6 +65,7 @@
     .nav-link.active { color: var(--cor-primaria); background: rgba(243,156,18,.08); border-left-color: var(--cor-primaria); }
     .nav-link svg { flex-shrink: 0; opacity: .8; }
     .nav-link.active svg { opacity: 1; }
+    .nav-dot { width: 7px; height: 7px; border-radius: 50%; background: #dc2626; margin-left: auto; flex-shrink: 0; }
     .nav-badge {
       margin-left: auto; background: #dc2626; color: #fff;
       border-radius: 999px; padding: 1px 6px; font-size: 10px; font-weight: 800;
@@ -132,6 +133,42 @@
       transition: color .15s;
     }
     .hdr-logout:hover { color: #dc2626; }
+
+    /* ── Notificações ────────────────────────────────────────── */
+    .notif-wrap { position: relative; }
+    .hdr-notif {
+      background: none; border: none; color: var(--muted2); cursor: pointer;
+      padding: 6px; border-radius: 6px; display: flex; align-items: center;
+      position: relative; transition: color .15s;
+    }
+    .hdr-notif:hover { color: var(--cor-primaria); }
+    .notif-badge {
+      position: absolute; top: 2px; right: 2px; min-width: 15px; height: 15px;
+      background: #dc2626; color: #fff; border-radius: 999px;
+      font-size: 9px; font-weight: 700; line-height: 15px; text-align: center;
+      padding: 0 3px; display: none;
+    }
+    .notif-badge.show { display: block; }
+    .notif-dropdown {
+      position: absolute; top: calc(100% + 8px); right: 0; width: 320px; max-width: 90vw;
+      max-height: 400px; overflow-y: auto; background: var(--sidebar-bg); border: 1px solid var(--border);
+      border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.5); z-index: 500; display: none;
+    }
+    .notif-dropdown.open { display: block; }
+    .notif-dropdown-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+    }
+    .notif-dropdown-header span { font-size: 12px; font-weight: 700; color: var(--text-secundario); }
+    .notif-marcar-todas { background: none; border: none; color: var(--cor-primaria); font-size: 11px; cursor: pointer; font-family: inherit; }
+    .notif-item { padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+    .notif-item:last-child { border-bottom: none; }
+    .notif-item:hover { background: rgba(255,255,255,.03); }
+    .notif-item.nao-lida { background: rgba(243,156,18,.05); }
+    .notif-item-titulo { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+    .notif-item-corpo { font-size: 12px; color: var(--muted); }
+    .notif-item-data { font-size: 10px; color: var(--muted2); margin-top: 4px; }
+    .notif-empty { padding: 24px; text-align: center; color: var(--muted2); font-size: 12px; }
 
     /* Link de agendamento */
     .bk-bar {
@@ -251,19 +288,22 @@
     .modal-footer { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
 
     /* ── Toggle switch ───────────────────────────────────────── */
+    .field .toggle-label,
     .toggle-label { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; color: var(--muted); }
     .toggle-label input[type=checkbox] { display: none; }
     .toggle-track {
-      width: 38px; height: 21px; background: var(--border); border-radius: 21px;
-      position: relative; transition: background .2s; flex-shrink: 0;
+      width: 38px; height: 21px; background: rgba(128,128,128,.35);
+      box-shadow: inset 0 0 0 1px rgba(128,128,128,.55);
+      border-radius: 21px; position: relative; transition: background .2s, box-shadow .2s; flex-shrink: 0;
     }
     .toggle-track::after {
       content: ''; position: absolute; top: 3px; left: 3px;
-      width: 15px; height: 15px; background: var(--muted2); border-radius: 50%;
-      transition: transform .2s, background .2s;
+      width: 15px; height: 15px; background: #fff; border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,.35);
+      transition: transform .2s;
     }
-    .toggle-label input:checked + .toggle-track { background: var(--cor-primaria); }
-    .toggle-label input:checked + .toggle-track::after { transform: translateX(17px); background: #1a1a1a; }
+    .toggle-label input:checked + .toggle-track { background: #22c55e; box-shadow: none; }
+    .toggle-label input:checked + .toggle-track::after { transform: translateX(17px); }
 
     /* ── Check list ──────────────────────────────────────────── */
     .check-list { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; padding: 2px 0; }
@@ -443,7 +483,8 @@
           </svg>
         </a>
         <div class="nav-subgroup" id="navGroup-solicitacoes">
-          <a href="/gestor/pix-approval" class="nav-sublink" data-path="/gestor/pix-approval" id="nav-planos-solicitacoes" style="display:none">Solicitações de Plano</a>
+          <a href="/gestor/solicitacoes-plano" class="nav-sublink" data-path="/gestor/solicitacoes-plano" id="nav-planos-solicitacoes" style="display:none">Solicitações de Plano</a>
+          <a href="/gestor/compras-produto" class="nav-sublink" data-path="/gestor/compras-produto" id="nav-compras-produto" style="display:none">Pedidos de Compra</a>
           <a href="/gestor/solicitacoes-senha" class="nav-sublink" data-path="/gestor/solicitacoes-senha">Solicitações de Senha</a>
           <a href="/gestor/duvidas-cliente" class="nav-sublink" data-path="/gestor/duvidas-cliente">Dúvidas do Cliente</a>
         </div>
@@ -462,8 +503,10 @@
           </svg>
         </a>
         <div class="nav-subgroup" id="navGroup-configuracoes">
+          <a href="/gestor/perfil" class="nav-sublink" data-path="/gestor/perfil">Meu Perfil</a>
           <a href="/gestor/configuracoes/pix" class="nav-sublink" data-path="/gestor/configuracoes/pix">Config. PIX</a>
           <a href="/gestor/configuracoes/webhook" class="nav-sublink" data-path="/gestor/configuracoes/webhook">Webhook / n8n</a>
+          <a href="/gestor/configuracoes/whatsapp-bot" class="nav-sublink" data-path="/gestor/configuracoes/whatsapp-bot">Bot WhatsApp</a>
           <a href="/gestor/aparencia" class="nav-sublink" data-path="/gestor/aparencia">Aparência</a>
         </div>
       </div>
@@ -498,6 +541,22 @@
         {% endblock %}
       </nav>
       <div class="hdr-right">
+        <div class="notif-wrap">
+          <button class="hdr-notif" onclick="toggleNotifDropdown()" title="Notificações">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <span class="notif-badge" id="notifBadge">0</span>
+          </button>
+          <div class="notif-dropdown" id="notifDropdown">
+            <div class="notif-dropdown-header">
+              <span>Notificações</span>
+              <button class="notif-marcar-todas" onclick="marcarTodasNotifLidas()">Marcar todas lidas</button>
+            </div>
+            <div id="notifLista"><div class="notif-empty">Carregando…</div></div>
+          </div>
+        </div>
         <span class="hdr-username">{{ g_nome }}</span>
         <button class="hdr-logout" onclick="Bos.logout()" title="Sair">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -591,7 +650,7 @@
   }
 
   // ── Escape HTML ────────────────────────────────────────────
-  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   // ── Badge PIX + features ───────────────────────────────────
   (async function() {
@@ -614,12 +673,13 @@
       // Cada feature com tela própria de nav esconde o link até confirmar
       // que está ativa. Features sem tela de nav (comissao, notificacoes,
       // historico_cliente) não entram aqui — não há link a esconder.
-      // "Solicitações de Plano" (pix-approval.html) é sobre aprovação de
-      // ClientePlanoSolicitacao — pertence à feature "planos", não
-      // "pix_integrado" (nome antigo da rota é só histórico).
+      // "Solicitações de Plano" (/gestor/solicitacoes-plano, template
+      // pix_approval.html) é sobre aprovação de ClientePlanoSolicitacao —
+      // pertence à feature "planos", não "pix_integrado" (nome antigo da
+      // rota, /gestor/pix-approval, ainda existe como redirect — CONS-03).
       const NAV_POR_FEATURE = {
         cupons:         ['nav-cupons'],
-        produtos_venda: ['nav-vendas'],
+        produtos_venda: ['nav-vendas', 'nav-compras-produto'],
         planos:         ['nav-planos', 'nav-planos-solicitacoes'],
         vip_brindes:    ['nav-vip'],
       };
@@ -661,6 +721,110 @@
   function fmtR(v) {
     return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
   }
+
+  // ── Notificações ───────────────────────────────────────────
+  let _notifAberto = false;
+
+  async function atualizarContadorNotif() {
+    try {
+      const r = await Bos.get('/gestor/notificacoes/contador');
+      const badge = document.getElementById('notifBadge');
+      if (r.nao_lidas > 0) { badge.textContent = r.nao_lidas > 99 ? '99+' : r.nao_lidas; badge.classList.add('show'); }
+      else badge.classList.remove('show');
+    } catch {}
+    atualizarPontosNav();
+  }
+
+  function _setNavDot(el, show) {
+    let dot = el.querySelector('.nav-dot');
+    if (show && !dot) {
+      dot = document.createElement('span');
+      dot.className = 'nav-dot';
+      const chevron = el.querySelector('.nav-chevron');
+      if (chevron) el.insertBefore(dot, chevron); else el.appendChild(dot);
+    } else if (!show && dot) {
+      dot.remove();
+    }
+  }
+
+  // Ponto vermelho no item do menu (ou no grupo do acordeão que o contém)
+  // cujo caminho bate com o link de alguma notificação não lida — ajuda a
+  // localizar ONDE está a novidade, sem precisar abrir o sino.
+  async function atualizarPontosNav() {
+    try {
+      const r = await Bos.get('/gestor/notificacoes?apenas_nao_lidas=1&per_page=100');
+      const links = (r.notificacoes || []).map(n => n.link).filter(Boolean);
+      const bate = (path) => links.some(l => l === path || l.startsWith(path + '?') || l.startsWith(path + '/'));
+
+      const gruposComNotif = {};
+      document.querySelectorAll('.nav-link[data-path], .nav-sublink[data-path]').forEach(a => {
+        const temNotif = bate(a.dataset.path);
+        _setNavDot(a, temNotif);
+        if (temNotif && a.classList.contains('nav-sublink')) {
+          const grupo = a.closest('.nav-group');
+          if (grupo) gruposComNotif[grupo.dataset.group] = true;
+        }
+      });
+      document.querySelectorAll('.nav-group').forEach(g => {
+        const header = g.querySelector('.nav-link');
+        if (!header) return;
+        if (!header.dataset.path || !bate(header.dataset.path)) {
+          _setNavDot(header, !!gruposComNotif[g.dataset.group]);
+        }
+      });
+    } catch {}
+  }
+
+  async function toggleNotifDropdown() {
+    _notifAberto = !_notifAberto;
+    document.getElementById('notifDropdown').classList.toggle('open', _notifAberto);
+    if (_notifAberto) await carregarListaNotif();
+  }
+
+  async function carregarListaNotif() {
+    const lista = document.getElementById('notifLista');
+    try {
+      const r = await Bos.get('/gestor/notificacoes?per_page=15');
+      const itens = r.notificacoes || [];
+      lista.innerHTML = itens.length ? itens.map(n => `
+        <div class="notif-item ${n.lida ? '' : 'nao-lida'}" onclick="clicarNotif(${n.id}, this, '${(n.link || '').replace(/'/g, "\\'")}')">
+          <div class="notif-item-titulo">${esc(n.titulo)}</div>
+          <div class="notif-item-corpo">${esc(n.corpo || '')}</div>
+          <div class="notif-item-data">${n.criado_em || ''}</div>
+        </div>
+      `).join('') : '<div class="notif-empty">Nenhuma notificação.</div>';
+    } catch (e) {
+      lista.innerHTML = `<div class="notif-empty">Erro: ${esc(e.message)}</div>`;
+    }
+  }
+
+  async function clicarNotif(id, el, link) {
+    if (el.classList.contains('nao-lida')) {
+      el.classList.remove('nao-lida');
+      try { await Bos.patch('/gestor/notificacoes/' + id + '/lida', {}); } catch {}
+      atualizarContadorNotif();
+    }
+    if (link) window.location.href = link;
+  }
+
+  async function marcarTodasNotifLidas() {
+    try {
+      await Bos.post('/gestor/notificacoes/marcar-todas-lidas', {});
+      await carregarListaNotif();
+      atualizarContadorNotif();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  document.addEventListener('click', e => {
+    const wrap = document.querySelector('.notif-wrap');
+    if (_notifAberto && wrap && !wrap.contains(e.target)) {
+      _notifAberto = false;
+      document.getElementById('notifDropdown').classList.remove('open');
+    }
+  });
+
+  atualizarContadorNotif();
+  setInterval(atualizarContadorNotif, 30000);
 </script>
 {% block scripts %}{% endblock %}
 </body>

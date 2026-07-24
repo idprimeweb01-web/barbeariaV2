@@ -51,14 +51,20 @@ _DESPACHANTES: dict = {
 
 
 # ── API pública ───────────────────────────────────────────────────────────────
+# notificar() é o ÚNICO ponto de criação de Notificacao no sistema — todo
+# gatilho de negócio (agendamento, plano, compra, dúvida/suporte, estoque,
+# reset de senha etc.) chama esta função em vez de instanciar Notificacao
+# diretamente, pra manter uma única superfície pra despacho multi-canal,
+# link navegável e log de falha consistente.
 
-def criar_notificacao(
+def notificar(
     *,
-    barbearia_id: int,
     usuario_id: int,
+    barbearia_id: int,
     tipo: str,
     titulo: str,
-    corpo: str,
+    mensagem: str,
+    link: str | None = None,
     canal: str = 'in_app',
     agendamento_id: int | None = None,
 ) -> None:
@@ -67,6 +73,8 @@ def criar_notificacao(
     Nunca levanta exceção — falha de notificação não cancela a operação principal.
 
     Canais aceitos: 'in_app', 'email', 'web_push'.
+    link: path relativo (ex: '/gestor/agenda?agendamento_id=42') pra onde a
+    notificação deve levar ao ser clicada — None se não houver destino.
     """
     if canal not in _DESPACHANTES:
         logger.warning('Canal de notificação desconhecido: %r (ignorado)', canal)
@@ -83,7 +91,8 @@ def criar_notificacao(
             tipo=tipo,
             canal=canal,
             titulo=titulo,
-            corpo=corpo,
+            corpo=mensagem,
+            link=link,
             lida=False,
             enviada=False,
         )
@@ -106,14 +115,14 @@ def criar_notificacao(
         )
 
 
-def notificar_cliente(barbearia_id: int, cliente_id: int, descricao: str) -> None:
+def notificar_cliente(barbearia_id: int, cliente_id: int, descricao: str, link: str | None = None) -> None:
     """
     Atalho legado usado pela rota de agendamento público.
     Substitui o stub de AuditoriaLog — agora grava em Notificacao.
     """
-    from app.models import Cliente, db as _db
     try:
         from app.extensions import db
+        from app.models import Cliente
         cli = db.session.get(Cliente, cliente_id)
         if not cli:
             return
@@ -122,11 +131,12 @@ def notificar_cliente(barbearia_id: int, cliente_id: int, descricao: str) -> Non
         logger.exception('notificar_cliente: erro ao buscar cliente_id=%s', cliente_id)
         return
 
-    criar_notificacao(
+    notificar(
         barbearia_id=barbearia_id,
         usuario_id=usuario_id,
         tipo='confirmacao',
         titulo='Agendamento confirmado',
-        corpo=descricao,
+        mensagem=descricao,
+        link=link,
         canal='in_app',
     )

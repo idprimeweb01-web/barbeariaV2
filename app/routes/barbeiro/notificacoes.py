@@ -113,6 +113,7 @@ def _fmt(n: Notificacao) -> dict:
         'tipo':           n.tipo,
         'titulo':         n.titulo,
         'corpo':          n.corpo,
+        'link':           n.link,
         'lida':           n.lida,
         'agendamento_id': n.agendamento_id,
         'criado_em':      utc_naive_para_brasilia(n.criado_em).strftime('%d/%m/%Y %H:%M') if n.criado_em else None,

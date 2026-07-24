@@ -93,6 +93,12 @@
     </div>
   </div>
 
+  <!-- ── Linha 3: Notificações recentes ── -->
+  <div class="info-card" style="margin-top:14px">
+    <div class="info-title">Notificações Recentes</div>
+    <div id="notifDashLista"><div class="notif-empty">Carregando…</div></div>
+  </div>
+
 </div>
 {% endblock %}
 
@@ -164,39 +170,40 @@
         }).join('')
       : '<div style="color:#444;font-size:13px;padding:12px 0">Nenhum agendamento futuro</div>';
 
-    // Gráfico 7 dias
-    await _chart7dias();
+    // Gráfico 7 dias — série real vinda do backend (BUG-02)
+    _chart7dias(d.receita_7_dias || []);
+
+    // ── Notificações recentes ──
+    try {
+      const rn = await Bos.get('/barbeiro/notificacoes?per_page=6');
+      const itens = rn.notificacoes || [];
+      document.getElementById('notifDashLista').innerHTML = itens.length ? itens.map(n => `
+        <div class="notif-item ${n.lida ? '' : 'nao-lida'}" onclick="clicarNotif(${n.id}, this, '${(n.link || '').replace(/'/g, "\\'")}')">
+          <div class="notif-item-titulo">${esc(n.titulo)}</div>
+          <div class="notif-item-corpo">${esc(n.corpo || '')}</div>
+          <div class="notif-item-data">${n.criado_em || ''}</div>
+        </div>
+      `).join('') : '<div class="notif-empty">Nenhuma notificação.</div>';
+    } catch (e) {
+      document.getElementById('notifDashLista').innerHTML = `<div class="notif-empty">Erro: ${esc(e.message)}</div>`;
+    }
 
   } catch(e) {
     document.getElementById('loadEl').textContent = 'Erro ao carregar: ' + e.message;
   }
 })();
 
-async function _chart7dias() {
-  const hoje  = new Date();
-  const datas = [], labels = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(hoje);
-    d.setDate(d.getDate() - i);
-    datas.push(d.toISOString().split('T')[0]);
-    labels.push(d.toLocaleDateString('pt-BR', {weekday:'short', day:'2-digit'}));
-  }
-  try {
-    const r    = await Bos.get('/barbeiro/agendamentos?data=' + datas[6]);
-    const rows = Array.isArray(r) ? r : [];
-    const porDia = {};
-    datas.forEach(dt => porDia[dt] = 0);
-    // Carrega cada dia individualmente seria N requisições — usamos o único endpoint de hoje
-    // O gráfico mostra apenas hoje com dados reais; dias anteriores ficam 0 até API de relatório existir
-    rows.filter(ag => ag.status === 'concluido')
-        .forEach(ag => { if (porDia[datas[6]] !== undefined) porDia[datas[6]] += ag.valor_total || 0; });
+function _chart7dias(serie) {
+  const labels  = serie.map(p => new Date(p.data + 'T12:00:00').toLocaleDateString('pt-BR', {weekday:'short', day:'2-digit'}));
+  const valores = serie.map(p => p.receita || 0);
 
+  try {
     new Chart(document.getElementById('chartReceita'), {
       type: 'bar',
       data: {
         labels,
         datasets: [{
-          data: datas.map(dt => porDia[dt]),
+          data: valores,
           backgroundColor: 'rgba(243,156,18,.25)',
           borderColor: '#f39c12', borderWidth: 2, borderRadius: 4,
         }],

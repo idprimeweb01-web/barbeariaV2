@@ -1,36 +1,31 @@
+"""Caixa de notificação in-app do gestor — espelha exatamente
+app/routes/barbeiro/notificacoes.py (mesmo modelo Notificacao, mesmo
+formato de resposta). Antes desta rota, o gestor não tinha nenhuma caixa
+de notificação — só cliente e barbeiro tinham."""
 from flask import Blueprint, g, jsonify, request
 from app.extensions import db
-from app.models import Notificacao, Cliente
+from app.models import Notificacao
 from app.exceptions import APIError
-from app.decorators.auth import cliente_required
+from app.decorators.auth import gestor_required
 from app.utils.db import commit_ou_falhar
 from app.utils.tz import utc_naive_para_brasilia
 
-cliente_notif_bp = Blueprint('cliente_notificacoes', __name__, url_prefix='/api/v1/cliente')
-
-
-def _cliente_ou_404():
-    cli = Cliente.query.filter_by(usuario_id=g.user_id, barbearia_id=g.barbearia_id).first()
-    if not cli:
-        raise APIError('Perfil de cliente não encontrado.', 404)
-    return cli
+gestor_notif_bp = Blueprint('gestor_notificacoes', __name__, url_prefix='/api/v1/gestor')
 
 
 # ── GET /notificacoes ─────────────────────────────────────────────────────────
 
-@cliente_notif_bp.get('/notificacoes')
-@cliente_required
+@gestor_notif_bp.get('/notificacoes')
+@gestor_required
 def listar_notificacoes():
     """
-    Lista notificações do cliente autenticado (canal in_app).
+    Lista notificações do gestor autenticado (canal in_app).
 
     Query params:
       apenas_nao_lidas — '1' para filtrar só não-lidas
       page             — página (default: 1)
       per_page         — por página (default: 20, max: 100)
     """
-    cli = _cliente_ou_404()
-
     try:
         page     = max(1, int(request.args.get('page',     1)))
         per_page = min(100, max(1, int(request.args.get('per_page', 20))))
@@ -68,11 +63,9 @@ def listar_notificacoes():
 
 # ── GET /notificacoes/contador ────────────────────────────────────────────────
 
-@cliente_notif_bp.get('/notificacoes/contador')
-@cliente_required
+@gestor_notif_bp.get('/notificacoes/contador')
+@gestor_required
 def contador_notificacoes():
-    """Retorna apenas o número de notificações não-lidas. Útil para badges na UI."""
-    _cliente_ou_404()
     nao_lidas = Notificacao.query.filter_by(
         barbearia_id=g.barbearia_id,
         usuario_id=g.user_id,
@@ -84,11 +77,9 @@ def contador_notificacoes():
 
 # ── PATCH /notificacoes/<id>/lida ─────────────────────────────────────────────
 
-@cliente_notif_bp.patch('/notificacoes/<int:notif_id>/lida')
-@cliente_required
+@gestor_notif_bp.patch('/notificacoes/<int:notif_id>/lida')
+@gestor_required
 def marcar_lida(notif_id):
-    """Marca uma notificação específica como lida."""
-    _cliente_ou_404()
     n = Notificacao.query.filter_by(
         id=notif_id,
         barbearia_id=g.barbearia_id,
@@ -97,17 +88,15 @@ def marcar_lida(notif_id):
     if not n:
         raise APIError('Notificação não encontrada.', 404)
     n.lida = True
-    commit_ou_falhar('cliente.notificacoes.marcar_lida')
+    commit_ou_falhar('gestor.notificacoes.marcar_lida')
     return jsonify(_fmt(n)), 200
 
 
 # ── POST /notificacoes/marcar-todas-lidas ─────────────────────────────────────
 
-@cliente_notif_bp.post('/notificacoes/marcar-todas-lidas')
-@cliente_required
+@gestor_notif_bp.post('/notificacoes/marcar-todas-lidas')
+@gestor_required
 def marcar_todas_lidas():
-    """Marca todas as notificações não-lidas do cliente como lidas."""
-    _cliente_ou_404()
     atualizados = (
         Notificacao.query
         .filter_by(
@@ -118,11 +107,9 @@ def marcar_todas_lidas():
         )
         .update({'lida': True})
     )
-    commit_ou_falhar('cliente.notificacoes.marcar_todas_lidas')
+    commit_ou_falhar('gestor.notificacoes.marcar_todas_lidas')
     return jsonify({'marcadas_lidas': atualizados}), 200
 
-
-# ── Formato ───────────────────────────────────────────────────────────────────
 
 def _fmt(n: Notificacao) -> dict:
     return {
