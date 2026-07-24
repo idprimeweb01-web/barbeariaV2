@@ -1,0 +1,221 @@
+{% extends "gestor/base.html" %}
+{% block title %}Pedidos de Compra{% endblock %}
+{% block breadcrumb %}
+<a href="/gestor/dashboard">Dashboard</a>
+<span class="breadcrumb-sep">›</span>
+<span class="breadcrumb-current">Pedidos de Compra</span>
+{% endblock %}
+
+{% block styles %}
+<style>
+.pix-container { max-width: 900px; }
+.pix-list { display: flex; flex-direction: column; gap: 12px; }
+
+.pix-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  align-items: start;
+}
+.pix-card:hover { border-color: var(--cor-primaria); }
+
+.pix-left { display: flex; gap: 12px; }
+.pix-avatar {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(186,117,23,.12); border: 2px solid rgba(186,117,23,.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700; color: var(--cor-primaria); flex-shrink: 0;
+}
+.pix-info { display: flex; flex-direction: column; gap: 4px; }
+.pix-nome { font-size: 14px; font-weight: 700; color: var(--text); }
+.pix-meta { font-size: 12px; color: var(--muted2); }
+.pix-itens { font-size: 12px; color: var(--text-secundario); margin: 4px 0; }
+.pix-valor { font-size: 16px; font-weight: 800; color: var(--cor-primaria); }
+.pix-desconto { font-size: 11px; color: #4ade80; }
+.pix-comprovante { font-size: 11px; }
+
+.pix-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.btn-pix {
+  padding: 8px 14px; border: none; border-radius: 6px;
+  font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit;
+  white-space: nowrap;
+}
+.btn-aprovar  { background: rgba(34,197,94,.15); color: #4ade80; border: 1px solid rgba(34,197,94,.3); }
+.btn-aprovar:hover  { background: rgba(34,197,94,.25); }
+.btn-rejeitar { background: rgba(220,38,38,.15); color: #f87171; border: 1px solid rgba(220,38,38,.3); }
+.btn-rejeitar:hover { background: rgba(220,38,38,.25); }
+.btn-pix:disabled { opacity: .5; cursor: wait; }
+
+.pix-empty { text-align: center; padding: 60px 20px; color: var(--muted2); }
+.pix-empty-icon { font-size: 44px; margin-bottom: 12px; }
+
+.modal-textarea {
+  width: 100%; padding: 10px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text-secundario); font-family: inherit; font-size: 13px;
+  outline: none; resize: vertical; min-height: 100px; max-height: 200px;
+  box-sizing: border-box; transition: border-color .2s;
+}
+.modal-textarea:focus { border-color: var(--cor-primaria); }
+.char-count { font-size: 11px; color: var(--muted2); margin-top: 6px; }
+
+.filtro-status { display: flex; gap: 8px; margin-bottom: 16px; }
+.filtro-status button {
+  background: none; border: 1px solid var(--border); color: var(--text-secundario);
+  border-radius: 6px; padding: 6px 14px; cursor: pointer; font-family: inherit; font-size: 12px;
+}
+.filtro-status button.active { border-color: var(--cor-primaria); color: var(--cor-primaria); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pix-container">
+  <p style="font-size: 12px; color: #555; margin-bottom: 12px;">
+    Pedidos de compra de produto feitos pelo cliente no portal. Aprovar gera a venda de verdade e dá baixa no estoque.
+  </p>
+  <div class="filtro-status">
+    <button class="active" data-status="pendente" onclick="mudarFiltro('pendente', this)">Pendentes</button>
+    <button data-status="aprovada" onclick="mudarFiltro('aprovada', this)">Aprovados</button>
+    <button data-status="rejeitada" onclick="mudarFiltro('rejeitada', this)">Rejeitados</button>
+  </div>
+  <div class="pix-list" id="pixList">
+    <div style="text-align: center; padding: 40px; color: #555;">Carregando pedidos...</div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalRejeicao">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Rejeitar Pedido</h3>
+      <button class="modal-close" onclick="fecharModal('modalRejeicao')">✕</button>
+    </div>
+    <label style="display:block;font-size:12px;color:#555;font-weight:600;margin-bottom:6px;">Motivo da Rejeição *</label>
+    <textarea class="modal-textarea" id="motivoTexto" placeholder="Explique por que está rejeitando..." maxlength="500"></textarea>
+    <div class="char-count"><span id="charCount">0</span>/500</div>
+    <div class="modal-footer">
+      <button class="btn-icon" onclick="fecharModal('modalRejeicao')">Cancelar</button>
+      <button class="btn-icon danger" onclick="confirmarRejeicao()" id="btnConfirmarRejeicao">Rejeitar</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let solicitacaoEmEdicao = null;
+let _statusAtual = 'pendente';
+
+async function carregarPedidos() {
+  try {
+    const r = await Bos.get('/gestor/compras?status=' + _statusAtual);
+    renderizarPedidos(r);
+  } catch (e) {
+    document.getElementById('pixList').innerHTML = `<div class="pix-empty">❌ Erro: ${e.message}</div>`;
+  }
+}
+
+function mudarFiltro(status, btn) {
+  _statusAtual = status;
+  document.querySelectorAll('.filtro-status button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  carregarPedidos();
+}
+
+function fmtItens(itens) {
+  return itens.map(it => `${it.quantidade}× ${esc(it.produto_nome || '?')}`).join(', ');
+}
+
+function renderizarPedidos(pedidos) {
+  if (!pedidos || pedidos.length === 0) {
+    document.getElementById('pixList').innerHTML = `
+      <div class="pix-empty">
+        <div class="pix-empty-icon">✓</div>
+        <p style="font-size: 14px; color: #777;">Nenhum pedido ${_statusAtual === 'pendente' ? 'pendente' : _statusAtual}</p>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('pixList').innerHTML = pedidos.map(s => {
+    const clienteNome = s.cliente?.nome || '?';
+    const acoes = s.status === 'pendente' ? `
+      <div class="pix-actions">
+        <button class="btn-pix btn-aprovar" onclick="aprovarPedido(${s.id}, this)">✓ Aprovar</button>
+        <button class="btn-pix btn-rejeitar" onclick="abrirModalRejeicao(${s.id})">✕ Rejeitar</button>
+      </div>` : `
+      <div class="pix-actions">
+        <span class="${s.status === 'aprovada' ? 'badge-green' : 'badge-red'}">${s.status === 'aprovada' ? 'Aprovado' : 'Rejeitado'}</span>
+      </div>`;
+    return `
+    <div class="pix-card">
+      <div class="pix-left">
+        <div class="pix-avatar">${clienteNome.charAt(0).toUpperCase()}</div>
+        <div class="pix-info">
+          <div class="pix-nome">${esc(clienteNome)}</div>
+          <div class="pix-meta">#${s.id} • ${new Date(s.criado_em).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} • ${s.metodo_pagamento}</div>
+          <div class="pix-itens">${fmtItens(s.itens)}</div>
+          <div class="pix-valor">R$ ${s.valor_total.toFixed(2)}</div>
+          ${s.valor_desconto > 0 ? `<div class="pix-desconto">Cupom ${esc(s.cupom_codigo || '')} · − R$ ${s.valor_desconto.toFixed(2)}</div>` : ''}
+          ${s.comprovante_url
+            ? `<a class="pix-comprovante" href="${s.comprovante_url}" target="_blank" rel="noopener noreferrer" style="color:#4ade80;text-decoration:underline">📎 Ver comprovante</a>`
+            : (s.metodo_pagamento === 'pix'
+                ? `<span class="pix-comprovante" style="color:#fbbf24">⏳ Aguardando comprovante</span>`
+                : `<span class="pix-comprovante" style="color:#888">Pagamento na loja</span>`)}
+          ${s.status === 'rejeitada' && s.motivo_rejeicao ? `<div class="pix-comprovante" style="color:#f87171">Motivo: ${esc(s.motivo_rejeicao)}</div>` : ''}
+        </div>
+      </div>
+      ${acoes}
+    </div>`;
+  }).join('');
+}
+
+async function aprovarPedido(id, btn) {
+  if (!(await Bos.confirmar('Aprovar este pedido? Isso vai dar baixa no estoque e registrar a venda.'))) return;
+  btn.disabled = true;
+  try {
+    await Bos.post('/gestor/compras/' + id + '/aprovar', {});
+    toast('Pedido aprovado. Venda registrada.', 'success');
+    carregarPedidos();
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false;
+  }
+}
+
+function abrirModalRejeicao(id) {
+  solicitacaoEmEdicao = id;
+  document.getElementById('motivoTexto').value = '';
+  document.getElementById('charCount').textContent = '0';
+  abrirModal('modalRejeicao');
+  document.getElementById('motivoTexto').focus();
+}
+
+document.getElementById('motivoTexto').addEventListener('input', (e) => {
+  document.getElementById('charCount').textContent = e.target.value.length;
+});
+
+async function confirmarRejeicao() {
+  const motivo = document.getElementById('motivoTexto').value.trim();
+  if (!motivo) { toast('Digite um motivo para a rejeição.', 'error'); return; }
+
+  const btn = document.getElementById('btnConfirmarRejeicao');
+  btn.disabled = true;
+  try {
+    await Bos.post('/gestor/compras/' + solicitacaoEmEdicao + '/rejeitar', { motivo });
+    toast('Pedido rejeitado.', 'success');
+    fecharModal('modalRejeicao');
+    carregarPedidos();
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+carregarPedidos();
+</script>
+{% endblock %}
