@@ -13,7 +13,7 @@
 {% block content %}
 <div class="section-header" style="margin-bottom:16px">
   <span class="section-title">Gestores</span>
-  <input id="fBusca" type="text" placeholder="Buscar por nome ou e-mail (nesta página)…" oninput="renderTabela()"
+  <input id="fBusca" type="text" placeholder="Buscar por nome ou e-mail…" oninput="onBusca()"
     style="background:#1e1e1e;border:1px solid #333;color:#ccc;padding:9px 14px;border-radius:8px;font-size:13px;font-family:inherit;width:240px">
 </div>
 
@@ -36,10 +36,14 @@
 let _todos = [];
 let _paginaAtual  = 1;
 let _totalPaginas = 1;
+let _termoBusca   = '';
+let _buscaTimer   = null;
 
 async function carregar() {
   try {
-    const r = await Bos.get('/super/gestores?' + new URLSearchParams({ page: _paginaAtual, per_page: 50 }));
+    const params = { page: _paginaAtual, per_page: 50 };
+    if (_termoBusca) params.q = _termoBusca;
+    const r = await Bos.get('/super/gestores?' + new URLSearchParams(params));
     _todos = r.dados || [];
     _totalPaginas = r.pages || 1;
     document.getElementById('paginaLabel').textContent = `Página ${r.page} de ${_totalPaginas}`;
@@ -53,6 +57,18 @@ async function carregar() {
   }
 }
 
+// CONS-07: busca agora é feita no servidor (funciona em qualquer página,
+// não só na que já está carregada) — debounce de 300ms pra não disparar
+// uma requisição a cada tecla.
+function onBusca() {
+  clearTimeout(_buscaTimer);
+  _buscaTimer = setTimeout(() => {
+    _termoBusca  = (document.getElementById('fBusca')?.value || '').trim();
+    _paginaAtual = 1;
+    carregar();
+  }, 300);
+}
+
 function irPagina(delta) {
   const nova = _paginaAtual + delta;
   if (nova < 1 || nova > _totalPaginas) return;
@@ -61,16 +77,12 @@ function irPagina(delta) {
 }
 
 function renderTabela() {
-  const busca   = (document.getElementById('fBusca')?.value || '').toLowerCase();
-  const tb      = document.getElementById('tbody');
-  const lista   = _todos.filter(g =>
-    !busca || g.nome?.toLowerCase().includes(busca) || g.email?.toLowerCase().includes(busca)
-  );
-  if (!lista.length) {
+  const tb = document.getElementById('tbody');
+  if (!_todos.length) {
     tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#444;padding:32px">Nenhum gestor encontrado.</td></tr>';
     return;
   }
-  tb.innerHTML = lista.map(g => `
+  tb.innerHTML = _todos.map(g => `
     <tr>
       <td style="font-weight:600;color:#ddd">${esc(g.nome)}</td>
       <td style="color:#aaa">${esc(g.email || '—')}</td>

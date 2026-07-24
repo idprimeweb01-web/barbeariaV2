@@ -118,6 +118,9 @@ const EVENTO_LABEL = {
   plano_ativado:         'Assinatura de plano ativada',
   venda_concluida:       'Venda concluída',
   comprovante_enviado:   'Comprovante PIX enviado (antes da aprovação)',
+  duvida_criada:         'Dúvida do cliente criada',
+  duvida_nova_mensagem:  'Nova mensagem numa dúvida do cliente',
+  duvida_urgente:        'Ticket marcado como urgente',
 };
 
 let _eventosDisponiveis = [];
@@ -162,7 +165,7 @@ function copiarSecret() {
 }
 
 async function regenerarSecret() {
-  if (!confirm('Gerar um novo secret invalida o anterior imediatamente — a automação atual vai parar de funcionar até você atualizar lá também. Continuar?')) return;
+  if (!(await Bos.confirmar('Gerar um novo secret invalida o anterior imediatamente — a automação atual vai parar de funcionar até você atualizar lá também. Continuar?'))) return;
   try {
     const r = await Bos.post('/gestor/webhook/secret/regenerar', {});
     document.getElementById('fSecret').value = r.webhook_secret;
@@ -258,7 +261,7 @@ function irPagina(delta) {
   carregarLogs();
 }
 
-function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 carregarConfig();
 carregarLogs();

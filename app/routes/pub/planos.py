@@ -5,7 +5,7 @@ from flask import Blueprint, request, g, jsonify, current_app
 from app.extensions import db, limiter
 from app.models import (
     Barbearia, Plano, PlanoServico, Servico, Barbeiro,
-    ClientePlanoSolicitacao, ClientePlano, Cliente,
+    ClientePlanoSolicitacao, ClientePlano, Cliente, Usuario,
 )
 from app.exceptions import APIError
 from app.utils.features import feature_ativa
@@ -13,6 +13,7 @@ from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
 from app.utils.telefone import normalizar_telefone
 from app.labels import L
 from app.utils.db import commit_ou_falhar
+from app.utils.notificacoes import notificar
 from app.constants import StatusSolicitacaoPlano
 from app.routes.pub.agendamento import _TIPOS_COMPROVANTE, _MAX_BYTES_COMP, _validar_magic_bytes
 
@@ -52,7 +53,6 @@ def _fmt_plano_pub(p):
 # ── GET /api/v1/pub/<slug>/planos ─────────────────────────────────────────────
 
 @pub_planos_bp.get('/api/v1/pub/<string:slug>/planos')
-@pub_planos_bp.get('/pub/<string:slug>/planos')  # DEPRECATED: remover em v2, mantido para compatibilidade externa
 def listar_planos_pub(slug):
     """Lista planos ativos disponíveis para assinatura."""
     b = _get_barbearia_ou_404(slug)
@@ -74,7 +74,6 @@ def listar_planos_pub(slug):
 # Ativação só acontece após aprovação do gestor (PIX manual ou outro método).
 
 @pub_planos_bp.post('/api/v1/pub/<string:slug>/planos/<int:plano_id>/solicitar')
-@pub_planos_bp.post('/pub/<string:slug>/planos/<int:plano_id>/solicitar')  # DEPRECATED: remover em v2, mantido para compatibilidade externa
 @limiter.limit(os.environ.get('RL_PLANO_SOLICITAR', '5 per minute'))
 def solicitar_assinatura(slug, plano_id):
     b = _get_barbearia_ou_404(slug)
@@ -85,7 +84,6 @@ def solicitar_assinatura(slug, plano_id):
     # ── Identificar o cliente ─────────────────────────────────────────────────
     cliente_id = None
     if g.user_id:
-        from app.models import Usuario
         usr = db.session.get(Usuario, g.user_id)
         if usr and usr.barbearia_id == b.id:
             cli = Cliente.query.filter_by(barbearia_id=b.id, usuario_id=usr.id).first()
@@ -172,6 +170,16 @@ def solicitar_assinatura(slug, plano_id):
     db.session.add(sol)
     commit_ou_falhar('pub.planos.solicitar_assinatura')
 
+    cli_notif = db.session.get(Cliente, cliente_id)
+    gestores = Usuario.query.filter_by(barbearia_id=b.id, perfil='gestor', ativo=True).all()
+    for gestor in gestores:
+        notificar(
+            barbearia_id=b.id, usuario_id=gestor.id, tipo='plano_solicitado',
+            titulo='Nova solicitação de plano',
+            mensagem=f'{cli_notif.nome if cli_notif else "Cliente"} solicitou o plano "{plano.nome}".',
+            link='/gestor/planos', canal='in_app',
+        )
+
     resposta = {
         'mensagem': f'Solicitação de {L("plano").lower()} enviada. Aguarde a aprovação.',
         'solicitacao_id': sol.id,
@@ -192,6 +200,8 @@ def solicitar_assinatura(slug, plano_id):
             txid=f'PLANO{sol.id:06d}',
         )
         resposta['pix_copia_cola'] = emv
+        resposta['chave_pix'] = b.chave_pix
+        resposta['pix_nome_titular'] = b.pix_nome_titular or b.nome
         resposta['pix_info'] = (
             f'Envie R$ {float(sol.valor):.2f} via PIX e aguarde a ativação pelo gestor.'
         )

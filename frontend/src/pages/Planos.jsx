@@ -64,7 +64,12 @@ export default function Planos() {
       if (res.pix_copia_cola) {
         // Fica na tela em vez de só um toast — sem isso o cliente não tinha
         // como pagar de fato (o código só ia pro clipboard e sumia).
-        setPixPendente({ solicitacaoId: res.solicitacao_id, codigo: res.pix_copia_cola })
+        setPixPendente({
+          solicitacaoId: res.solicitacao_id,
+          codigo: res.pix_copia_cola,
+          chavePix: res.chave_pix,
+          titular: res.pix_nome_titular,
+        })
       } else {
         showToast(`Solicitação enviada! ${res.pix_info || 'Aguarde a aprovação do estabelecimento.'}`, 'success')
       }
@@ -97,6 +102,8 @@ export default function Planos() {
     <Layout title="Meus Planos">
       <PixConfirmacao
         codigo={pixPendente.codigo}
+        chavePix={pixPendente.chavePix}
+        titular={pixPendente.titular}
         uploadFn={(file) => api.pub.uploadComprovantePlano(pixPendente.solicitacaoId, file)}
         showToast={showToast}
         labelFinalizar="Voltar para meus planos"

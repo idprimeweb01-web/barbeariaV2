@@ -79,15 +79,18 @@
           </div>
         </div>
         <div class="field">
-          <label for="email">E-mail <span class="text-muted" style="font-weight:400">(opcional)</span></label>
+          <label for="email">E-mail</label>
           <div class="input-wrap">
-            <input type="email" id="email" name="email" placeholder="seu@email.com" autocomplete="email">
+            <input type="email" id="email" name="email" placeholder="seu@email.com" autocomplete="email" required>
+          </div>
+          <div class="text-muted" style="font-size:12px;margin-top:6px">
+            Não tem e-mail? Pode inventar um só pra login, tipo <strong>seunome@cliente.com</strong> — é ele que você vai usar pra entrar depois.
           </div>
         </div>
         <div class="field">
           <label for="senha">Senha</label>
           <div class="input-wrap">
-            <input type="password" id="senha" name="senha" placeholder="Mínimo 6 caracteres" autocomplete="new-password" required>
+            <input type="password" id="senha" name="senha" placeholder="Mínimo 8 caracteres" autocomplete="new-password" required>
           </div>
         </div>
         <div class="field">
@@ -150,7 +153,8 @@
 
       if (!nome)       { mostrarErro('Informe seu nome.'); return; }
       if (!telefone)   { mostrarErro('Informe seu telefone.'); return; }
-      if (!senha || senha.length < 6) { mostrarErro('A senha deve ter no mínimo 6 caracteres.'); return; }
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { mostrarErro('Informe um e-mail válido — você vai usar ele pra entrar depois.'); return; }
+      if (!senha || senha.length < 8) { mostrarErro('A senha deve ter no mínimo 8 caracteres.'); return; }
       if (senha !== confirmar) { mostrarErro('As senhas não coincidem.'); return; }
 
       setCarregando(true);

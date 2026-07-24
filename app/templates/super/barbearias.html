@@ -96,9 +96,9 @@
         </div>
         <div class="field">
           <label for="fGSenha">Senha inicial do gestor *
-            <small style="color:#555;font-weight:400"> (mín. 6 caracteres)</small>
+            <small style="color:#555;font-weight:400"> (mín. 8 caracteres)</small>
           </label>
-          <input type="password" id="fGSenha" required minlength="6"
+          <input type="password" id="fGSenha" required minlength="8"
                  placeholder="Senha provisória" autocomplete="new-password">
         </div>
 
@@ -543,10 +543,10 @@ async function verDetalhes(id) {
 }
 
 // ── Desativar ───────────────────────────────────────────────────────────────
-function confirmarDesativar(id) {
+async function confirmarDesativar(id) {
   const b = _lista.find(x => x.id === id);
   const nome = b ? (b.nome_exibicao || b.nome) : 'este estabelecimento';
-  if (!confirm(`Desativar "${nome}"?\n\nTodos os usuários deste estabelecimento também serão desativados.`)) return;
+  if (!(await Bos.confirmar(`Desativar "${nome}"?\n\nTodos os usuários deste estabelecimento também serão desativados.`))) return;
   desativar(id);
 }
 
@@ -567,6 +567,15 @@ async function ativar(id) {
   try {
     await Bos.post(`/super/barbearias/${id}/ativar`, {});
     toast('Estabelecimento reativado.', 'success');
+    // CONS-05: reativar só religa os GESTORES (backend não mexe em
+    // barbeiros/clientes) — aviso explícito pra não parecer que a equipe
+    // toda voltou sozinha.
+    alert(
+      'Estabelecimento reativado.\n\n' +
+      'Só os gestores foram reativados automaticamente. Barbeiros e ' +
+      'clientes seguem inativos — peça ao gestor para reativá-los pelo ' +
+      'próprio painel dele.'
+    );
     await carregar();
   } catch(e) {
     toast(e.message, 'error');
@@ -575,8 +584,6 @@ async function ativar(id) {
 
 // ── Editar estabelecimento ─────────────────────────────────────────────────
 let _editandoId = null;
-
-let _segmentoIdOriginal = null;
 
 async function abrirEditar(id) {
   _editandoId = id;
@@ -595,7 +602,6 @@ async function abrirEditar(id) {
     document.getElementById('eNomeExib').value   = v('nome_exibicao');
     document.getElementById('eSlug').value        = v('slug');
     document.getElementById('eUrl').value         = v('url_agendamento');
-    _segmentoIdOriginal = d.segmento_id || null;
     document.getElementById('eSegmento').value    = d.segmento_id || '';
     document.getElementById('eRua').value         = v('rua');
     document.getElementById('eNumero').value      = v('numero');
@@ -624,11 +630,18 @@ async function salvarEditar(e) {
 
   const t = (id) => document.getElementById(id).value.trim();
 
+  // CONS-06: segmento_id vai junto no mesmo PATCH (uma transação só no
+  // backend) — antes era uma 2ª requisição separada, que podia deixar o
+  // tenant "meio salvo" se falhasse depois da primeira ter tido sucesso.
+  const segmentoNovo = document.getElementById('eSegmento').value
+    ? parseInt(document.getElementById('eSegmento').value) : null;
+
   const dados = {
     nome:             t('eNome'),
     nome_exibicao:    t('eNomeExib') || null,
     slug:             t('eSlug'),
     url_agendamento:  t('eUrl') || null,
+    segmento_id:      segmentoNovo,
     rua:              t('eRua') || null,
     numero:           t('eNumero') || null,
     complemento:      t('eComplemento') || null,
@@ -640,14 +653,8 @@ async function salvarEditar(e) {
     instagram:        t('eInstagram') || null,
   };
 
-  const segmentoNovo = document.getElementById('eSegmento').value
-    ? parseInt(document.getElementById('eSegmento').value) : null;
-
   try {
     await Bos.patch(`/super/barbearias/${_editandoId}`, dados);
-    if (segmentoNovo !== _segmentoIdOriginal) {
-      await Bos.patch(`/super/barbearias/${_editandoId}/segmento`, { segmento_id: segmentoNovo });
-    }
     toast('Estabelecimento atualizado.', 'success');
     fecharModal('modalEditar');
     await carregar();

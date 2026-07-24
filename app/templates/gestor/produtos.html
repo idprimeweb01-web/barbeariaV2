@@ -438,7 +438,7 @@
     finally { btn.disabled = false; }
   }
   async function desativarCategoria(id) {
-    if (!confirm('Desativar esta categoria?')) return;
+    if (!(await Bos.confirmar('Desativar esta categoria?'))) return;
     try {
       await Bos.delete('/gestor/produtos/categorias/' + id);
       toast('Categoria desativada.');

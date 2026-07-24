@@ -322,7 +322,7 @@
   let _paginaAtual = 1;
   let _totalPaginas = 1;
 
-  function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
   function fmtR(v){ return 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
   function fmtData(iso){ return iso ? new Date(iso).toLocaleDateString('pt-BR') : '—'; }
   function diasAtras(iso){ if(!iso) return '—'; const d=Math.floor((Date.now()-new Date(iso))/86400000); if(d===0) return 'hoje'; if(d===1) return 'ontem'; return `${d}d atrás`; }
@@ -525,7 +525,7 @@
   }
   async function desativarSelecionados() {
     const ids = [...document.querySelectorAll('.row-check:checked')].map(c => +c.dataset.id);
-    if (!confirm(`Desativar ${ids.length} cliente(s)?`)) return;
+    if (!(await Bos.confirmar(`Desativar ${ids.length} cliente(s)?`))) return;
     let erros = 0;
     for (const id of ids) { try { await Bos.patch('/gestor/clientes/' + id, {ativo: false}); } catch { erros++; } }
     toast(erros ? `${ids.length - erros} desativados, ${erros} com erro.` : `${ids.length} desativado(s).`,
@@ -536,7 +536,7 @@
 
   // ── Desativar individual ─────────────────────────────────
   async function desativar(id, nome) {
-    if (!confirm(`Desativar "${nome}"?`)) return;
+    if (!(await Bos.confirmar(`Desativar "${nome}"?`))) return;
     try {
       await Bos.patch('/gestor/clientes/' + id, {ativo: false});
       toast('Cliente desativado.');
@@ -555,7 +555,8 @@
       const d = await Bos.get('/gestor/clientes/' + id);
       const p = d.dados_pessoais;
       _editId = id;
-      document.getElementById('mpTitulo').textContent = p.nome;
+      document.getElementById('mpTitulo').innerHTML = esc(p.nome) +
+        (d.nivel_vip > 0 ? ` <span class="badge-gold" style="font-size:10px;vertical-align:middle">⭐ VIP ${d.nivel_vip}</span>` : '');
       document.getElementById('btnAbrirEdicao').onclick = () => {
         fecharModal('modalPerfil');
         abrirEdicaoDirecta(id, p.nome, p.email || '', p.observacoes || '');
@@ -590,6 +591,27 @@
         ${p.observacoes ? `
           <div style="background:#1e1e1e;border:1px solid #2d2d2d;border-radius:8px;padding:10px 12px;font-size:13px;color:#888;margin:10px 0">
             📝 ${esc(p.observacoes)}
+          </div>` : ''}
+
+        ${(d.planos || []).length ? `
+          <div class="mp-section">Planos</div>
+          <div class="mp-hist">
+            ${d.planos.map(pl => {
+              const desde  = pl.data_inicio ? new Date(pl.data_inicio + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+              const expira = pl.data_fim ? new Date(pl.data_fim + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+              let statusTxt, statusCls;
+              if (!pl.ativo) { statusTxt = 'Cancelado'; statusCls = 'badge-gray'; }
+              else if (pl.expirado) { statusTxt = 'Expirado'; statusCls = 'badge-gray'; }
+              else { statusTxt = 'Ativo'; statusCls = 'badge-green'; }
+              return `
+              <div class="mp-hist-row">
+                <div>
+                  <div style="font-weight:600;font-size:13px">${esc(pl.plano_nome)}</div>
+                  <div style="font-size:11px;color:#555">Desde ${desde} · expira ${expira}</div>
+                </div>
+                <span class="${statusCls}" style="font-size:10px">${statusTxt}</span>
+              </div>`;
+            }).join('')}
           </div>` : ''}
 
         ${d.historico.length ? `
@@ -684,6 +706,11 @@
       });
     } catch {}
     carregar();
+
+    // Deep-link ?id=<cliente_id> — abre o perfil direto (ex: vindo do
+    // botão "Ver perfil" na tela de Assinantes de Planos).
+    const idDeepLink = new URLSearchParams(window.location.search).get('id');
+    if (idDeepLink) verPerfil(parseInt(idDeepLink, 10));
   })();
 
   async function verHistorico(id, nome) {

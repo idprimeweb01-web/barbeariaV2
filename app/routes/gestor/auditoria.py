@@ -3,6 +3,7 @@ from app.extensions import db
 from app.models import AuditoriaLog, Usuario
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
+from app.utils.tz import limites_utc_do_dia_brasilia
 
 gestor_auditoria_bp = Blueprint('gestor_auditoria', __name__, url_prefix='/api/v1/gestor')
 
@@ -20,7 +21,18 @@ def listar_auditoria():
       page       — página (default: 1)
       per_page   — registros por página (default: 50, max: 200)
     """
-    q = AuditoriaLog.query.filter_by(barbearia_id=g.barbearia_id)
+    # Exclui ações do super_admin sobre este tenant (ex: edição via
+    # /super/barbearias) — essas ficam só na auditoria global do admin,
+    # não devem vazar pra visão do gestor (achado explícito do dono).
+    super_admin_ids = db.session.query(Usuario.id).filter_by(perfil='super_admin')
+    q = (
+        AuditoriaLog.query
+        .filter_by(barbearia_id=g.barbearia_id)
+        .filter(db.or_(
+            AuditoriaLog.usuario_id.is_(None),
+            ~AuditoriaLog.usuario_id.in_(super_admin_ids),
+        ))
+    )
 
     tipo = request.args.get('tipo_acao')
     if tipo:
@@ -36,11 +48,13 @@ def listar_auditoria():
         if de_str:
             from datetime import date
             de = date.fromisoformat(de_str)
-            q = q.filter(db.func.date(AuditoriaLog.criado_em) >= de)
+            inicio_utc, _ = limites_utc_do_dia_brasilia(de, de)
+            q = q.filter(AuditoriaLog.criado_em >= inicio_utc)
         if ate_str:
             from datetime import date
             ate = date.fromisoformat(ate_str)
-            q = q.filter(db.func.date(AuditoriaLog.criado_em) <= ate)
+            _, fim_utc = limites_utc_do_dia_brasilia(ate, ate)
+            q = q.filter(AuditoriaLog.criado_em <= fim_utc)
     except ValueError:
         raise APIError('Parâmetros "de" e "ate" devem estar no formato YYYY-MM-DD.', 422)
 

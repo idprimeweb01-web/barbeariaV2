@@ -8,11 +8,13 @@ from app.exceptions import APIError
 from app.constants import MetodoPagamentoVenda, StatusVenda, TipoMovimentacaoEstoque
 from app.utils import estoque as estoque_service
 from app.utils.estoque import calcular_comissao_venda
+from app.utils.cupons import validar_cupom, incrementar_uso_cupom, registrar_uso_cupom
 
 
 def criar_venda_core(barbearia_id: int, usuario_registro_id: int, itens: list,
                       barbeiro_id: int = None, cliente_id: int = None,
-                      cliente_nome_livre: str = None, metodo_pagamento: str = None):
+                      cliente_nome_livre: str = None, metodo_pagamento: str = None,
+                      cupom_codigo: str = None):
     """
     itens: [{'produto_id': int, 'quantidade': int}, ...]
     Valida estoque via serviço central (com lock), calcula total e comissão
@@ -56,6 +58,7 @@ def criar_venda_core(barbearia_id: int, usuario_registro_id: int, itens: list,
     db.session.flush()  # precisa do venda.id pra referenciar nos itens/movimentações
 
     valor_total = 0.0
+    itens_cupom = []
     for item in itens:
         produto_id = item.get('produto_id')
         quantidade = item.get('quantidade')
@@ -88,8 +91,22 @@ def criar_venda_core(barbearia_id: int, usuario_registro_id: int, itens: list,
             comissao_valor=comissao,
         ))
         valor_total += subtotal
+        itens_cupom.append({'tipo': 'produto', 'ref_id': produto.id, 'valor': subtotal})
 
-    venda.valor_total = round(valor_total, 2)
+    valor_desconto = 0.0
+    if cupom_codigo:
+        try:
+            cupom, valor_desconto = validar_cupom(barbearia_id, cupom_codigo, itens_cupom)
+            incrementar_uso_cupom(cupom.id, barbearia_id)
+            registrar_uso_cupom(
+                cupom.id, barbearia_id, valor_original=valor_total, valor_desconto=valor_desconto,
+                cliente_id=cliente_id, venda_id=venda.id,
+            )
+        except APIError:
+            db.session.rollback()
+            raise
+
+    venda.valor_total = round(valor_total - valor_desconto, 2)
     return venda
 
 

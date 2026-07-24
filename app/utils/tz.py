@@ -4,7 +4,7 @@ Utilitários de timezone para o sistema BarberOS.
 Regra: toda lógica de negócio (slots, agendamentos, datas) opera em Brasília (UTC-3).
 Timestamps de auditoria (criado_em, atualizado_em) são gravados em UTC.
 """
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, date, time as time_t, timezone, timedelta
 
 BRASILIA = timezone(timedelta(hours=-3))
 UTC      = timezone.utc
@@ -34,6 +34,22 @@ def agora_utc() -> datetime:
 def naive_brasilia() -> datetime:
     """Datetime atual em Brasília sem tzinfo — para comparar com datetimes naive do banco."""
     return datetime.now(BRASILIA).replace(tzinfo=None)
+
+
+def limites_utc_do_dia_brasilia(de: date, ate: date) -> tuple[datetime, datetime]:
+    """Converte um intervalo de datas LOCAIS de Brasília (ex: 'de'/'ate' de
+    um filtro de tela) em limites de datetime UTC-naive, pra filtrar
+    colunas gravadas em UTC (criado_em de AuditoriaLog/ClienteDuvida/Venda
+    etc.) pelo dia civil que o usuário vê, não o dia civil UTC.
+
+    Sem isso, `db.func.date(coluna_utc) >= de` compara a data UTC direto
+    contra uma data de Brasília — entre ~21h e meia-noite (Brasília), a
+    coluna já está gravada com a data UTC do dia SEGUINTE, e o registro
+    some do filtro até o dia virar em Brasília também (achado em teste
+    manual na listagem de dúvidas do gestor)."""
+    inicio = datetime.combine(de, time_t.min) + timedelta(hours=3)
+    fim    = datetime.combine(ate, time_t.max) + timedelta(hours=3)
+    return inicio, fim
 
 
 def utc_naive_para_brasilia(dt: datetime) -> datetime:

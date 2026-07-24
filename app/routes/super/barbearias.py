@@ -11,7 +11,7 @@ from app.models import (
 )
 from app.exceptions import APIError
 from app.decorators.auth import super_required
-from app.utils import normalizar_telefone
+from app.utils import normalizar_telefone, validar_senha
 from app.utils.tz import agora_utc
 from app.utils.db import commit_ou_falhar
 from app.utils.auditoria import registrar_auditoria
@@ -134,8 +134,7 @@ def criar_barbearia():
     gestor_tel_norm, tel_erro = normalizar_telefone(gestor_tel)
     if tel_erro:
         raise APIError(f'"gestor_telefone": {tel_erro}')
-    if len(gestor_senha) < 6:
-        raise APIError('"gestor_senha" deve ter no mínimo 6 caracteres.')
+    validar_senha(gestor_senha, 'gestor_senha')
 
     if Barbearia.query.filter_by(slug=slug).first():
         raise APIError(f'Slug "{slug}" já está em uso.', 409)
@@ -302,9 +301,35 @@ def editar_barbearia(barbearia_id):
         v = (dados['estado'] or '').strip().upper()
         b.estado = v[:2] or None
 
+    # CONS-06: segmento_id aceito no mesmo PATCH (antes era uma 2ª requisição
+    # separada — se ela falhasse depois da primeira ter sucesso, o tenant
+    # ficava com os outros campos salvos mas o segmento não, sem aviso).
+    segmento_id_antigo = b.segmento_id
+    segmento_alterado = False
+    if 'segmento_id' in dados:
+        seg_id = dados['segmento_id']
+        if seg_id is None:
+            b.segmento_id = None
+        else:
+            seg = db.session.get(Segmento, int(seg_id))
+            if not seg:
+                raise APIError('Segmento não encontrado.', 404)
+            b.segmento_id = seg.id
+        segmento_alterado = b.segmento_id != segmento_id_antigo
+
     commit_ou_falhar('super.barbearias.editar_barbearia')
 
+    if segmento_alterado:
+        from app.labels import L
+        L.invalidar(segmento_id_antigo)
+        L.invalidar(b.segmento_id)
+
     registrar_auditoria(g.user_id, b.id, 'edit', 'barbearia', b.id, 'Dados da barbearia editados.')
+    if segmento_alterado:
+        registrar_auditoria(
+            g.user_id, b.id, 'edit', 'barbearia', b.id,
+            f'Segmento alterado de {segmento_id_antigo} para {b.segmento_id}.',
+        )
 
     return jsonify({'mensagem': 'Barbearia atualizada.', 'barbearia': _fmt_barbearia(b)}), 200
 
@@ -520,7 +545,7 @@ def remover_imagem_customizacao(barbearia_id):
     return jsonify({'mensagem': 'Imagem removida.', 'tipo': tipo}), 200
 
 
-# ── Trigger manual do scheduler (apenas super, apenas em dev) ─────────────────
+# ── Trigger manual do scheduler (apenas super, só com ENABLE_DEBUG_ENDPOINTS=1) ─
 
 @super_bp.post('/scheduler/executar-lembretes')
 @super_required
@@ -528,15 +553,20 @@ def executar_lembretes_agora():
     """
     Dispara o job de lembretes imediatamente (sem esperar o intervalo de 1 min).
     Útil para testar: criar um agendamento na janela de notificação e chamar este endpoint.
-    NÃO disponibilizar em produção sem autenticação adicional.
+    Ferramenta de debug — só responde se ENABLE_DEBUG_ENDPOINTS=1 no ambiente
+    (deixar desligado em produção). Nunca expõe traceback no corpo da resposta.
     """
+    if os.environ.get('ENABLE_DEBUG_ENDPOINTS') != '1':
+        raise APIError('Endpoint de debug desabilitado neste ambiente.', 404)
+
     from app.utils.scheduler import _executar_lembretes
-    import traceback
+    import logging
     try:
         _executar_lembretes()
         return jsonify({'mensagem': 'Job executado. Verifique as notificações geradas.'}), 200
-    except Exception as exc:
-        return jsonify({'erro': str(exc), 'traceback': traceback.format_exc()}), 500
+    except Exception:
+        logging.getLogger(__name__).exception('Falha ao executar job de lembretes manualmente.')
+        raise APIError('Falha ao executar o job. Veja os logs do servidor.', 500)
 
 
 # ── GET /api/v1/super/gestores ───────────────────────────────────────────────
@@ -550,6 +580,13 @@ def listar_gestores():
         .filter(Usuario.perfil == 'gestor')
         .order_by(Usuario.nome)
     )
+
+    # CONS-07: busca server-side por nome/e-mail — antes o frontend só
+    # filtrava os registros já carregados da página atual.
+    busca = (request.args.get('q') or '').strip()
+    if busca:
+        termo = f'%{busca}%'
+        q = q.filter(db.or_(Usuario.nome.ilike(termo), Usuario.email.ilike(termo)))
 
     try:
         page     = max(1, int(request.args.get('page', 1)))

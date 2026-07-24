@@ -15,10 +15,12 @@ from app.utils.features import feature_required
 from app.utils.agenda import (
     fim_agendamento, verificar_conflito, gerar_slots,
     servicos_do_agendamento, barbeiro_atende_todos_servicos, barbeiro_elegivel_para_transferencia,
-    aprovar_comprovante_pix,
+    aprovar_comprovante_pix, notificar_pix_aprovado,
 )
 from app.utils.cupons import decrementar_uso_cupom
-from app.utils.notificacoes import criar_notificacao
+from app.utils.comprovante_link import gerar_link_comprovante
+from app.utils.notificacoes import notificar
+from app.utils.auditoria import registrar_auditoria
 from app.utils.webhooks import disparar_webhook
 from app.utils.tz import naive_brasilia
 from app.labels import L
@@ -97,7 +99,10 @@ def _fmt_ag_gestor(ag, clientes=None, barbeiros=None, pixes=None):
         } if cliente else None,
         'barbeiro':         {'id': ag.barbeiro_id, 'nome': barbeiro_nome},
         'servicos':         servicos_info,
-        'pix':              {'status': pix.status, 'comprovante_url': pix.comprovante_url} if pix else None,
+        'pix':              {
+            'status': pix.status,
+            'comprovante_url': gerar_link_comprovante('agendamento', ag.id, ag.barbearia_id) if pix.comprovante_url else None,
+        } if pix else None,
     }
 
 
@@ -195,6 +200,9 @@ def aprovar_agendamento(ag_id):
         'agendamento_id': ag.id, 'cliente_id': ag.cliente_id, 'barbeiro_id': ag.barbeiro_id,
         'data_hora': ag.data_hora.isoformat(), 'aprovado_por': 'gestor',
     })
+    notificar_pix_aprovado(ag)
+    registrar_auditoria(g.user_id, ag.barbearia_id, 'edit', 'agendamento', ag.id,
+                         f'Aprovou o comprovante PIX do agendamento #{ag.id}.')
 
     return jsonify({'mensagem': f'{L("agendamento")} aprovado.', 'id': ag_id, 'status': StatusAgendamento.AGENDADO}), 200
 
@@ -229,6 +237,25 @@ def cancelar_agendamento_gestor(ag_id):
         'agendamento_id': ag.id, 'cliente_id': ag.cliente_id, 'barbeiro_id': ag.barbeiro_id,
         'data_hora': ag.data_hora.isoformat(), 'cancelado_por': 'gestor',
     })
+
+    cli = db.session.get(Cliente, ag.cliente_id)
+    if cli and cli.usuario_id:
+        notificar(
+            barbearia_id=ag.barbearia_id,
+            usuario_id=cli.usuario_id,
+            tipo='agendamento_cancelado',
+            titulo='Agendamento cancelado',
+            mensagem=(
+                f'Seu agendamento de {ag.data_hora.strftime("%d/%m/%Y %H:%M")} foi cancelado '
+                f'pelo estabelecimento.' + (f' Motivo: {motivo}' if motivo else '')
+            ),
+            link='/cliente/historico',
+            canal='in_app',
+            agendamento_id=ag.id,
+        )
+
+    registrar_auditoria(g.user_id, ag.barbearia_id, 'edit', 'agendamento', ag.id,
+                         f'Cancelou o agendamento #{ag.id}.' + (f' Motivo: {motivo}' if motivo else ''))
 
     return jsonify({'mensagem': f'{L("agendamento")} cancelado pelo gestor.', 'id': ag_id}), 200
 
@@ -440,6 +467,17 @@ def agendamento_manual():
         is_plano=False,
     ))
     commit_ou_falhar('gestor.agendamento.agendamento_manual')
+
+    notificar(
+        barbearia_id=bid,
+        usuario_id=barb.usuario_id,
+        tipo='agendamento_novo',
+        titulo='Novo agendamento',
+        mensagem=f'Agendamento #{ag.id} para {data_hora.strftime("%d/%m/%Y %H:%M")} — {sv.nome} (criado pelo estabelecimento).',
+        link='/barbeiro/agendamentos',
+        canal='in_app',
+        agendamento_id=ag.id,
+    )
 
     return jsonify({'mensagem': 'Agendamento criado.', 'id': ag.id}), 201
 
@@ -736,6 +774,22 @@ def responder_solicitacao(solic_id):
             db.session.delete(blk)
 
     commit_ou_falhar('gestor.agendamento.responder_solicitacao')
+
+    barb_solic = db.session.get(Barbeiro, s.barbeiro_id)
+    if barb_solic:
+        notificar(
+            barbearia_id=bid,
+            usuario_id=barb_solic.usuario_id,
+            tipo='liberacao_respondida',
+            titulo='Solicitação de liberação ' + ('aprovada' if novo_status == 'aprovado' else 'rejeitada'),
+            mensagem=(
+                f'Sua solicitação de liberação para {s.data.strftime("%d/%m/%Y")} foi '
+                f'{"aprovada" if novo_status == "aprovado" else "rejeitada"}.'
+            ),
+            link='/barbeiro/horario',
+            canal='in_app',
+        )
+
     msg = ('Solicitação aprovada. Bloqueios removidos.' if novo_status == 'aprovado'
            else 'Solicitação rejeitada.')
     return jsonify({'mensagem': msg}), 200
@@ -824,12 +878,13 @@ def transferir_agendamento(ag_id):
     destino_usr = db.session.get(Usuario, destino.usuario_id)
     destino_nome = destino_usr.nome if destino_usr else L("profissional")
     if cli and cli.usuario_id:
-        criar_notificacao(
+        notificar(
             barbearia_id=bid,
             usuario_id=cli.usuario_id,
             tipo='agendamento_transferido',
             titulo='Seu atendimento mudou de profissional',
-            corpo=f'Seu atendimento agora será com {destino_nome}.',
+            mensagem=f'Seu atendimento agora será com {destino_nome}.',
+            link='/cliente/historico',
             canal='in_app',
             agendamento_id=ag.id,
         )

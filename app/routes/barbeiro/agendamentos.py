@@ -12,10 +12,12 @@ from app.utils.features import feature_required
 from app.utils.agenda import (
     fim_agendamento, verificar_conflito, gerar_slots,
     servicos_do_agendamento, barbeiro_atende_todos_servicos, barbeiro_elegivel_para_transferencia,
-    aprovar_comprovante_pix,
+    aprovar_comprovante_pix, notificar_pix_aprovado,
 )
 from app.utils.cupons import decrementar_uso_cupom
-from app.utils.notificacoes import criar_notificacao
+from app.utils.comprovante_link import gerar_link_comprovante
+from app.utils.notificacoes import notificar
+from app.utils.auditoria import registrar_auditoria
 from app.utils.webhooks import disparar_webhook
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.utils.db import commit_ou_falhar
@@ -92,7 +94,10 @@ def _batch_comprovantes(barbearia_id, agendamento_ids):
         AgendamentoSolicitacaoPix.barbearia_id == barbearia_id,
         AgendamentoSolicitacaoPix.agendamento_id.in_(agendamento_ids),
     ).all()
-    return {p.agendamento_id: p.comprovante_url for p in pixes if p.comprovante_url}
+    return {
+        p.agendamento_id: gerar_link_comprovante('agendamento', p.agendamento_id, barbearia_id)
+        for p in pixes if p.comprovante_url
+    }
 
 
 def _fmt_ag(ag, cli, historico, notas, comprovante_url=None):
@@ -228,6 +233,25 @@ def cancelar_agendamento(ag_id):
         'data_hora': ag.data_hora.isoformat(), 'cancelado_por': 'barbeiro',
     })
 
+    cli = db.session.get(Cliente, ag.cliente_id)
+    if cli and cli.usuario_id:
+        notificar(
+            barbearia_id=ag.barbearia_id,
+            usuario_id=cli.usuario_id,
+            tipo='agendamento_cancelado',
+            titulo='Agendamento cancelado',
+            mensagem=(
+                f'Seu agendamento de {ag.data_hora.strftime("%d/%m/%Y %H:%M")} foi cancelado '
+                f'pelo profissional.' + (f' Motivo: {motivo}' if motivo else '')
+            ),
+            link='/cliente/historico',
+            canal='in_app',
+            agendamento_id=ag.id,
+        )
+
+    registrar_auditoria(g.user_id, ag.barbearia_id, 'edit', 'agendamento', ag.id,
+                         f'Cancelou o agendamento #{ag.id}.' + (f' Motivo: {motivo}' if motivo else ''))
+
     return jsonify({'id': ag.id, 'status': ag.status}), 200
 
 
@@ -254,6 +278,9 @@ def aprovar_comprovante(ag_id):
         'agendamento_id': ag.id, 'cliente_id': ag.cliente_id, 'barbeiro_id': ag.barbeiro_id,
         'data_hora': ag.data_hora.isoformat(), 'aprovado_por': 'barbeiro',
     })
+    notificar_pix_aprovado(ag)
+    registrar_auditoria(g.user_id, ag.barbearia_id, 'edit', 'agendamento', ag.id,
+                         f'Aprovou o comprovante PIX do agendamento #{ag.id}.')
 
     return jsonify({'id': ag.id, 'status': StatusAgendamento.AGENDADO}), 200
 
@@ -424,12 +451,13 @@ def pegar_agendamento(ag_id):
     cli = db.session.get(Cliente, ag.cliente_id)
     usr = db.session.get(Usuario, b.usuario_id)
     if cli and cli.usuario_id:
-        criar_notificacao(
+        notificar(
             barbearia_id=g.barbearia_id,
             usuario_id=cli.usuario_id,
             tipo='agendamento_transferido',
             titulo='Seu atendimento mudou de profissional',
-            corpo=f'Seu atendimento agora será com {usr.nome if usr else "outro profissional"}.',
+            mensagem=f'Seu atendimento agora será com {usr.nome if usr else "outro profissional"}.',
+            link='/cliente/historico',
             canal='in_app',
             agendamento_id=ag.id,
         )

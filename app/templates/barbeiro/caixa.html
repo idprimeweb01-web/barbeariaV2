@@ -137,7 +137,7 @@ let _dataHoje = null;
 let _dataAtual = null;
 
 function fmtR(v) { return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }); }
-function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 async function init() {
   _dataHoje = _dataAtual = Bos.hojeBrasilia();
@@ -263,7 +263,7 @@ function renderCaixa() {
 }
 
 async function removerItem(itemId) {
-  if (!confirm('Remover este item?')) return;
+  if (!(await Bos.confirmar('Remover este item?'))) return;
   try {
     await Bos.delete(`/barbeiro/caixa/itens/${itemId}`);
     await carregarCaixa();
@@ -272,7 +272,7 @@ async function removerItem(itemId) {
 }
 
 async function fecharCaixa() {
-  if (!confirm('Fechar o caixa de hoje? Não será possível adicionar mais itens.')) return;
+  if (!(await Bos.confirmar('Fechar o caixa de hoje? Não será possível adicionar mais itens.'))) return;
   try {
     _caixa = await Bos.patch(`/barbeiro/caixa/${_caixa.id}/fechar`);
     toast('Caixa fechado.');

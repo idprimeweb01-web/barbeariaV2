@@ -1,7 +1,7 @@
 from datetime import datetime
 from flask import Blueprint, request, g, jsonify
 from app.extensions import db
-from app.models import Venda, VendaItem, Produto, Cliente, Barbeiro, Usuario
+from app.models import Venda, VendaItem, Produto, Cliente, Barbeiro, Usuario, CupomUso, Cupom
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.utils.features import feature_required
@@ -32,6 +32,16 @@ def _fmt_venda(v, clientes=None, barbeiros_usr=None):
             usr = db.session.get(Usuario, barb.usuario_id) if barb else None
             barbeiro_nome = usr.nome if usr else None
 
+    uso_cupom = CupomUso.query.filter_by(venda_id=v.id).first()
+    cupom_info = None
+    if uso_cupom:
+        cupom_ref = db.session.get(Cupom, uso_cupom.cupom_id)
+        cupom_info = {
+            'codigo':         cupom_ref.codigo if cupom_ref else None,
+            'valor_original': float(uso_cupom.valor_original),
+            'valor_desconto': float(uso_cupom.valor_desconto),
+        }
+
     return {
         'id':               v.id,
         'cliente_id':       v.cliente_id,
@@ -41,6 +51,7 @@ def _fmt_venda(v, clientes=None, barbeiros_usr=None):
         'metodo_pagamento': v.metodo_pagamento,
         'status':           v.status,
         'valor_total':      float(v.valor_total),
+        'cupom':            cupom_info,
         'criado_em':        v.criado_em.isoformat() if v.criado_em else None,
         'itens': [
             {
@@ -75,6 +86,7 @@ def criar_venda():
         cliente_id=dados.get('cliente_id'),
         cliente_nome_livre=dados.get('cliente_nome_livre'),
         metodo_pagamento=(dados.get('metodo_pagamento') or '').strip().lower(),
+        cupom_codigo=(dados.get('cupom_codigo') or '').strip() or None,
     )
     commit_ou_falhar('gestor.vendas.criar_venda')
 

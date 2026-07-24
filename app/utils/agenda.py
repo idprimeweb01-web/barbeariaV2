@@ -186,7 +186,7 @@ def aprovar_comprovante_pix(ag) -> None:
     Levanta APIError se o agendamento não estiver num status aprovável."""
     from app.exceptions import APIError
     from app.models import AgendamentoSolicitacaoPix
-    from app.utils.cupons import incrementar_uso_cupom
+    from app.utils.cupons import incrementar_uso_cupom, registrar_uso_cupom
 
     if ag.status not in _STATUS_APROVAVEL:
         raise APIError('Este agendamento já foi processado.', 409)
@@ -197,4 +197,38 @@ def aprovar_comprovante_pix(ag) -> None:
         pix.respondido_em = naive_brasilia()
     if ag.cupom_id:
         incrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
+        registrar_uso_cupom(
+            ag.cupom_id, ag.barbearia_id,
+            valor_original=float(ag.valor_total) + float(ag.valor_desconto or 0),
+            valor_desconto=float(ag.valor_desconto or 0),
+            cliente_id=ag.cliente_id, agendamento_id=ag.id,
+        )
     ag.status = StatusAgendamento.AGENDADO
+
+
+def notificar_pix_aprovado(ag) -> None:
+    """Notifica o cliente que o pagamento PIX foi aprovado e o agendamento
+    confirmado. Separado de aprovar_comprovante_pix() de propósito: aquela
+    função só muda estado em memória (contrato do caller cuida do commit);
+    notificar() comita a própria sessão, então só pode ser chamada DEPOIS
+    do commit_ou_falhar do caller — nunca antes, sob pena de commit
+    prematuro de uma transação que o caller ainda não terminou de montar."""
+    from app.extensions import db
+    from app.models import Cliente
+    from app.utils.notificacoes import notificar
+
+    cli = db.session.get(Cliente, ag.cliente_id)
+    if cli and cli.usuario_id:
+        notificar(
+            barbearia_id=ag.barbearia_id,
+            usuario_id=cli.usuario_id,
+            tipo='pagamento_aprovado',
+            titulo='Pagamento aprovado',
+            mensagem=(
+                f'Seu pagamento PIX foi aprovado. Agendamento confirmado para '
+                f'{ag.data_hora.strftime("%d/%m/%Y %H:%M")}.'
+            ),
+            link='/cliente/historico',
+            canal='in_app',
+            agendamento_id=ag.id,
+        )

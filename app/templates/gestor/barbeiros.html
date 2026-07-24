@@ -49,7 +49,7 @@
       <div class="field"><label>Nome *</label><input type="text" id="fNome" required></div>
       <div class="field"><label>E-mail</label><input type="email" id="fEmail"></div>
       <div class="field"><label>Telefone *</label><input type="tel" id="fTelefone" required></div>
-      <div class="field" id="wrSenha"><label>Senha * (mín. 6 chars)</label><input type="password" id="fSenha" minlength="6"></div>
+      <div class="field" id="wrSenha"><label>Senha * (mín. 8 chars)</label><input type="password" id="fSenha" minlength="8"></div>
       <div class="field"><label>Comissão (%)</label><input type="number" id="fComissao" min="0" max="100" step="0.5" value="0"></div>
       <div class="field"><label>Bio</label><textarea id="fBio" rows="2" style="resize:vertical;padding:10px"></textarea></div>
       <div class="field">
@@ -270,7 +270,7 @@ async function salvar(e) {
 
 async function deletar(id) {
   const b = _todos.find(x => x.id === id);
-  if (!confirm(`Desativar "${b?.nome}"?`)) return;
+  if (!(await Bos.confirmar(`Desativar "${b?.nome}"?`))) return;
   try {
     await Bos.patch('/gestor/barbeiros/' + id, {ativo: false});
     toast('Funcionário desativado.');
@@ -351,7 +351,7 @@ async function transferirRestantesParaMural() {
 }
 
 async function cancelarTodosEDesativar() {
-  if (!confirm('Cancelar TODOS os agendamentos futuros restantes deste profissional?')) return;
+  if (!(await Bos.confirmar('Cancelar TODOS os agendamentos futuros restantes deste profissional?'))) return;
   try {
     for (const ag of _tfFuturos) {
       await Bos.put(`/gestor/agendamentos/${ag.id}/cancelar`, {}).catch(() => {});
@@ -430,7 +430,7 @@ async function adicionarPausa() {
 }
 
 async function removerPausa(pid) {
-  if (!confirm('Remover esta pausa?')) return;
+  if (!(await Bos.confirmar('Remover esta pausa?'))) return;
   try {
     await Bos.delete('/gestor/barbeiros/' + _agBarb + '/agenda/pausas/' + pid);
     toast('Pausa removida.', 'success');

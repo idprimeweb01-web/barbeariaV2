@@ -132,6 +132,12 @@ def dashboard_gestor():
             barbearia_id=bid, ativo=True
         ).count()
 
+    # ── Dúvidas do Cliente — threads aguardando resposta (só se feature ativa) ─
+    duvidas_precisam_resposta = None
+    if feature_ativa(bid, 'duvidas_cliente'):
+        from app.utils.duvidas import query_precisa_resposta
+        duvidas_precisam_resposta = query_precisa_resposta(bid).count()
+
     return jsonify({
         'hoje': {
             L('agendamento').lower() + 's_concluidos': len(ags_hoje_concluidos),
@@ -151,6 +157,7 @@ def dashboard_gestor():
         'estoque_critico':   estoque_critico,
         'estoque_baixo_count': estoque_baixo_count,
         'assinantes_ativos': assinantes_ativos,
+        'duvidas_precisam_resposta': duvidas_precisam_resposta,
         'rotulos': {
             'agendamento': L('agendamento'),
             'receita':     L('receita'),

@@ -298,6 +298,15 @@
           Abra seu banco → Pix → Copia e Cola → cole o código acima.
         </div>
 
+        <div id="pixChaveWrap" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Prefere digitar a chave manualmente no seu banco?</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+            <code style="font-size:12px;background:#f3f4f6;padding:6px 10px;border-radius:6px;word-break:break-all;flex:1" id="pixChave"></code>
+            <button class="btn-copy" style="padding:6px 10px;font-size:12px" onclick="copiarChavePix()">Copiar</button>
+          </div>
+          <div style="font-size:12px;color:var(--muted)" id="pixTitularWrap">Titular: <span id="pixTitular"></span></div>
+        </div>
+
         <!-- Comprovante PIX -->
         <div id="comprovanteSection" style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
           <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:8px">📸 Enviar comprovante do PIX</div>
@@ -387,7 +396,7 @@ function toast(msg, tipo = 'success') {
 function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 // ── Format R$ ─────────────────────────────────────────────────────────
@@ -727,6 +736,20 @@ function enterSuccess(r) {
     document.getElementById('pixCode').textContent = code;
     const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(code);
     document.getElementById('pixQr').src = qrUrl;
+    const chaveWrap = document.getElementById('pixChaveWrap');
+    if (r.pix.chave_pix) {
+      document.getElementById('pixChave').textContent = r.pix.chave_pix;
+      const titularWrap = document.getElementById('pixTitularWrap');
+      if (r.pix.nome_titular) {
+        document.getElementById('pixTitular').textContent = r.pix.nome_titular;
+        titularWrap.style.display = '';
+      } else {
+        titularWrap.style.display = 'none';
+      }
+      chaveWrap.style.display = '';
+    } else {
+      chaveWrap.style.display = 'none';
+    }
     // show comprovante section
     document.getElementById('comprovanteSection').style.display = '';
     document.getElementById('comprovanteSucesso').style.display = 'none';
@@ -773,21 +796,28 @@ async function enviarComprovante() {
   }
 }
 
-function copiarPix() {
-  const code = document.getElementById('pixCode').textContent;
+function _copiarTexto(texto, msgSucesso) {
   const doCopy = () => {
     const ta = document.createElement('textarea');
-    ta.value = code;
+    ta.value = texto;
     ta.style.position = 'fixed';
     ta.style.left = '-9999px';
     document.body.appendChild(ta);
     ta.select();
-    try { document.execCommand('copy'); toast('Código PIX copiado!'); } catch { toast('Não foi possível copiar.', 'error'); }
+    try { document.execCommand('copy'); toast(msgSucesso); } catch { toast('Não foi possível copiar.', 'error'); }
     ta.remove();
   };
   if (navigator.clipboard) {
-    navigator.clipboard.writeText(code).then(() => toast('Código PIX copiado!')).catch(doCopy);
+    navigator.clipboard.writeText(texto).then(() => toast(msgSucesso)).catch(doCopy);
   } else { doCopy(); }
+}
+
+function copiarPix() {
+  _copiarTexto(document.getElementById('pixCode').textContent, 'Código PIX copiado!');
+}
+
+function copiarChavePix() {
+  _copiarTexto(document.getElementById('pixChave').textContent, 'Chave PIX copiada!');
 }
 
 function reiniciar() {

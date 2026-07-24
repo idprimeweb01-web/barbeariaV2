@@ -134,7 +134,7 @@
   }
 
   async function cancelarVenda(id) {
-    if (!confirm('Cancelar esta venda? O estoque será devolvido.')) return;
+    if (!(await Bos.confirmar('Cancelar esta venda? O estoque será devolvido.'))) return;
     try {
       await Bos.post('/gestor/vendas/' + id + '/cancelar', {});
       toast('Venda cancelada. Estoque devolvido.');

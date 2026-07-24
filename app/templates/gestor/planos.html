@@ -35,6 +35,11 @@
 .limite-sufixo { font-size: 11px; color: var(--muted2); }
 .check-ilimitado { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .check-ilimitado input { accent-color: var(--cor-primaria); cursor: pointer; }
+.btn-link-clientes {
+  background: none; border: none; padding: 0; font: inherit; cursor: pointer;
+  color: var(--cor-primaria); text-decoration: underline;
+}
+.btn-link-clientes:hover { opacity: .8; }
 </style>
 {% endblock %}
 
@@ -48,11 +53,11 @@
     <thead>
       <tr>
         <th>Nome</th><th>Preço (R$)</th><th>Serviços</th>
-        <th>Barbeiro</th><th>Status</th><th>Ações</th>
+        <th>Barbeiro</th><th>Clientes</th><th>Status</th><th>Ações</th>
       </tr>
     </thead>
     <tbody id="planosTbody">
-      <tr><td colspan="6" style="text-align:center;color:#555;">Carregando…</td></tr>
+      <tr><td colspan="7" style="text-align:center;color:#555;">Carregando…</td></tr>
     </tbody>
   </table>
 </div>
@@ -108,7 +113,7 @@
 
 <!-- Modal Assinantes -->
 <div class="modal-overlay" id="modalAssinantes" onclick="if(event.target===this)fecharModal('modalAssinantes')">
-  <div class="modal-box" style="max-width:560px">
+  <div class="modal-box" style="max-width:720px">
     <div class="modal-header">
       <h3>Assinantes — <span id="assPlanoNome"></span></h3>
       <button class="modal-close" onclick="fecharModal('modalAssinantes')">×</button>
@@ -202,14 +207,14 @@ async function carregarPlanos() {
     renderizarPlanos(lista);
   } catch (e) {
     document.getElementById('planosTbody').innerHTML =
-      `<tr><td colspan="6" style="text-align:center;color:#f87171;">Erro: ${e.message}</td></tr>`;
+      `<tr><td colspan="7" style="text-align:center;color:#f87171;">Erro: ${e.message}</td></tr>`;
   }
 }
 
 function renderizarPlanos(lista) {
   const tbody = document.getElementById('planosTbody');
   if (!lista.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#555;">Nenhum plano cadastrado.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#555;">Nenhum plano cadastrado.</td></tr>';
     return;
   }
   tbody.innerHTML = lista.map(p => {
@@ -220,6 +225,11 @@ function renderizarPlanos(lista) {
       <td>R$ ${p.preco_mensal.toFixed(2)}</td>
       <td>${(p.servicos||[]).map(s => `${s.nome} (${s.limite_uso_mensal == null ? '∞' : s.limite_uso_mensal}x)`).join(', ') || '—'}</td>
       <td>${barb ? barb.nome : (p.is_plano_aberto ? 'Aberto' : '—')}</td>
+      <td>
+        ${p.assinantes_ativos > 0
+          ? `<button class="btn-link-clientes" onclick="verAssinantes(${p.id},'${esc(p.nome)}')">${p.assinantes_ativos} cliente${p.assinantes_ativos > 1 ? 's' : ''}</button>`
+          : '<span style="color:#555">Nenhum</span>'}
+      </td>
       <td>${p.ativo ? '<span class="badge-green">ATIVO</span>' : '<span class="badge-gray">INATIVO</span>'}</td>
       <td class="td-actions">
         <button class="btn-icon" title="Editar" onclick="abrirModalEditar(${p.id})">✏️</button>
@@ -328,7 +338,7 @@ async function toggleAtivo(id, ativoAtual) {
 }
 
 async function deletarPlano(id) {
-  if (!confirm('Deletar este plano permanentemente?')) return;
+  if (!(await Bos.confirmar('Deletar este plano permanentemente?'))) return;
   try {
     await Bos.delete('/gestor/planos/' + id);
     toast('Plano deletado.', 'success');
@@ -352,25 +362,38 @@ async function verAssinantes(planoId, planoNome) {
     document.getElementById('assLoading').style.display = 'none';
     const el = document.getElementById('assLista');
     if (!lista.length) {
-      el.innerHTML = '<div style="text-align:center;padding:28px;color:#555">Nenhum assinante ativo.</div>';
+      el.innerHTML = '<div style="text-align:center;padding:28px;color:#555">Nenhum assinante ainda.</div>';
     } else {
-      el.innerHTML = `
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr style="color:#555;font-size:11px;text-transform:uppercase">
-            <th style="text-align:left;padding:6px 8px">Cliente</th>
-            <th style="text-align:left;padding:6px 8px">Telefone</th>
-            <th style="text-align:left;padding:6px 8px">Desde</th>
-            <th style="text-align:left;padding:6px 8px">Status</th>
-          </tr></thead>
-          <tbody>${lista.map(a => `
-            <tr style="border-top:1px solid #2a2a2a">
-              <td style="padding:8px">${esc(a.cliente_nome || a.nome || '—')}</td>
-              <td style="padding:8px;color:#666">${esc(a.telefone || '—')}</td>
-              <td style="padding:8px;color:#666">${a.data_inicio ? new Date(a.data_inicio).toLocaleDateString('pt-BR') : '—'}</td>
-              <td style="padding:8px"><span class="${a.ativo ? 'badge-green' : 'badge-gray'}">${a.ativo ? 'Ativo' : 'Inativo'}</span></td>
-            </tr>`).join('')}
-          </tbody>
-        </table>`;
+      el.innerHTML = lista.map(a => {
+        const nome = a.cliente ? a.cliente.nome : (a.cliente_nome || a.nome || '—');
+        const tel = a.cliente ? a.cliente.telefone : a.telefone;
+        const clienteId = a.cliente ? a.cliente.id : null;
+        const desde = a.data_inicio ? new Date(a.data_inicio + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+        const expira = a.data_fim ? new Date(a.data_fim + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
+        let statusTxt, statusCls;
+        if (!a.ativo) { statusTxt = 'Cancelado'; statusCls = 'badge-gray'; }
+        else if (a.expirado) { statusTxt = 'Expirado'; statusCls = 'badge-gray'; }
+        else { statusTxt = 'Ativo'; statusCls = 'badge-green'; }
+        const diasTxt = (a.ativo && !a.expirado && a.dias_restantes != null)
+          ? ` (${a.dias_restantes}d restante${a.dias_restantes === 1 ? '' : 's'})` : '';
+        const vipTxt = a.nivel_vip > 0 ? `⭐ VIP nível ${a.nivel_vip}` : null;
+        return `
+        <div style="border-top:1px solid #2a2a2a;padding:12px 8px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+          <div style="min-width:0">
+            <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              ${esc(nome)}
+              <span class="${statusCls}" style="font-size:10px">${statusTxt}</span>
+            </div>
+            <div style="font-size:12px;color:#777;margin-top:3px">
+              ${esc(tel || '—')}${vipTxt ? ' · ' + vipTxt : ''}${a.barbeiro_nome ? ' · com ' + esc(a.barbeiro_nome) : ''}
+            </div>
+            <div style="font-size:11px;color:#555;margin-top:3px">
+              Desde ${desde} · expira ${expira}${diasTxt}
+            </div>
+          </div>
+          ${clienteId ? `<button class="btn-icon" style="flex-shrink:0" onclick="window.location.href='/gestor/clientes?id=${clienteId}'">Ver perfil →</button>` : ''}
+        </div>`;
+      }).join('');
     }
     el.style.display = '';
   } catch(e) {

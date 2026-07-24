@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard, Star, Calendar, Gift, Clock, User, LogOut, Scissors, MessageCircle
+  LayoutDashboard, Star, Calendar, Gift, Clock, User, LogOut, Scissors, MessageCircle, ShoppingBag
 } from 'lucide-react'
 import { api } from '../api'
 import { waLink } from '../utils/whatsapp'
@@ -17,8 +17,10 @@ const NAV = [
   { to: '/cliente/dashboard',  label: 'Dashboard',   Icon: LayoutDashboard, feature: null },
   { to: '/cliente/planos',     label: 'Meus Planos',  Icon: Star,           feature: 'planos' },
   { to: '/cliente/agendar',    label: 'Agendar',      Icon: Calendar,       feature: null },
+  { to: '/cliente/loja',       label: 'Loja',         Icon: ShoppingBag,    feature: 'produtos_venda' },
   { to: '/cliente/beneficios', label: 'Benefícios',   Icon: Gift,           feature: 'vip_brindes' },
   { to: '/cliente/historico',  label: 'Histórico',    Icon: Clock,          feature: null },
+  { to: '/cliente/duvidas',    label: 'Dúvidas',      Icon: MessageCircle,  feature: 'duvidas_cliente' },
   { to: '/cliente/perfil',     label: 'Meu Perfil',   Icon: User,           feature: null },
 ]
 

@@ -11,6 +11,7 @@ from app.utils.imagem import validar_upload_imagem
 from app.utils import estoque as estoque_service
 from app.labels import L
 from app.utils.db import commit_ou_falhar
+from app.utils.auditoria import registrar_auditoria
 
 catalogo_bp = Blueprint('gestor_catalogo', __name__, url_prefix='/api/v1/gestor')
 
@@ -436,6 +437,9 @@ def ajustar_estoque(produto_id):
 
     estoque_service.ajustar_estoque(p.id, bid, delta, g.user_id, motivo)
     commit_ou_falhar('gestor.catalogo.ajustar_estoque')
+
+    registrar_auditoria(g.user_id, bid, 'edit', 'produto', p.id,
+                         f'Ajuste manual de estoque de "{p.nome}": {anterior} → {anterior + delta} ({motivo}).')
 
     db.session.refresh(p)
     return jsonify({

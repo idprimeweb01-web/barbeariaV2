@@ -8,6 +8,8 @@ from app.decorators.auth import cliente_required
 from app.utils.agenda import fim_agendamento
 from app.utils.cupons import decrementar_uso_cupom
 from app.utils.webhooks import disparar_webhook
+from app.utils.notificacoes import notificar
+from app.utils.auditoria import registrar_auditoria
 from app.utils.tz import naive_brasilia
 from app.labels import L
 from app.routes.pub.agendamento import _get_config, _criar_agendamento_core, _fmt_agendamento
@@ -184,5 +186,21 @@ def cancelar_agendamento(ag_id):
         'agendamento_id': ag.id, 'cliente_id': ag.cliente_id, 'barbeiro_id': ag.barbeiro_id,
         'data_hora': ag.data_hora.isoformat(), 'cancelado_por': 'cliente',
     })
+
+    barb = db.session.get(Barbeiro, ag.barbeiro_id)
+    if barb:
+        notificar(
+            barbearia_id=ag.barbearia_id,
+            usuario_id=barb.usuario_id,
+            tipo='agendamento_cancelado',
+            titulo='Agendamento cancelado pelo cliente',
+            mensagem=f'{cliente.nome} cancelou o agendamento de {ag.data_hora.strftime("%d/%m/%Y %H:%M")}.',
+            link='/barbeiro/agendamentos',
+            canal='in_app',
+            agendamento_id=ag.id,
+        )
+
+    registrar_auditoria(g.user_id, ag.barbearia_id, 'edit', 'agendamento', ag.id,
+                         f'Cliente cancelou o agendamento #{ag.id}.')
 
     return jsonify({'mensagem': f'{L("agendamento")} cancelado com sucesso.', 'id': ag_id}), 200

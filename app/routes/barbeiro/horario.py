@@ -66,15 +66,6 @@ def atualizar_horario():
         raise APIError('Edição de horário não permitida pelo gestor.', 403)
     dados = request.get_json(silent=True) or {}
 
-    cfg = ConfiguracaoAgenda.query.filter_by(barbeiro_id=b.id).first()
-    if not cfg:
-        cfg = ConfiguracaoAgenda(
-            barbearia_id=g.barbearia_id, barbeiro_id=b.id,
-            horario_abertura=time(8, 0), horario_fechamento=time(18, 0),
-            intervalo_minutos=30,
-        )
-        db.session.add(cfg)
-
     if 'horario_abertura' in dados:
         try:
             cfg.horario_abertura = time.fromisoformat(dados['horario_abertura'])
@@ -143,7 +134,11 @@ def criar_pausa():
 @barbeiro_horario_bp.patch('/pausas/<int:pausa_id>')
 @barbeiro_required
 def editar_pausa(pausa_id):
-    b     = _get_barbeiro(g.user_id, g.barbearia_id)
+    b   = _get_barbeiro(g.user_id, g.barbearia_id)
+    cfg = ConfiguracaoAgenda.query.filter_by(barbeiro_id=b.id).first()
+    if not (cfg and cfg.permite_horario_barbeiro):
+        raise APIError('Edição de pausas não permitida pelo gestor.', 403)
+
     pausa = PausaBarbeiro.query.filter_by(
         id=pausa_id, barbeiro_id=b.id, barbearia_id=g.barbearia_id
     ).first()
@@ -182,7 +177,11 @@ def editar_pausa(pausa_id):
 @barbeiro_horario_bp.delete('/pausas/<int:pausa_id>')
 @barbeiro_required
 def deletar_pausa(pausa_id):
-    b     = _get_barbeiro(g.user_id, g.barbearia_id)
+    b   = _get_barbeiro(g.user_id, g.barbearia_id)
+    cfg = ConfiguracaoAgenda.query.filter_by(barbeiro_id=b.id).first()
+    if not (cfg and cfg.permite_horario_barbeiro):
+        raise APIError('Edição de pausas não permitida pelo gestor.', 403)
+
     pausa = PausaBarbeiro.query.filter_by(
         id=pausa_id, barbeiro_id=b.id, barbearia_id=g.barbearia_id
     ).first()

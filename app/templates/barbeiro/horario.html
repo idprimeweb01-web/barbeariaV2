@@ -223,7 +223,7 @@ async function salvarPausa() {
 }
 
 async function removerPausa(id) {
-  if (!confirm('Remover esta pausa?')) return;
+  if (!(await Bos.confirmar('Remover esta pausa?'))) return;
   try {
     await Bos.delete(`/barbeiro/pausas/${id}`);
     toast('Pausa removida.');

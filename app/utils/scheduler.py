@@ -39,7 +39,7 @@ def _executar_lembretes() -> None:
         Agendamento, Barbeiro, Cliente, Usuario,
         ConfiguracaoAgendamento, Notificacao,
     )
-    from app.utils.notificacoes import criar_notificacao
+    from app.utils.notificacoes import notificar
 
     agora = naive_brasilia()
 
@@ -101,16 +101,17 @@ def _executar_lembretes() -> None:
                      for it in itens
                      if db.session.get(Servico, it.servico_id))
                 )
-                criar_notificacao(
+                notificar(
                     barbearia_id=ag.barbearia_id,
                     usuario_id=cli.usuario_id,
                     tipo='lembrete_cliente',
                     titulo='Lembrete de agendamento',
-                    corpo=(
+                    mensagem=(
                         f'Seu agendamento de {nomes or "serviço"} '
                         f'começa em {ant_cli} minutos '
                         f'({ag.data_hora.strftime("%H:%M")}).'
                     ),
+                    link='/cliente/historico',
                     canal='in_app',
                     agendamento_id=ag.id,
                 )
@@ -126,15 +127,16 @@ def _executar_lembretes() -> None:
             if barb and barb.usuario_id:
                 cli = db.session.get(Cliente, ag.cliente_id)
                 cli_nome = cli.nome if cli else 'cliente'
-                criar_notificacao(
+                notificar(
                     barbearia_id=ag.barbearia_id,
                     usuario_id=barb.usuario_id,
                     tipo='lembrete_barbeiro',
                     titulo='Próximo agendamento',
-                    corpo=(
+                    mensagem=(
                         f'{cli_nome} chega em {ant_barb} minutos '
                         f'({ag.data_hora.strftime("%H:%M")}).'
                     ),
+                    link='/barbeiro/agendamentos',
                     canal='in_app',
                     agendamento_id=ag.id,
                 )
@@ -179,7 +181,7 @@ def _expirar_planos() -> None:
     cliente é avisado."""
     from app.extensions import db
     from app.models import ClientePlano, Cliente
-    from app.utils.notificacoes import criar_notificacao
+    from app.utils.notificacoes import notificar
 
     hoje = hoje_brasilia()
     vencidos = (
@@ -198,12 +200,13 @@ def _expirar_planos() -> None:
         cp.ativo = False
         cli = db.session.get(Cliente, cp.cliente_id)
         if cli and cli.usuario_id:
-            criar_notificacao(
+            notificar(
                 barbearia_id=cp.barbearia_id,
                 usuario_id=cli.usuario_id,
                 tipo='plano_expirado',
                 titulo='Seu plano expirou',
-                corpo='Seu plano expirou. Fale com o estabelecimento para renovar e continuar aproveitando os benefícios.',
+                mensagem='Seu plano expirou. Fale com o estabelecimento para renovar e continuar aproveitando os benefícios.',
+                link='/cliente/planos',
                 canal='in_app',
             )
 

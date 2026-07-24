@@ -100,15 +100,20 @@ def cleanup(dados):
     from app.models import (
         Barbearia, Usuario, Barbeiro, Cliente, Servico, ConfiguracaoAgenda,
         BarbeiroServico, Plano, PlanoServico, ClientePlano, ClientePlanoSolicitacao,
-        Agendamento, AgendamentoServico, TokenRevogado,
+        Agendamento, AgendamentoServico, TokenRevogado, Notificacao,
+        ClienteVip, ClienteVipHistorico, AuditoriaLog,
     )
 
     app = create_app()
     with app.app_context():
         bid = dados['barbearia_id']
+        AuditoriaLog.query.filter_by(barbearia_id=bid).delete(synchronize_session=False)
         ag_ids = [a.id for a in Agendamento.query.filter_by(barbearia_id=bid).all()]
         AgendamentoServico.query.filter(AgendamentoServico.agendamento_id.in_(ag_ids)).delete(synchronize_session=False)
+        Notificacao.query.filter_by(barbearia_id=bid).delete(synchronize_session=False)
         Agendamento.query.filter_by(barbearia_id=bid).delete(synchronize_session=False)
+        ClienteVipHistorico.query.filter_by(barbearia_id=bid).delete(synchronize_session=False)
+        ClienteVip.query.filter_by(barbearia_id=bid).delete(synchronize_session=False)
         ClientePlano.query.filter_by(barbearia_id=bid).delete(synchronize_session=False)
         ClientePlanoSolicitacao.query.filter_by(barbearia_id=bid).delete(synchronize_session=False)
         plano_ids = [p.id for p in Plano.query.filter_by(barbearia_id=bid).all()]

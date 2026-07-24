@@ -22,9 +22,9 @@ from app.utils.planos import PLANO_LIMITE_ILIMITADO
 from app.exceptions import APIError
 from app.utils import normalizar_telefone, gerar_slots, verificar_conflito, gerar_pix_copia_cola
 from app.utils.agenda import fim_agendamento
-from app.utils.notificacoes import notificar_cliente
+from app.utils.notificacoes import notificar_cliente, notificar
 from app.utils.features import feature_ativa
-from app.utils.cupons import validar_cupom, incrementar_uso_cupom
+from app.utils.cupons import validar_cupom, incrementar_uso_cupom, registrar_uso_cupom
 from app.utils.auditoria import registrar_auditoria
 from app.utils.webhooks import disparar_webhook
 from app.labels import L
@@ -275,11 +275,13 @@ def _criar_agendamento_core(
 
     subtotal = sum(i['preco'] for i in itens_finais)
 
-    # Cupom de desconto (opcional)
+    # Cupom de desconto (opcional) — desconto calculado só sobre os serviços
+    # aos quais o cupom está vinculado (ou o carrinho inteiro, se for universal).
     cupom = None
     valor_desconto = 0.0
     if cupom_codigo:
-        cupom, valor_desconto = validar_cupom(barbearia_id, cupom_codigo, subtotal)
+        itens_cupom = [{'tipo': 'servico', 'ref_id': i['servico'].id, 'valor': i['preco']} for i in itens_finais]
+        cupom, valor_desconto = validar_cupom(barbearia_id, cupom_codigo, itens_cupom)
 
     valor_total = round(subtotal - valor_desconto, 2)
 
@@ -319,6 +321,10 @@ def _criar_agendamento_core(
     if cupom and status == StatusAgendamento.AGENDADO:
         try:
             incrementar_uso_cupom(cupom.id, barbearia_id)
+            registrar_uso_cupom(
+                cupom.id, barbearia_id, valor_original=subtotal, valor_desconto=valor_desconto,
+                cliente_id=cliente_id, agendamento_id=ag.id,
+            )
         except APIError:
             db.session.rollback()
             raise
@@ -377,7 +383,12 @@ def _criar_agendamento_core(
         else:
             codigo_pix = None
 
-        pix_info = {'status': 'pendente', 'codigo_pix': codigo_pix}
+        pix_info = {
+            'status': 'pendente',
+            'codigo_pix': codigo_pix,
+            'chave_pix': barbearia.chave_pix if barbearia else None,
+            'nome_titular': barbearia.pix_nome_titular if barbearia else None,
+        }
 
     try:
         db.session.commit()
@@ -396,8 +407,8 @@ def _criar_agendamento_core(
         raise APIError('Erro ao criar agendamento. Tente novamente.', 500)
 
     # Notificação de confirmação de agendamento (stub — sem envio real)
+    servicos_nomes = ', '.join(s.nome for s, _ in servicos_obj)
     if feature_ativa(barbearia_id, 'notificacoes'):
-        servicos_nomes = ', '.join(s.nome for s, _ in servicos_obj)
         notificar_cliente(
             barbearia_id=barbearia_id,
             cliente_id=cliente_id,
@@ -405,6 +416,23 @@ def _criar_agendamento_core(
                 f'Agendamento #{ag.id} confirmado para '
                 f'{ag.data_hora.strftime("%d/%m/%Y %H:%M")} — {servicos_nomes}'
             ),
+        )
+
+    # Notifica o barbeiro do novo agendamento (caixa in-app interna — não
+    # depende da feature 'notificacoes', que é sobre canais externos SMS/e-mail).
+    barbeiro_notif = db.session.get(Barbeiro, barbeiro_id)
+    if barbeiro_notif:
+        notificar(
+            barbearia_id=barbearia_id,
+            usuario_id=barbeiro_notif.usuario_id,
+            tipo='agendamento_novo',
+            titulo='Novo agendamento',
+            mensagem=(
+                f'Agendamento #{ag.id} para '
+                f'{ag.data_hora.strftime("%d/%m/%Y %H:%M")} — {servicos_nomes}'
+            ),
+            link='/barbeiro/agendamentos',
+            agendamento_id=ag.id,
         )
 
     # Webhook n8n (Frente 2) — independente da feature 'notificacoes', que é
@@ -645,6 +673,7 @@ def quick_booking(slug):
     itens = dados.get('servicos') or []
     metodo = (dados.get('metodo_pagamento') or MetodoPagamento.LOCAL).strip().lower()
     observacao = (dados.get('observacao') or '').strip() or None
+    cupom_codigo = (dados.get('cupom_codigo') or '').strip() or None
 
     if not isinstance(barbeiro_id, int):
         raise APIError('"barbeiro_id" é obrigatório e deve ser um inteiro.')
@@ -670,6 +699,7 @@ def quick_booking(slug):
         itens=itens,
         metodo=metodo,
         observacao=observacao,
+        cupom_codigo=cupom_codigo,
     )
 
     return jsonify({
@@ -806,6 +836,32 @@ def upload_comprovante(slug, agendamento_id):
         'comprovante_url': url,
         'reenvio': reenvio,
         'pode_aprovar_automaticamente': bool(webhook_cfg and webhook_cfg.permite_auto_aprovacao),
+        # Secret DESTA barbearia (não é global) — a automação usa pra se autenticar
+        # de volta em POST /api/v1/webhook/agendamentos/<id>/aprovar (ver webhook_inbound.py).
+        # Só vai preenchido quando a auto-aprovação está de fato ligada.
+        'webhook_secret': (
+            webhook_cfg.webhook_secret
+            if webhook_cfg and webhook_cfg.permite_auto_aprovacao else None
+        ),
     })
+
+    # Notifica gestor(es) e o barbeiro: comprovante aguardando aprovação manual.
+    # Se a automação (n8n) aprovar antes de alguém ver isso, tudo bem — a
+    # notificação de aprovação (aprovar_comprovante_pix) cobre esse caso.
+    msg_comp = f'Agendamento #{ag.id} — {cli.nome if cli else "cliente"} enviou comprovante PIX.'
+    gestores = Usuario.query.filter_by(barbearia_id=barbearia.id, perfil='gestor', ativo=True).all()
+    for gestor in gestores:
+        notificar(
+            barbearia_id=barbearia.id, usuario_id=gestor.id, tipo='comprovante_pendente',
+            titulo='Comprovante PIX aguardando aprovação', mensagem=msg_comp,
+            link=f'/gestor/agenda?agendamento_id={ag.id}', canal='in_app', agendamento_id=ag.id,
+        )
+    barbeiro_notif = db.session.get(Barbeiro, ag.barbeiro_id)
+    if barbeiro_notif:
+        notificar(
+            barbearia_id=barbearia.id, usuario_id=barbeiro_notif.usuario_id, tipo='comprovante_pendente',
+            titulo='Comprovante PIX aguardando aprovação', mensagem=msg_comp,
+            link='/barbeiro/agendamentos', canal='in_app', agendamento_id=ag.id,
+        )
 
     return jsonify({'mensagem': 'Comprovante enviado com sucesso.', 'url': url, 'status': ag.status}), 200

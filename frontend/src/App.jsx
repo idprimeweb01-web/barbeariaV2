@@ -5,6 +5,8 @@ import Agendar    from './pages/Agendar'
 import Beneficios from './pages/Beneficios'
 import Historico  from './pages/Historico'
 import Perfil     from './pages/Perfil'
+import Loja       from './pages/Loja'
+import Duvidas    from './pages/Duvidas'
 
 export default function App() {
   return (
@@ -16,6 +18,8 @@ export default function App() {
         <Route path="/cliente/beneficios" element={<Beneficios />} />
         <Route path="/cliente/historico"  element={<Historico />} />
         <Route path="/cliente/perfil"     element={<Perfil />} />
+        <Route path="/cliente/loja"       element={<Loja />} />
+        <Route path="/cliente/duvidas"    element={<Duvidas />} />
         <Route path="*" element={<Navigate to="/cliente/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

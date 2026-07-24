@@ -156,7 +156,7 @@ function renderizarSolicitacoes(solicitacoes) {
 }
 
 async function aprovarSolicitacao(id, btn) {
-  if (!confirm('Aprovar esta solicitação?')) return;
+  if (!(await Bos.confirmar('Aprovar esta solicitação?'))) return;
   btn.disabled = true;
   try {
     await Bos.put('/gestor/planos/solicitacoes/' + id + '/aprovar', {});

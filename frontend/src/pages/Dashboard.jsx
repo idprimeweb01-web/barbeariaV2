@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Calendar, CheckCircle, XCircle, Star, ChevronRight, Clock } from 'lucide-react'
+import { Calendar, CheckCircle, XCircle, Star, ChevronRight, Clock, Bell } from 'lucide-react'
 import Layout from '../components/Layout'
 import { api } from '../api'
 
@@ -41,8 +41,13 @@ function statusBadge(status) {
 export default function Dashboard() {
   const [dash, setDash] = useState(null)
   const [vip, setVip]   = useState(null)
+  const [notifs, setNotifs] = useState([])
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
+
+  const carregarNotifs = () => {
+    api.notificacoes.listar(6).then(r => setNotifs(r.notificacoes || [])).catch(() => {})
+  }
 
   useEffect(() => {
     Promise.all([
@@ -52,7 +57,16 @@ export default function Dashboard() {
       setDash(d)
       setVip(v)
     }).finally(() => setLoading(false))
+    carregarNotifs()
   }, [])
+
+  const clicarNotif = async (n) => {
+    if (!n.lida) {
+      setNotifs(ns => ns.map(x => x.id === n.id ? { ...x, lida: true } : x))
+      api.notificacoes.marcarLida(n.id).catch(() => {})
+    }
+    if (n.link) navigate(n.link)
+  }
 
   if (loading) return (
     <Layout title="Dashboard">
@@ -91,6 +105,30 @@ export default function Dashboard() {
           </div>
           <div className="metric-sub">{vip?.nivel_info?.brinde_descricao || 'Sem nível VIP'}</div>
         </div>
+      </div>
+
+      {/* Notificações recentes */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="section-header" style={{ marginBottom: notifs.length ? 4 : 0 }}>
+          <span className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Bell size={16} /> Notificações recentes
+          </span>
+        </div>
+        {notifs.length === 0 ? (
+          <p style={{ fontSize: 12, color: 'var(--muted)' }}>Nenhuma notificação ainda.</p>
+        ) : (
+          notifs.map(n => (
+            <div
+              key={n.id}
+              className={`notif-item ${n.lida ? '' : 'nao-lida'}`}
+              onClick={() => clicarNotif(n)}
+            >
+              <div className="notif-item-titulo">{n.titulo}</div>
+              <div className="notif-item-corpo">{n.corpo}</div>
+              <div className="notif-item-data">{n.criado_em}</div>
+            </div>
+          ))
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>

@@ -67,6 +67,65 @@ export const api = {
     solicitar: (id, body) => _req('POST', `/api/v1/pub/${SLUG}/planos/${id}/solicitar`, body),
   },
 
+  produtos: {
+    listar:        ()     => _req('GET',  `/api/v1/cliente/produtos`),
+    listarPedidos: ()     => _req('GET',  `/api/v1/cliente/compras`),
+    comprar:       (body) => _req('POST', `/api/v1/cliente/compras`, body),
+    // Multipart — mesmo motivo do uploadComprovante de agendamento/plano.
+    uploadComprovante: async (solicitacaoId, file) => {
+      const fd = new FormData()
+      fd.append('arquivo', file)
+      const resp = await fetch(`/api/v1/cliente/compras/${solicitacaoId}/comprovante`, {
+        method: 'POST', body: fd, credentials: 'same-origin',
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(data.erro || data.error || `Erro ${resp.status}`)
+      return data
+    },
+  },
+
+  duvidas: {
+    listar:      ()   => _req('GET', `/api/v1/cliente/duvidas`),
+    detalhar:    (id) => _req('GET', `/api/v1/cliente/duvidas/${id}`),
+    fechar:      (id) => _req('PUT', `/api/v1/cliente/duvidas/${id}/fechar`),
+    funcionarios: ()  => _req('GET', `/api/v1/cliente/duvidas/funcionarios`),
+    avaliar: (id, { nota, comentario }) => _req('POST', `/api/v1/cliente/duvidas/${id}/satisfacao`, { nota, comentario }),
+    // Multipart (texto e/ou até 3 imagens) — mesmo motivo das demais uploads deste arquivo.
+    criar: async ({ assunto, texto, categoria, prioridade, barbeiroId, imagens }) => {
+      const fd = new FormData()
+      if (assunto) fd.append('assunto', assunto)
+      if (texto) fd.append('texto', texto)
+      if (categoria) fd.append('categoria', categoria)
+      if (prioridade) fd.append('prioridade', prioridade)
+      if (barbeiroId) fd.append('barbeiro_id', barbeiroId)
+      ;(imagens || []).forEach(f => fd.append('imagens', f))
+      const resp = await fetch(`/api/v1/cliente/duvidas`, {
+        method: 'POST', body: fd, credentials: 'same-origin',
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(data.erro || data.error || `Erro ${resp.status}`)
+      return data
+    },
+    responder: async (id, { texto, imagens }) => {
+      const fd = new FormData()
+      if (texto) fd.append('texto', texto)
+      ;(imagens || []).forEach(f => fd.append('imagens', f))
+      const resp = await fetch(`/api/v1/cliente/duvidas/${id}/mensagens`, {
+        method: 'POST', body: fd, credentials: 'same-origin',
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(data.erro || data.error || `Erro ${resp.status}`)
+      return data
+    },
+  },
+
+  notificacoes: {
+    listar:           (perPage = 6) => _req('GET',   `/api/v1/cliente/notificacoes?per_page=${perPage}`),
+    contador:         ()            => _req('GET',   `/api/v1/cliente/notificacoes/contador`),
+    marcarLida:       (id)          => _req('PATCH', `/api/v1/cliente/notificacoes/${id}/lida`, {}),
+    marcarTodasLidas: ()            => _req('POST',  `/api/v1/cliente/notificacoes/marcar-todas-lidas`, {}),
+  },
+
   features: {
     // Memoizado: Layout + páginas pedem a mesma lista a cada navegação
     // (Layout remonta a cada troca de rota); features não mudam durante

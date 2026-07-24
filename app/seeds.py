@@ -18,6 +18,7 @@ FEATURES = [
     ('notificacoes',         'Notificações por SMS/WhatsApp/e-mail', False),
     ('pix_integrado',        'Pagamento PIX com comprovante e aprovação manual', False),
     ('produtos_venda',       'Venda avulsa de produtos com controle de estoque', True),
+    ('duvidas_cliente',      'Chat de suporte em thread entre cliente e gestor, com imagens', True),
 ]
 
 # Removidas do catálogo (nunca ganharam uso real ou o dono decidiu simplificar):
@@ -134,10 +135,10 @@ def seed_segmentos():
 # validados com o dono (placeholder ilustrativo, ver MODELAGEM_FEATURES_POR_SEGMENTO.md
 # C.2 item 7). Ajustar antes de considerar definitivo.
 _SEGMENTO_FEATURES_PADRAO = {
-    'barbearia': {'produtos_venda': True, 'comissao': True, 'notificacoes': True, 'pix_integrado': False},
-    'salao':     {'produtos_venda': True, 'planos': True, 'vip_brindes': True, 'pix_integrado': False},
-    'manicure':  {'produtos_venda': True, 'pix_integrado': False},
-    'clinica':   {'historico_cliente': True, 'notificacoes': True, 'pix_integrado': False},
+    'barbearia': {'produtos_venda': True, 'comissao': True, 'notificacoes': True, 'pix_integrado': False, 'duvidas_cliente': True},
+    'salao':     {'produtos_venda': True, 'planos': True, 'vip_brindes': True, 'pix_integrado': False, 'duvidas_cliente': True},
+    'manicure':  {'produtos_venda': True, 'pix_integrado': False, 'duvidas_cliente': True},
+    'clinica':   {'historico_cliente': True, 'notificacoes': True, 'pix_integrado': False, 'duvidas_cliente': True},
 }
 
 

@@ -5,6 +5,7 @@ from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.utils.features import feature_required
 from app.utils.db import commit_ou_falhar
+from app.utils.auditoria import registrar_auditoria
 from app.constants import TipoMovimentacaoEstoque
 from app.utils import estoque as estoque_service
 
@@ -67,6 +68,11 @@ def movimentar_estoque():
         produto = estoque_service.registrar_saida(produto_id, bid, quantidade, g.user_id, motivo, tipo=tipo)
 
     commit_ou_falhar('gestor.estoque.movimentar_estoque')
+
+    if tipo == TipoMovimentacaoEstoque.AJUSTE:
+        registrar_auditoria(g.user_id, bid, 'edit', 'produto', produto.id,
+                             f'Ajuste manual de estoque de "{produto.nome}": {quantidade:+d} ({motivo}).')
+
     return jsonify({
         'produto_id':       produto.id,
         'quantidade_atual': produto.quantidade_estoque,

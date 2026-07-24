@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from app.extensions import db
 from app.models import (
     Plano, PlanoServico, Servico, ClientePlano, ClientePlanoSolicitacao,
-    ClientePlanoUso, Barbearia, Cliente, Barbeiro,
+    ClientePlanoUso, Barbearia, Cliente, Barbeiro, ClienteVip, Usuario,
 )
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
@@ -12,8 +12,11 @@ from app.utils.features import feature_required
 from app.utils.planos import PLANO_LIMITE_ILIMITADO, limite_para_fora
 from app.utils.tz import hoje_brasilia, naive_brasilia
 from app.utils.webhooks import disparar_webhook
+from app.utils.comprovante_link import gerar_link_comprovante
 from app.labels import L
 from app.utils.db import commit_ou_falhar
+from app.utils.notificacoes import notificar
+from app.utils.auditoria import registrar_auditoria
 from app.constants import StatusSolicitacaoPlano, TipoEventoWebhook
 
 logger = logging.getLogger(__name__)
@@ -154,6 +157,13 @@ def editar_plano(plano_id):
             raise APIError('"preco_mensal" inválido.')
     if 'ativo' in dados:
         p.ativo = bool(dados['ativo'])
+    if 'barbeiro_id' in dados:
+        barbeiro_id = dados['barbeiro_id']  # null = plano aberto
+        if barbeiro_id is not None:
+            br = Barbeiro.query.filter_by(id=barbeiro_id, barbearia_id=g.barbearia_id, ativo=True).first()
+            if not br:
+                raise APIError(f'{L("profissional")} id={barbeiro_id} não encontrado.', 404)
+        p.barbeiro_id = barbeiro_id
     if 'max_assinaturas' in dados:
         valor = dados['max_assinaturas']
         if valor is None:
@@ -261,17 +271,43 @@ def remover_servico_plano(plano_id, servico_id):
 @gestor_required
 def listar_assinaturas(plano_id):
     _get_plano_ou_404(plano_id, g.barbearia_id)
-    assinaturas = ClientePlano.query.filter_by(plano_id=plano_id, barbearia_id=g.barbearia_id).all()
+    assinaturas = (
+        ClientePlano.query
+        .filter_by(plano_id=plano_id, barbearia_id=g.barbearia_id)
+        .order_by(ClientePlano.ativo.desc(), ClientePlano.data_inicio.desc())
+        .all()
+    )
+    cliente_ids = {cp.cliente_id for cp in assinaturas}
+    clientes = {c.id: c for c in Cliente.query.filter(Cliente.id.in_(cliente_ids)).all()} if cliente_ids else {}
+    vips = {
+        v.cliente_id: v for v in ClienteVip.query.filter(
+            ClienteVip.cliente_id.in_(cliente_ids), ClienteVip.barbearia_id == g.barbearia_id,
+        ).all()
+    } if cliente_ids else {}
+    barbeiro_ids = {cp.barbeiro_id for cp in assinaturas if cp.barbeiro_id}
+    barbeiros = {b.id: b for b in Barbeiro.query.filter(Barbeiro.id.in_(barbeiro_ids)).all()} if barbeiro_ids else {}
+    usuarios_barb = {
+        u.id: u for u in Usuario.query.filter(Usuario.id.in_({b.usuario_id for b in barbeiros.values()})).all()
+    } if barbeiros else {}
+
     resultado = []
     for cp in assinaturas:
-        cli = db.session.get(Cliente, cp.cliente_id)
+        cli = clientes.get(cp.cliente_id)
+        vip = vips.get(cp.cliente_id)
+        barb = barbeiros.get(cp.barbeiro_id)
+        barb_usr = usuarios_barb.get(barb.usuario_id) if barb else None
+        hoje = hoje_brasilia()
         resultado.append({
-            'id':          cp.id,
-            'cliente':     {'id': cli.id, 'nome': cli.nome, 'telefone': cli.telefone} if cli else None,
-            'data_inicio': cp.data_inicio.isoformat() if cp.data_inicio else None,
-            'data_fim':    cp.data_fim.isoformat() if cp.data_fim else None,
-            'barbeiro_id': cp.barbeiro_id,
-            'ativo':       cp.ativo,
+            'id':            cp.id,
+            'cliente':       {'id': cli.id, 'nome': cli.nome, 'telefone': cli.telefone} if cli else None,
+            'nivel_vip':     vip.nivel_vip_atual if vip else 0,
+            'data_inicio':   cp.data_inicio.isoformat() if cp.data_inicio else None,
+            'data_fim':      cp.data_fim.isoformat() if cp.data_fim else None,
+            'dias_restantes': (cp.data_fim - hoje).days if cp.data_fim else None,
+            'expirado':      bool(cp.data_fim and cp.data_fim < hoje),
+            'barbeiro_id':   cp.barbeiro_id,
+            'barbeiro_nome': barb_usr.nome if barb_usr else None,
+            'ativo':         cp.ativo,
         })
     return jsonify(resultado), 200
 
@@ -314,7 +350,7 @@ def _fmt_solicitacao(s):
         'status':           s.status,
         'valor':            float(s.valor),
         'metodo_pagamento': s.metodo_pagamento,
-        'comprovante_url':  s.comprovante_url,
+        'comprovante_url':  gerar_link_comprovante('plano', s.id, s.barbearia_id) if s.comprovante_url else None,
         'criado_em':        s.criado_em.isoformat() if s.criado_em else None,
         'aprovado_em':      s.aprovado_em.isoformat() if s.aprovado_em else None,
         'motivo_rejeicao':  s.motivo_rejeicao,
@@ -409,6 +445,17 @@ def aprovar_solicitacao(sol_id):
         'data_inicio': hoje.isoformat(), 'data_fim': data_fim.isoformat() if data_fim else None,
     })
 
+    cli_notif = db.session.get(Cliente, sol.cliente_id)
+    if cli_notif and cli_notif.usuario_id:
+        notificar(
+            barbearia_id=g.barbearia_id, usuario_id=cli_notif.usuario_id, tipo='plano_aprovado',
+            titulo='Plano aprovado', mensagem=f'Seu plano "{p.nome}" foi ativado! Válido até {data_fim.strftime("%d/%m/%Y")}.',
+            link='/cliente/planos', canal='in_app',
+        )
+
+    registrar_auditoria(g.user_id, g.barbearia_id, 'edit', 'cliente_plano_solicitacao', sol.id,
+                         f'Aprovou solicitação de plano "{p.nome}" (cliente {cli_notif.nome if cli_notif else sol.cliente_id}).')
+
     return jsonify({
         'mensagem': f'{L("plano")} ativado para o cliente.',
         'cliente_plano_id': cp.id,
@@ -437,5 +484,18 @@ def rejeitar_solicitacao(sol_id):
     sol.status = StatusSolicitacaoPlano.REJEITADO
     sol.motivo_rejeicao = (dados.get('motivo') or '').strip() or 'Rejeitado pelo gestor.'
     commit_ou_falhar('gestor.planos.rejeitar_solicitacao', 'Erro ao rejeitar solicitação. Tente novamente.')
+
+    p = db.session.get(Plano, sol.plano_id)
+    cli_notif = db.session.get(Cliente, sol.cliente_id)
+    if cli_notif and cli_notif.usuario_id:
+        notificar(
+            barbearia_id=g.barbearia_id, usuario_id=cli_notif.usuario_id, tipo='plano_rejeitado',
+            titulo='Solicitação de plano rejeitada',
+            mensagem=f'Sua solicitação do plano "{p.nome if p else "?"}" foi rejeitada: {sol.motivo_rejeicao}',
+            link='/cliente/planos', canal='in_app',
+        )
+
+    registrar_auditoria(g.user_id, g.barbearia_id, 'edit', 'cliente_plano_solicitacao', sol.id,
+                         f'Rejeitou solicitação de plano "{p.nome if p else "?"}": {sol.motivo_rejeicao}')
 
     return jsonify({'mensagem': 'Solicitação rejeitada.', 'id': sol_id}), 200

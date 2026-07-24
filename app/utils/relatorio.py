@@ -156,9 +156,23 @@ def gerar_excel(
     colunas: list[str],
     barbearia_nome: str,
     periodo: str,
+    *,
+    titulo: str | None = None,
+    colunas_catalogo: dict | None = None,
 ) -> io.BytesIO:
+    """
+    titulo           — substitui a linha "Relatório de Agendamentos — período"
+                        do cabeçalho; útil pra relatórios de outra entidade
+                        (ex: Dúvidas do Cliente, ver gestor/duvidas.py).
+    colunas_catalogo — substitui o catálogo COLUNAS (agendamentos) por outro
+                        dict {chave: {'label': ...}}; permite reaproveitar
+                        este mesmo helper de export pra qualquer lista de
+                        dicts, não só relatório de agendamentos.
+    """
     from openpyxl import Workbook
     from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+
+    catalogo = colunas_catalogo or COLUNAS
 
     wb = Workbook()
     ws = wb.active
@@ -171,7 +185,7 @@ def gerar_excel(
     ws['A1'].alignment = Alignment(horizontal='center')
 
     ws.merge_cells(f'A2:{chr(64 + len(colunas))}2')
-    ws['A2'] = f'Relatório de {L("agendamento")}s — {periodo}'
+    ws['A2'] = titulo or f'Relatório de {L("agendamento")}s — {periodo}'
     ws['A2'].font = Font(italic=True, size=10)
     ws['A2'].alignment = Alignment(horizontal='center')
 
@@ -187,7 +201,7 @@ def gerar_excel(
         right=Side(style='thin'),
     )
     for col_idx, col_key in enumerate(colunas, start=1):
-        cell = ws.cell(row=5, column=col_idx, value=COLUNAS[col_key]['label'])
+        cell = ws.cell(row=5, column=col_idx, value=catalogo[col_key]['label'])
         cell.font = Font(bold=True, color='FFFFFF')
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal='center')

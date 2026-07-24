@@ -10,7 +10,9 @@ from app.models import Usuario, Barbearia
 from app.exceptions import APIError
 from app.utils.auth import revogar_todos_tokens
 from app.utils.db import commit_ou_falhar
+from app.utils.auditoria import registrar_auditoria
 from app.utils.reset_senha import gerar_codigo_recuperacao, validar_codigo_recuperacao_por_email
+from app.utils.validators import validar_senha
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/v1/auth')
 
@@ -101,8 +103,7 @@ def trocar_senha():
 
     if not senha_atual or not senha_nova:
         raise APIError('Os campos "senha_atual" e "senha_nova" são obrigatórios.')
-    if len(senha_nova) < 6:
-        raise APIError('A nova senha deve ter no mínimo 6 caracteres.')
+    validar_senha(senha_nova, 'senha_nova')
 
     usuario = db.session.get(Usuario, g.user_id)
     if not usuario or not usuario.senha:
@@ -113,6 +114,9 @@ def trocar_senha():
     usuario.senha = generate_password_hash(senha_nova)
     revogar_todos_tokens(usuario, 'troca_senha')
     commit_ou_falhar('auth.trocar_senha')
+
+    registrar_auditoria(usuario.id, usuario.barbearia_id, 'edit', 'usuario', usuario.id,
+                         f'{usuario.nome} trocou a própria senha.')
 
     return jsonify({'mensagem': 'Senha alterada com sucesso.'}), 200
 

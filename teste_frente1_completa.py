@@ -33,7 +33,7 @@ from app.models import (
     Barbearia, Usuario, Barbeiro, Cliente, Servico, BarbeiroServico,
     ConfiguracaoAgenda, ConfiguracaoAgendamento, FeatureMetadata, FeatureBarbearia,
     Segmento, SegmentoFeaturePadrao, Agendamento, AgendamentoSolicitacaoPix,
-    AgendamentoServico, AuditoriaLog, TokenRevogado,
+    AgendamentoServico, AuditoriaLog, TokenRevogado, Notificacao,
 )
 from app.constants import StatusAgendamento
 
@@ -106,6 +106,7 @@ def cleanup(app, bid):
         ag_ids = [a.id for a in Agendamento.query.filter_by(barbearia_id=bid).all()]
         AgendamentoServico.query.filter(AgendamentoServico.agendamento_id.in_(ag_ids)).delete(synchronize_session=False)
         AgendamentoSolicitacaoPix.query.filter_by(barbearia_id=bid).delete(synchronize_session=False)
+        Notificacao.query.filter_by(barbearia_id=bid).delete(synchronize_session=False)
         Agendamento.query.filter_by(barbearia_id=bid).delete(synchronize_session=False)
         ConfiguracaoAgenda.query.filter_by(barbearia_id=bid).delete(synchronize_session=False)
         ConfiguracaoAgendamento.query.filter_by(barbearia_id=bid).delete(synchronize_session=False)

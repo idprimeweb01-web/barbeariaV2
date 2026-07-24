@@ -2,7 +2,7 @@ from datetime import timedelta
 from flask import Blueprint, request, g, jsonify
 from sqlalchemy import func
 from app.extensions import db
-from app.models import Cliente, Usuario, Agendamento, AgendamentoServico, Servico, Barbeiro
+from app.models import Cliente, Usuario, Agendamento, AgendamentoServico, Servico, Barbeiro, ClienteVip, ClientePlano, Plano
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.labels import L
@@ -281,6 +281,28 @@ def perfil_cliente(cliente_id):
             'valor':    float(ag.valor_total),
         })
 
+    vip = ClienteVip.query.filter_by(cliente_id=c.id, barbearia_id=bid).first()
+
+    planos_cliente = (
+        ClientePlano.query.filter_by(cliente_id=c.id, barbearia_id=bid)
+        .order_by(ClientePlano.data_inicio.desc())
+        .all()
+    )
+    plano_ids = {cp.plano_id for cp in planos_cliente}
+    planos_map = {p.id: p for p in Plano.query.filter(Plano.id.in_(plano_ids)).all()} if plano_ids else {}
+    hoje = hoje_brasilia()
+    planos_fmt = [
+        {
+            'id':            cp.id,
+            'plano_nome':    planos_map[cp.plano_id].nome if cp.plano_id in planos_map else '—',
+            'data_inicio':   cp.data_inicio.isoformat() if cp.data_inicio else None,
+            'data_fim':      cp.data_fim.isoformat() if cp.data_fim else None,
+            'ativo':         cp.ativo,
+            'expirado':      bool(cp.data_fim and cp.data_fim < hoje),
+        }
+        for cp in planos_cliente
+    ]
+
     return jsonify({
         'dados_pessoais': {
             'id':          c.id,
@@ -290,6 +312,8 @@ def perfil_cliente(cliente_id):
             'foto':        c.foto,
             'observacoes': c.observacoes,
         },
+        'nivel_vip':          vip.nivel_vip_atual if vip else 0,
+        'planos':             planos_fmt,
         'total_visitas':      v,
         'total_gasto':        gv,
         'ultima_visita':      u.isoformat() if u else None,

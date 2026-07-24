@@ -1,9 +1,11 @@
+from datetime import timedelta
 from flask import Blueprint, g, jsonify
 from sqlalchemy.orm import selectinload
 from app.extensions import db
 from app.models import (
     Agendamento, AgendamentoServico, Servico, Barbeiro, Usuario, Cliente,
 )
+from app.exceptions import APIError
 from app.decorators.auth import barbeiro_required
 from app.utils.features import feature_ativa
 from app.utils.tz import hoje_brasilia, naive_brasilia
@@ -35,7 +37,7 @@ def _calcular_comissao(itens, barbeiro):
 def dashboard_barbeiro():
     barbeiro = _get_barbeiro_ou_none(g.user_id, g.barbearia_id)
     if not barbeiro:
-        return jsonify({'erro': f'{L("profissional")} não encontrado.'}), 404
+        raise APIError(f'{L("profissional")} não encontrado.', 404)
 
     hoje = hoje_brasilia()
     mes_ano = (hoje.year, hoje.month)
@@ -78,6 +80,38 @@ def dashboard_barbeiro():
 
     comissao_hoje, receita_hoje = _comissao_ags(ags_hoje)
     comissao_mes,  receita_mes  = _comissao_ags(ags_mes)
+
+    # Receita diária dos últimos 7 dias (inclui hoje), só CONCLUIDOS — mesmo
+    # critério usado no gráfico equivalente do gestor. Agregado aqui no
+    # backend para o frontend não precisar mais "chutar" os outros 6 dias
+    # como zero (BUG-02).
+    dia_inicial = hoje - timedelta(days=6)
+    rows_7dias = (
+        db.session.query(
+            db.func.date(Agendamento.data_hora).label('dia'),
+            db.func.coalesce(db.func.sum(Agendamento.valor_total), 0).label('total'),
+        )
+        .filter(
+            Agendamento.barbearia_id == g.barbearia_id,
+            Agendamento.barbeiro_id == barbeiro.id,
+            Agendamento.status == StatusAgendamento.CONCLUIDO,
+            db.func.date(Agendamento.data_hora) >= dia_inicial,
+            db.func.date(Agendamento.data_hora) <= hoje,
+        )
+        .group_by(db.func.date(Agendamento.data_hora))
+        .all()
+    )
+    receita_por_dia = {
+        (r.dia.isoformat() if hasattr(r.dia, 'isoformat') else str(r.dia)): float(r.total)
+        for r in rows_7dias
+    }
+    receita_7_dias = [
+        {
+            'data':    (dia_inicial + timedelta(days=i)).isoformat(),
+            'receita': receita_por_dia.get((dia_inicial + timedelta(days=i)).isoformat(), 0.0),
+        }
+        for i in range(7)
+    ]
 
     agendamentos_pendentes = (
         Agendamento.query
@@ -157,6 +191,7 @@ def dashboard_barbeiro():
         'proximos': proximos_fmt,
         'agendamentos_pendentes': agendamentos_pendentes,
         'comissao_breakdown': comissao_breakdown,
+        'receita_7_dias': receita_7_dias,
         'rotulos': {
             'agendamento':  L('agendamento'),
             'cliente':      L('cliente'),

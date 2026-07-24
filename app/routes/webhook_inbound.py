@@ -14,12 +14,13 @@ import hmac
 import os
 from flask import Blueprint, request, jsonify
 from app.extensions import db, limiter
-from app.models import Agendamento, BarbeariaWebhookConfig
+from app.models import Agendamento, BarbeariaWebhookConfig, Barbeiro, Usuario
 from app.exceptions import APIError
-from app.utils.agenda import aprovar_comprovante_pix
+from app.utils.agenda import aprovar_comprovante_pix, notificar_pix_aprovado
 from app.utils.db import commit_ou_falhar
 from app.utils.webhooks import disparar_webhook
 from app.utils.auditoria import registrar_auditoria
+from app.utils.notificacoes import notificar
 from app.constants import TipoEventoWebhook
 
 webhook_inbound_bp = Blueprint('webhook_inbound', __name__, url_prefix='/api/v1/webhook')
@@ -63,5 +64,23 @@ def aprovar_via_automacao(agendamento_id):
         'agendamento_id': ag.id, 'cliente_id': ag.cliente_id, 'barbeiro_id': ag.barbeiro_id,
         'data_hora': ag.data_hora.isoformat(), 'aprovado_por': 'automacao_n8n',
     })
+    notificar_pix_aprovado(ag)
+
+    # Gestor(es) e barbeiro não agiram aqui — avisa que a automação decidiu por eles.
+    msg_auto = f'Agendamento #{ag.id} foi aprovado automaticamente pela automação (n8n).'
+    gestores = Usuario.query.filter_by(barbearia_id=ag.barbearia_id, perfil='gestor', ativo=True).all()
+    for gestor in gestores:
+        notificar(
+            barbearia_id=ag.barbearia_id, usuario_id=gestor.id, tipo='pagamento_aprovado_automacao',
+            titulo='Comprovante aprovado automaticamente', mensagem=msg_auto,
+            link=f'/gestor/agenda?agendamento_id={ag.id}', canal='in_app', agendamento_id=ag.id,
+        )
+    barbeiro_notif = db.session.get(Barbeiro, ag.barbeiro_id)
+    if barbeiro_notif:
+        notificar(
+            barbearia_id=ag.barbearia_id, usuario_id=barbeiro_notif.usuario_id, tipo='pagamento_aprovado_automacao',
+            titulo='Comprovante aprovado automaticamente', mensagem=msg_auto,
+            link='/barbeiro/agendamentos', canal='in_app', agendamento_id=ag.id,
+        )
 
     return jsonify({'mensagem': 'Agendamento aprovado automaticamente.', 'id': ag.id, 'status': ag.status}), 200

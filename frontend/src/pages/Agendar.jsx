@@ -60,14 +60,13 @@ export default function Agendar() {
     }).finally(() => setLoading(false))
   }, [])
 
-  // IDs de serviços liberados pelo plano ativo
-  const idsLiberados = planoAtivo
-    ? new Set(planoAtivo.servicos?.map(s => s.servico_id) || [])
-    : null  // null = sem plano = todos
-
-  const servicosFiltrados = planoAtivo
-    ? servicos.filter(s => idsLiberados.has(s.id))
-    : servicos
+  // IDs de serviços cobertos pelo plano ativo — usado só pra destacar o
+  // selo "Incluso no plano", NUNCA pra esconder o resto: o cliente sempre
+  // pode agendar qualquer serviço ativo, pagando avulso os que o plano
+  // não cobre. (Bug real corrigido: antes filtrava a lista pra só mostrar
+  // os serviços do plano, impedindo agendar qualquer coisa fora dele.)
+  const idsLiberados = new Set(planoAtivo?.servicos?.map(s => s.servico_id) || [])
+  const servicosFiltrados = servicos
 
   // Alterna um serviço na seleção múltipla
   const onToggleServico = (sv) => {
@@ -205,12 +204,13 @@ export default function Agendar() {
           {servicosFiltrados.length === 0 ? (
             <div className="card empty">
               <Scissors size={32} style={{ margin: '0 auto 10px', opacity: .3 }} />
-              <p>Nenhum serviço disponível para o seu plano</p>
+              <p>Nenhum serviço disponível</p>
             </div>
           ) : (
             <div className="grid-3">
               {servicosFiltrados.map(sv => {
                 const selecionado = servicosSel.some(s => s.id === sv.id)
+                const noPlano = idsLiberados.has(sv.id)
                 return (
                   <div key={sv.id} className="card" style={{ cursor: 'pointer', transition: 'border-color .15s', borderColor: selecionado ? 'var(--primary)' : 'var(--border)', background: selecionado ? 'rgba(245,158,11,.05)' : undefined }} onClick={() => onToggleServico(sv)}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -219,9 +219,13 @@ export default function Agendar() {
                       </div>
                       <span style={{ fontWeight: 600 }}>{sv.nome}</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--muted)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: 'var(--muted)' }}>
                       <span><Clock size={11} style={{ verticalAlign: 'middle', marginRight: 3 }} />{sv.duracao_minutos || 30} min</span>
-                      <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{fmtMoeda(sv.preco)}</span>
+                      {noPlano ? (
+                        <span className="badge badge-green">Incluso no plano</span>
+                      ) : (
+                        <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{fmtMoeda(sv.preco)}</span>
+                      )}
                     </div>
                   </div>
                 )
@@ -373,6 +377,8 @@ export default function Agendar() {
       {step === 5 && agendamentoCriado && (
         <PixConfirmacao
           codigo={agendamentoCriado.pix.codigo_pix}
+          chavePix={agendamentoCriado.pix.chave_pix}
+          titular={agendamentoCriado.pix.nome_titular}
           uploadFn={(file) => api.pub.uploadComprovante(agendamentoCriado.id, file)}
           showToast={showToast}
           onFinalizar={() => navigate('/cliente/historico')}

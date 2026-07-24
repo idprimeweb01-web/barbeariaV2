@@ -102,7 +102,6 @@
     <option value="agendado">Agendado</option>
     <option value="aguardando_comprovante">Ag. comprovante</option>
     <option value="aguardando_aprovacao">Ag. aprovação</option>
-    <option value="aguardando_pagamento">Ag. PIX (legado)</option>
     <option value="em_atendimento">Em atendimento</option>
     <option value="concluido">Concluído</option>
     <option value="cancelado">Cancelado</option>
@@ -243,6 +242,24 @@ let _totalPaginas = 1;
     });
     popularBarbSelect('naBarbeiro');
   } catch {}
+
+  const agId = new URLSearchParams(window.location.search).get('agendamento_id');
+  if (agId) {
+    try {
+      const det = await Bos.get('/gestor/agendamentos/' + agId);
+      if (det?.inicio) {
+        _data = det.inicio.split('T')[0];
+        document.getElementById('inputData').value = _data;
+        atualizarLabel();
+      }
+      await carregar();
+      if (['aguardando_aprovacao', 'aguardando_comprovante', 'aguardando_pagamento'].includes(det.status)) {
+        abrirPix(Number(agId), det.cliente?.nome || '', det.valor_total || 0);
+      }
+      return;
+    } catch {}
+  }
+
   carregar();
 })();
 

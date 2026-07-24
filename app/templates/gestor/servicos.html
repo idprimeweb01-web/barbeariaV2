@@ -132,7 +132,7 @@
 
   async function deletar(id) {
     const s = _todos.find(x => x.id === id);
-    if (!confirm(`Desativar "${s?.nome}"?`)) return;
+    if (!(await Bos.confirmar(`Desativar "${s?.nome}"?`))) return;
     try {
       await Bos.patch('/gestor/servicos/' + id, { ativo: false });
       toast('Serviço desativado.');
@@ -140,7 +140,7 @@
     } catch(e) { toast(e.message, 'error'); }
   }
 
-  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
   carregar();
 </script>

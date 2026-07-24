@@ -9,10 +9,10 @@ from app.models import (
 from app.exceptions import APIError
 from app.decorators.auth import gestor_required
 from app.labels import L
-from app.utils import normalizar_telefone
+from app.utils import normalizar_telefone, validar_senha
 from app.utils.auditoria import registrar_auditoria
 from app.utils.auth import revogar_todos_tokens
-from app.utils.notificacoes import criar_notificacao
+from app.utils.notificacoes import notificar
 from app.utils.db import commit_ou_falhar
 from app.utils.tz import naive_brasilia
 from app.constants import StatusAgendamento, StatusTransferencia
@@ -116,8 +116,7 @@ def criar_barbeiro():
         raise APIError('"nome" é obrigatório.')
     if not tel:
         raise APIError('"telefone" é obrigatório.')
-    if len(senha) < 6:
-        raise APIError('"senha" deve ter no mínimo 6 caracteres.')
+    validar_senha(senha)
 
     tel_norm, tel_erro = normalizar_telefone(tel)
     if tel_erro:
@@ -245,18 +244,34 @@ def editar_barbeiro(barbeiro_id):
                     ))
                     cli = db.session.get(Cliente, ag.cliente_id)
                     if cli and cli.usuario_id:
-                        criar_notificacao(
+                        notificar(
                             barbearia_id=barbearia_id,
                             usuario_id=cli.usuario_id,
                             tipo='transferencia_pendente',
                             titulo='Seu profissional não estará mais disponível',
-                            corpo=(
+                            mensagem=(
                                 f'O horário de {ag.data_hora.strftime("%d/%m às %H:%M")} está sendo '
                                 'transferido para outro profissional. Você será avisado assim que '
                                 'alguém assumir, ou pode reagendar quando quiser.'
                             ),
+                            link='/cliente/historico',
                             canal='in_app',
                             agendamento_id=ag.id,
+                        )
+                if futuros:
+                    gestores = Usuario.query.filter_by(barbearia_id=barbearia_id, perfil='gestor', ativo=True).all()
+                    for gestor in gestores:
+                        notificar(
+                            barbearia_id=barbearia_id,
+                            usuario_id=gestor.id,
+                            tipo='agendamento_sem_barbeiro',
+                            titulo='Agendamentos aguardando novo profissional',
+                            mensagem=(
+                                f'{len(futuros)} agendamento(s) de {u.nome} ficaram sem profissional '
+                                'e precisam ser transferidos.'
+                            ),
+                            link='/gestor/transferencias',
+                            canal='in_app',
                         )
             else:
                 futuros = futuros_q.all()

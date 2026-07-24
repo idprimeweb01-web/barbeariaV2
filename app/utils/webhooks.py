@@ -40,10 +40,45 @@ def disparar_webhook(barbearia_id: int, tipo_evento: str, dados: dict) -> None:
         )
 
 
+def _barbearia_info(barbearia_id: int) -> dict | None:
+    """Identifica de qual segmento/barbearia veio o evento — vai junto no
+    payload pra quando o mesmo n8n (ou o mesmo gestor, com telefone repetido
+    em mais de uma barbearia) atende vários segmentos ao mesmo tempo."""
+    from app.models import Barbearia
+
+    barbearia = db.session.get(Barbearia, barbearia_id)
+    if not barbearia:
+        return None
+    return {'id': barbearia.id, 'nome': barbearia.nome_exibicao or barbearia.nome, 'slug': barbearia.slug}
+
+
+def _gestor_contato(barbearia_id: int) -> dict | None:
+    """Nome/telefone do gestor ativo da barbearia — vai junto no payload pra
+    quem consome o webhook (n8n) saber pra quem notificar sem precisar de
+    config fixa por instância (cada barbearia tem o seu)."""
+    from app.models import Usuario
+
+    gestor = (
+        Usuario.query
+        .filter_by(barbearia_id=barbearia_id, perfil='gestor', ativo=True)
+        .order_by(Usuario.id)
+        .first()
+    )
+    if not gestor:
+        return None
+    return {'nome': gestor.nome, 'telefone': gestor.telefone}
+
+
 def _enviar_e_logar(barbearia_id: int, url: str, tipo_evento: str, dados: dict) -> None:
     from app.models import WebhookLog
 
-    payload = {'evento': tipo_evento, 'barbearia_id': barbearia_id, 'dados': dados}
+    payload = {
+        'evento': tipo_evento,
+        'barbearia_id': barbearia_id,
+        'barbearia': _barbearia_info(barbearia_id),
+        'gestor': _gestor_contato(barbearia_id),
+        'dados': dados,
+    }
     log = WebhookLog(barbearia_id=barbearia_id, tipo_evento=tipo_evento, payload=payload, sucesso=False)
 
     try:

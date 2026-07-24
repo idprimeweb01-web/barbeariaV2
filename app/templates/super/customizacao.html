@@ -495,7 +495,7 @@ async function fazerUpload(tipo, inputEl) {
 
 async function removerImagem(tipo) {
   if (!_selectedId) return;
-  if (!confirm('Remover esta imagem?')) return;
+  if (!(await Bos.confirmar('Remover esta imagem?'))) return;
   const m = _ZONAS[tipo];
   document.getElementById(m.s).classList.add('on');
   try {

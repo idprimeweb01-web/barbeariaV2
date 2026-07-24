@@ -18,7 +18,7 @@ import datetime as dt
 from app.extensions import db
 from app.models import ClienteVip, ClienteVipHistorico, Cliente, VipNivel
 from app.utils.tz import hoje_brasilia
-from app.utils.notificacoes import criar_notificacao
+from app.utils.notificacoes import notificar
 
 DIAS_TOLERANCIA_VENCIMENTO = 45
 
@@ -56,9 +56,10 @@ def _registrar_e_notificar(cliente_id, barbearia_id, evento_tipo, titulo, texto,
                             nivel_anterior=None, nivel_novo=None, descricao=None):
     usuario_id = _usuario_id_do_cliente(cliente_id)
     if usuario_id:
-        criar_notificacao(
+        notificar(
             barbearia_id=barbearia_id, usuario_id=usuario_id,
-            tipo=evento_tipo.lower(), titulo=titulo, corpo=texto, canal='in_app',
+            tipo=evento_tipo.lower(), titulo=titulo, mensagem=texto,
+            link='/cliente/beneficios', canal='in_app',
         )
     db.session.add(ClienteVipHistorico(
         barbearia_id=barbearia_id, cliente_id=cliente_id, evento_tipo=evento_tipo,
@@ -103,7 +104,7 @@ def processar_evento_plano(cliente_id: int, barbearia_id: int, evento_tipo: str)
     """Processa eventos de plano (aprovacao, cancelamento, vencimento) e
     atualiza o status VIP. As mudanças em ClienteVip/ClienteVipHistorico não
     são comitadas aqui — quem chama decide o momento (mesmo padrão usado em
-    commit_ou_falhar nos chamadores). ATENÇÃO: criar_notificacao()
+    commit_ou_falhar nos chamadores). ATENÇÃO: notificar()
     faz seu próprio commit interno (padrão já existente no projeto) — se
     nivel_novo != nivel_anterior, a notificação já sai comitada antes do
     commit_ou_falhar do chamador; não depender de tudo cair na mesma

@@ -75,6 +75,7 @@ def registrar_saida(produto_id: int, barbearia_id: int, quantidade: int, usuario
 
     produto = _get_produto_ou_404(produto_id, barbearia_id)
     nome = produto.nome
+    estoque_antes = produto.quantidade_estoque
 
     result = db.session.execute(text('''
         UPDATE produtos SET quantidade_estoque = quantidade_estoque - :q
@@ -87,7 +88,30 @@ def registrar_saida(produto_id: int, barbearia_id: int, quantidade: int, usuario
     db.session.refresh(produto)
     _registrar_movimentacao(produto, tipo, quantidade, usuario_id, motivo,
                              referencia_venda_id, referencia_atendimento_id)
+
+    # Notifica só na TRAVESSIA do limiar (estava acima, ficou em/abaixo) —
+    # nunca a cada venda subsequente enquanto permanece abaixo do mínimo.
+    if estoque_antes > produto.estoque_minimo >= produto.quantidade_estoque:
+        _notificar_estoque_baixo(produto)
+
     return produto
+
+
+def _notificar_estoque_baixo(produto) -> None:
+    from app.models import Usuario
+    from app.utils.notificacoes import notificar
+
+    gestores = Usuario.query.filter_by(barbearia_id=produto.barbearia_id, perfil='gestor', ativo=True).all()
+    for gestor in gestores:
+        notificar(
+            barbearia_id=produto.barbearia_id,
+            usuario_id=gestor.id,
+            tipo='estoque_baixo',
+            titulo='Estoque baixo',
+            mensagem=f'"{produto.nome}" chegou a {produto.quantidade_estoque} unidade(s) (mínimo: {produto.estoque_minimo}).',
+            link='/gestor/produtos',
+            canal='in_app',
+        )
 
 
 def ajustar_estoque(produto_id: int, barbearia_id: int, delta: int, usuario_id: int, motivo: str):

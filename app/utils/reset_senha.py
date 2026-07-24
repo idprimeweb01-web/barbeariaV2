@@ -12,7 +12,7 @@ from app.models import SolicitacaoSenha, Usuario
 from app.exceptions import APIError
 from werkzeug.security import generate_password_hash
 from app.utils.auth import revogar_todos_tokens
-from app.utils.notificacoes import criar_notificacao
+from app.utils.notificacoes import notificar
 
 EXPIRA_EM_HORAS = 72
 MAX_TENTATIVAS = 3
@@ -137,19 +137,27 @@ def _obter_hierarquia(usuario: Usuario) -> list:
     return hierarquia
 
 
+_TELA_SOLICITACOES_SENHA = {
+    'gestor':      '/gestor/solicitacoes-senha',
+    'barbeiro':    '/barbeiro/solicitacoes-senha',
+    'super_admin': '/super/solicitacoes-senha',
+}
+
+
 def _enviar_codigo(destino: Usuario, usuario: Usuario, codigo: str) -> None:
     """Entrega o código via notificação in-app — é o que o destino (gestor/
-    super_admin) vai ver na tela pra encaminhar por WhatsApp. barbearia_id
-    usa o da PRÓPRIA barbearia do destino (super_admin não tem uma fixa;
-    cai no tenant do usuário que pediu o reset)."""
-    criar_notificacao(
+    barbeiro/super_admin) vai ver na tela pra encaminhar por WhatsApp.
+    barbearia_id usa o da PRÓPRIA barbearia do destino (super_admin não tem
+    uma fixa; cai no tenant do usuário que pediu o reset)."""
+    notificar(
         barbearia_id=destino.barbearia_id or usuario.barbearia_id,
         usuario_id=destino.id,
         tipo='reset_senha',
         titulo=f'Código de recuperação para {usuario.nome}',
-        corpo=(
+        mensagem=(
             f'{usuario.nome} ({usuario.perfil}) esqueceu a senha. '
             f'Código: {codigo}. Encaminhe por WhatsApp — expira em {EXPIRA_EM_HORAS}h.'
         ),
+        link=_TELA_SOLICITACOES_SENHA.get(destino.perfil),
         canal='in_app',
     )

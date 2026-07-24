@@ -272,7 +272,7 @@ async function toggleModoBrinde(id) {
 }
 
 async function deletarNivel(id) {
-  if (!confirm('Deletar este nível VIP permanentemente?')) return;
+  if (!(await Bos.confirmar('Deletar este nível VIP permanentemente?'))) return;
   try {
     await Bos.delete('/gestor/vip/niveis/' + id);
     toast('Nível deletado.', 'success');
