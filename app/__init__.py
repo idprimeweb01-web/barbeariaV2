@@ -196,6 +196,9 @@ def create_app(config=None):
     from .routes.pub.agendamento import pub_bp
     app.register_blueprint(pub_bp)
 
+    from .routes.pub.whatsapp import pub_whatsapp_bp
+    app.register_blueprint(pub_whatsapp_bp)
+
     from .routes.cliente.agendamento import cliente_bp
     app.register_blueprint(cliente_bp)
 
@@ -244,6 +247,12 @@ def create_app(config=None):
     from .routes.barbeiro.notificacoes import barbeiro_notif_bp
     app.register_blueprint(barbeiro_notif_bp)
 
+    from .routes.gestor.notificacoes import gestor_notif_bp
+    app.register_blueprint(gestor_notif_bp)
+
+    from .routes.super.notificacoes import super_notif_bp
+    app.register_blueprint(super_notif_bp)
+
     from .routes.barbeiro.agendamentos import barbeiro_ag_bp
     app.register_blueprint(barbeiro_ag_bp)
 
@@ -283,8 +292,23 @@ def create_app(config=None):
     from .routes.gestor.webhook import gestor_webhook_bp
     app.register_blueprint(gestor_webhook_bp)
 
+    from .routes.gestor.whatsapp_bot import gestor_whatsapp_bot_bp
+    app.register_blueprint(gestor_whatsapp_bot_bp)
+
     from .routes.webhook_inbound import webhook_inbound_bp
     app.register_blueprint(webhook_inbound_bp)
+
+    from .routes.comprovante import comprovante_bp
+    app.register_blueprint(comprovante_bp)
+
+    from .routes.gestor.perfil import gestor_perfil_bp
+    app.register_blueprint(gestor_perfil_bp)
+
+    from .routes.cliente.produtos import cliente_produtos_bp
+    app.register_blueprint(cliente_produtos_bp)
+
+    from .routes.gestor.compras import gestor_compras_bp
+    app.register_blueprint(gestor_compras_bp)
 
     from .routes.gestor.solicitacoes_senha import gestor_solicitacoes_senha_bp
     app.register_blueprint(gestor_solicitacoes_senha_bp)
@@ -294,6 +318,15 @@ def create_app(config=None):
 
     from .routes.super.solicitacoes_senha import super_solicitacoes_senha_bp
     app.register_blueprint(super_solicitacoes_senha_bp)
+
+    from .routes.cliente.duvidas import cliente_duvidas_bp
+    app.register_blueprint(cliente_duvidas_bp)
+
+    from .routes.gestor.duvidas import gestor_duvidas_bp
+    app.register_blueprint(gestor_duvidas_bp)
+
+    from .routes.super.duvidas import super_duvidas_bp
+    app.register_blueprint(super_duvidas_bp)
 
     # ── Scheduler de lembretes ────────────────────────────────────────────────
     # Iniciado após todos os blueprints para garantir que os modelos estejam prontos.
