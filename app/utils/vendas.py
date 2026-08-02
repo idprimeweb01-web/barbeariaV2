@@ -149,7 +149,7 @@ def criar_venda_core(barbearia_id: int, usuario_registro_id: int, itens: list,
                 )
         else:
             try:
-                cupom, valor_desconto = validar_cupom(barbearia_id, cupom_codigo, itens_cupom)
+                cupom, valor_desconto = validar_cupom(barbearia_id, cupom_codigo, itens_cupom, cliente_id=cliente_id)
                 incrementar_uso_cupom(cupom.id, barbearia_id)
                 registrar_uso_cupom(
                     cupom.id, barbearia_id, valor_original=valor_total, valor_desconto=valor_desconto,

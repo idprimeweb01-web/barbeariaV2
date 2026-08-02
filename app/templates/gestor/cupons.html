@@ -59,6 +59,7 @@
       <div class="field"><label>Valor *</label><input type="number" id="fValor" min="0.01" step="0.01" required></div>
       <div class="field"><label>Data de Expiração *</label><input type="date" id="fData" required></div>
       <div class="field"><label>Quantidade Máxima de Utilizações</label><input type="number" id="fMax" min="1" step="1" placeholder="Deixe vazio para ilimitado"></div>
+      <div class="field"><label>Limite de Uso por Cliente</label><input type="number" id="fLimiteCliente" min="1" step="1" placeholder="Deixe vazio para ilimitado por cliente"></div>
       <div class="field">
         <label>Serviços</label>
         <div class="modo-row">
@@ -243,6 +244,7 @@
     document.getElementById('fValor').value  = c.valor_desconto;
     document.getElementById('fData').value   = c.data_expiracao;
     document.getElementById('fMax').value    = c.quantidade_maxima_usos ?? '';
+    document.getElementById('fLimiteCliente').value = c.limite_uso_por_cliente ?? '';
     document.getElementById('fAtivo').checked = c.ativo;
     setModo('modoServico', c.servicos_modo || 'nenhum');
     setModo('modoProduto', c.produtos_modo || 'nenhum');
@@ -314,6 +316,7 @@
     const btn = document.getElementById('btnSalvar');
     btn.disabled = true; btn.textContent = 'Salvando…';
     const max = document.getElementById('fMax').value;
+    const limiteCliente = document.getElementById('fLimiteCliente').value;
     const dados = {
       nome:                   document.getElementById('fNome').value.trim(),
       codigo:                 document.getElementById('fCodigo').value.trim().toUpperCase(),
@@ -321,6 +324,7 @@
       valor_desconto:         parseFloat(document.getElementById('fValor').value),
       data_expiracao:         document.getElementById('fData').value,
       quantidade_maxima_usos: max ? parseInt(max) : null,
+      limite_uso_por_cliente: limiteCliente ? parseInt(limiteCliente) : null,
       servicos_modo:          modoSelecionado('modoServico'),
       servico_ids:            servicosMarcados(),
       produtos_modo:          modoSelecionado('modoProduto'),

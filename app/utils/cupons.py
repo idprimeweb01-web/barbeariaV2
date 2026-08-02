@@ -6,7 +6,8 @@ from app.utils.features import feature_ativa
 from app.utils.tz import hoje_brasilia
 
 
-def validar_cupom(barbearia_id: int, codigo: str, itens: list[dict]) -> tuple[Cupom, float]:
+def validar_cupom(barbearia_id: int, codigo: str, itens: list[dict],
+                   cliente_id: int | None = None) -> tuple[Cupom, float]:
     """
     Valida um código de cupom para a barbearia e retorna (cupom, valor_desconto).
     Levanta APIError (422) com mensagem específica em qualquer condição inválida.
@@ -16,6 +17,13 @@ def validar_cupom(barbearia_id: int, codigo: str, itens: list[dict]) -> tuple[Cu
     O desconto é calculado só sobre a fatia elegível (serviços/produtos aos
     quais o cupom está vinculado) — nunca sobre o total do carrinho inteiro,
     a menos que o cupom não tenha nenhum vínculo (aí vale pra tudo).
+
+    `cliente_id`: quando informado e o cupom tiver `limite_uso_por_cliente`
+    setado, bloqueia se esse cliente já usou o cupom `limite_uso_por_cliente`
+    vezes ou mais (conta TODO CupomUso, mesmo de agendamento/venda cancelado
+    depois — ver comentário no model `Cupom`). Omitir (None) pula essa
+    checagem — usado por chamadores que não têm cliente identificado (ex:
+    venda avulsa com `cliente_nome_livre`).
     """
     if not feature_ativa(barbearia_id, 'cupons'):
         raise APIError('Cupons não estão disponíveis para esta barbearia.', 403)
@@ -33,6 +41,10 @@ def validar_cupom(barbearia_id: int, codigo: str, itens: list[dict]) -> tuple[Cu
         raise APIError('Este cupom expirou.', 422)
     if cupom.quantidade_maxima_usos is not None and cupom.quantidade_usos >= cupom.quantidade_maxima_usos:
         raise APIError('Este cupom atingiu o limite de utilizações.', 422)
+    if cliente_id is not None and cupom.limite_uso_por_cliente is not None:
+        usos_deste_cliente = CupomUso.query.filter_by(cupom_id=cupom.id, cliente_id=cliente_id).count()
+        if usos_deste_cliente >= cupom.limite_uso_por_cliente:
+            raise APIError('Você já atingiu o limite de uso deste cupom.', 422)
 
     subtotal_elegivel = _subtotal_elegivel(cupom, itens)
     if subtotal_elegivel <= 0:

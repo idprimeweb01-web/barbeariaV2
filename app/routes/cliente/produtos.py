@@ -160,7 +160,7 @@ def criar_compra():
     valor_desconto = 0.0
     if cupom_codigo:
         itens_cupom = [{'tipo': 'produto', 'ref_id': i['produto'].id, 'valor': i['preco'] * i['quantidade']} for i in itens_montados]
-        _, valor_desconto = validar_cupom(g.barbearia_id, cupom_codigo, itens_cupom)
+        _, valor_desconto = validar_cupom(g.barbearia_id, cupom_codigo, itens_cupom, cliente_id=cli.id)
 
     valor_total = round(subtotal - valor_desconto, 2)
 

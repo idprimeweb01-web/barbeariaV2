@@ -3,6 +3,7 @@ from flask import Blueprint, request, g, jsonify
 from app.exceptions import APIError
 from app.decorators.auth import cliente_required
 from app.extensions import limiter
+from app.models import Cliente
 from app.utils.cupons import validar_cupom
 
 cliente_cupons_bp = Blueprint('cliente_cupons', __name__, url_prefix='/api/v1/cliente')
@@ -31,7 +32,8 @@ def validar_cupom_cliente():
     if not itens:
         itens = [{'tipo': None, 'ref_id': None, 'valor': subtotal}]
 
-    cupom, desconto = validar_cupom(g.barbearia_id, codigo, itens)
+    cli = Cliente.query.filter_by(barbearia_id=g.barbearia_id, usuario_id=g.user_id).first()
+    cupom, desconto = validar_cupom(g.barbearia_id, codigo, itens, cliente_id=(cli.id if cli else None))
 
     return jsonify({
         'cupom_id':       cupom.id,

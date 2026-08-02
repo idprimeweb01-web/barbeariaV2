@@ -281,7 +281,7 @@ def _criar_agendamento_core(
     valor_desconto = 0.0
     if cupom_codigo:
         itens_cupom = [{'tipo': 'servico', 'ref_id': i['servico'].id, 'valor': i['preco']} for i in itens_finais]
-        cupom, valor_desconto = validar_cupom(barbearia_id, cupom_codigo, itens_cupom)
+        cupom, valor_desconto = validar_cupom(barbearia_id, cupom_codigo, itens_cupom, cliente_id=cliente_id)
 
     valor_total = round(subtotal - valor_desconto, 2)
 

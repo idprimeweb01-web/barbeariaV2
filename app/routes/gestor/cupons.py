@@ -70,6 +70,7 @@ def _fmt_cupom(c):
         'data_expiracao':         c.data_expiracao.isoformat(),
         'quantidade_maxima_usos': c.quantidade_maxima_usos,
         'quantidade_usos':        c.quantidade_usos,
+        'limite_uso_por_cliente': c.limite_uso_por_cliente,
         'ativo':                  c.ativo,
         'expirado':               c.data_expiracao < hoje_brasilia(),
         'servicos_modo':          servicos_modo,
@@ -150,6 +151,14 @@ def criar_cupom():
         except (TypeError, ValueError, AssertionError):
             raise APIError('"quantidade_maxima_usos" deve ser um inteiro positivo (ou omitido).')
 
+    limite_cliente = dados.get('limite_uso_por_cliente')
+    if limite_cliente is not None:
+        try:
+            limite_cliente = int(limite_cliente)
+            assert limite_cliente > 0
+        except (TypeError, ValueError, AssertionError):
+            raise APIError('"limite_uso_por_cliente" deve ser um inteiro positivo (ou omitido).')
+
     if Cupom.query.filter_by(barbearia_id=g.barbearia_id, codigo=codigo).first():
         raise APIError(f'Já existe um cupom com o código "{codigo}".', 409)
 
@@ -166,6 +175,7 @@ def criar_cupom():
         valor_desconto=valor,
         data_expiracao=data_exp,
         quantidade_maxima_usos=qtd_max,
+        limite_uso_por_cliente=limite_cliente,
         ativo=dados.get('ativo', True) if isinstance(dados.get('ativo', True), bool) else True,
         aplica_todos_servicos=bool(aplica_todos_servicos),
         aplica_todos_produtos=bool(aplica_todos_produtos),
@@ -240,6 +250,16 @@ def editar_cupom(cupom_id):
             except (TypeError, ValueError, AssertionError):
                 raise APIError('"quantidade_maxima_usos" deve ser um inteiro positivo (ou nulo).')
         c.quantidade_maxima_usos = qtd_max
+
+    if 'limite_uso_por_cliente' in dados:
+        limite_cliente = dados.get('limite_uso_por_cliente')
+        if limite_cliente is not None:
+            try:
+                limite_cliente = int(limite_cliente)
+                assert limite_cliente > 0
+            except (TypeError, ValueError, AssertionError):
+                raise APIError('"limite_uso_por_cliente" deve ser um inteiro positivo (ou nulo).')
+        c.limite_uso_por_cliente = limite_cliente
 
     if 'ativo' in dados and isinstance(dados.get('ativo'), bool):
         c.ativo = dados['ativo']

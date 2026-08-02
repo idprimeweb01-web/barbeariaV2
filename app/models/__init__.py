@@ -766,6 +766,10 @@ class Cupom(TenantMixin, db.Model):
             "tipo_desconto != 'percentual' OR valor_desconto <= 100",
             name='ck_cupons_percentual_max_100',
         ),
+        db.CheckConstraint(
+            'limite_uso_por_cliente IS NULL OR limite_uso_por_cliente > 0',
+            name='ck_cupons_limite_uso_por_cliente_positivo',
+        ),
     )
 
     id                      = db.Column(db.Integer, primary_key=True)
@@ -774,8 +778,15 @@ class Cupom(TenantMixin, db.Model):
     tipo_desconto           = db.Column(db.String(20), nullable=False)  # percentual, valor_fixo
     valor_desconto          = db.Column(db.Numeric(10, 2), nullable=False)
     data_expiracao          = db.Column(db.Date, nullable=False)
-    quantidade_maxima_usos  = db.Column(db.Integer)  # NULL = ilimitado
+    quantidade_maxima_usos  = db.Column(db.Integer)  # NULL = ilimitado (limite GLOBAL, todos os clientes juntos)
     quantidade_usos         = db.Column(db.Integer, nullable=False, default=0)
+    # NULL = sem limite por cliente (só o global acima vale). Contabiliza TODO
+    # CupomUso do (cupom, cliente) — inclusive de agendamento/venda cancelado
+    # depois — de propósito: cancelar não devolve a "vaga" do cliente contra
+    # o cupom, senão bastaria agendar/cancelar/reagendar pra reusar um cupom
+    # de uso único indefinidamente (era exatamente o risco documentado no
+    # achado #6 de AUDITORIA_PRODUCAO.md). Ver app/utils/cupons.py::validar_cupom.
+    limite_uso_por_cliente  = db.Column(db.Integer)
     ativo                   = db.Column(db.Boolean, nullable=False, default=True)
     # Independentes um do outro: um cupom pode valer pra TODOS os serviços e
     # SÓ um produto específico ao mesmo tempo, por exemplo. Quando False e
