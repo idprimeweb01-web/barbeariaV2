@@ -1,6 +1,7 @@
 import calendar
 from datetime import date, datetime, timedelta, time as time_t
 from flask import Blueprint, request, g, jsonify
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from app.extensions import db
 from app.models import (
@@ -458,7 +459,15 @@ def agendamento_manual():
         metodo_pagamento='presencial',
     )
     db.session.add(ag)
-    db.session.flush()
+    try:
+        db.session.flush()
+    except IntegrityError:
+        # Rede de segurança final: uq_ag_barbeiro_slot pegou uma corrida que
+        # verificar_conflito não pôde evitar (dois gestores/telas criando
+        # manualmente o mesmo horário ao mesmo tempo) — mesmo padrão de
+        # pub/agendamento.py:311-318.
+        db.session.rollback()
+        raise APIError('Este horário acabou de ser reservado. Escolha outro.', 409)
 
     db.session.add(AgendamentoServico(
         agendamento_id=ag.id,
