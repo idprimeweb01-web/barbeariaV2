@@ -1,6 +1,8 @@
 """Aprovação de pedidos de compra de produto feitos pelo cliente no portal.
 Aprovar gera uma Venda de verdade (baixa de estoque, comissão, cupom) via o
 mesmo núcleo usado pelo PDV do gestor — ver app/utils/vendas.py."""
+import logging
+
 from flask import Blueprint, request, g, jsonify
 from app.extensions import db
 from app.models import SolicitacaoCompraProduto, SolicitacaoCompraItem, Cliente, Produto
@@ -15,6 +17,8 @@ from app.utils.notificacoes import notificar
 from app.utils.auditoria import registrar_auditoria
 from app.utils.comprovante_link import gerar_link_comprovante
 from app.constants import StatusSolicitacaoCompra, TipoEventoWebhook
+
+logger = logging.getLogger(__name__)
 
 gestor_compras_bp = Blueprint('gestor_compras', __name__, url_prefix='/api/v1/gestor/compras')
 
@@ -105,7 +109,19 @@ def aprovar_compra(solicitacao_id):
         cliente_id=sol.cliente_id,
         metodo_pagamento=sol.metodo_pagamento,
         cupom_codigo=sol.cupom_codigo,
+        # Honra o preço/desconto congelados no pedido (o que o cliente já
+        # pagou via PIX) em vez do preço atual do produto / cupom revalidado
+        # do zero — ver PLANO_DE_ACAO.md achado C1.
+        precos_congelados={it.produto_id: float(it.preco_unitario) for it in itens},
+        valor_desconto_congelado=float(sol.valor_desconto),
     )
+
+    if abs(float(venda.valor_total) - float(sol.valor_total)) > 0.01:
+        logger.warning(
+            'Venda aprovada com valor divergente do congelado na solicitação: '
+            'solicitacao_id=%s valor_congelado=%.2f valor_venda=%.2f barbearia_id=%s',
+            sol.id, float(sol.valor_total), float(venda.valor_total), g.barbearia_id,
+        )
 
     sol.venda_id = venda.id
     sol.status = StatusSolicitacaoCompra.APROVADA

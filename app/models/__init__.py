@@ -827,6 +827,11 @@ class CupomUso(db.Model):
     valor_original  = db.Column(db.Numeric(10, 2), nullable=False)
     valor_desconto  = db.Column(db.Numeric(10, 2), nullable=False)
     valor_final     = db.Column(db.Numeric(10, 2), nullable=False)
+    # True quando o uso foi honrado apesar do contador global do cupom já ter
+    # estourado (aprovação de compra com valor congelado — o cliente já pagou
+    # com o desconto, então a venda nunca é bloqueada por isso; só o contador
+    # de Cupom.quantidade_usos fica sem incrementar nesse caso específico).
+    honrado_fora_limite = db.Column(db.Boolean, nullable=False, default=False)
     criado_em       = db.Column(db.DateTime, default=_utcnow)
 
 

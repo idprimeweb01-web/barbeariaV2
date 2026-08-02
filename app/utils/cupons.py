@@ -124,10 +124,13 @@ def decrementar_uso_cupom(cupom_id: int, barbearia_id: int):
 
 def registrar_uso_cupom(cupom_id: int, barbearia_id: int, valor_original: float, valor_desconto: float,
                          cliente_id: int | None = None, agendamento_id: int | None = None,
-                         venda_id: int | None = None):
+                         venda_id: int | None = None, honrado_fora_limite: bool = False):
     """Grava uma linha de histórico pra cada aplicação bem-sucedida de cupom —
     é o que alimenta o relatório de uso (quem usou, quando, quanto foi descontado).
-    Chamar sempre junto com incrementar_uso_cupom(), na mesma transação."""
+    Chamar sempre junto com incrementar_uso_cupom(), na mesma transação — exceto
+    no caso `honrado_fora_limite=True` (aprovação de compra já paga, cupom
+    estourou nesse meio-tempo: o uso é registrado pra auditoria, mas o contador
+    global de Cupom.quantidade_usos não é incrementado)."""
     db.session.add(CupomUso(
         barbearia_id=barbearia_id,
         cupom_id=cupom_id,
@@ -137,4 +140,5 @@ def registrar_uso_cupom(cupom_id: int, barbearia_id: int, valor_original: float,
         valor_original=round(valor_original, 2),
         valor_desconto=round(valor_desconto, 2),
         valor_final=round(valor_original - valor_desconto, 2),
+        honrado_fora_limite=honrado_fora_limite,
     ))

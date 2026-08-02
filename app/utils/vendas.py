@@ -3,6 +3,8 @@ Núcleo de criação/cancelamento de Venda avulsa de produto (Script 18).
 Compartilhado entre gestor/vendas.py e barbeiro/vendas.py — mesma lógica,
 só muda quem pode ser `barbeiro_id` (gestor escolhe; barbeiro é ele mesmo).
 """
+import logging
+
 from app.extensions import db
 from app.exceptions import APIError
 from app.constants import MetodoPagamentoVenda, StatusVenda, TipoMovimentacaoEstoque
@@ -10,11 +12,14 @@ from app.utils import estoque as estoque_service
 from app.utils.estoque import calcular_comissao_venda
 from app.utils.cupons import validar_cupom, incrementar_uso_cupom, registrar_uso_cupom
 
+logger = logging.getLogger(__name__)
+
 
 def criar_venda_core(barbearia_id: int, usuario_registro_id: int, itens: list,
                       barbeiro_id: int = None, cliente_id: int = None,
                       cliente_nome_livre: str = None, metodo_pagamento: str = None,
-                      cupom_codigo: str = None):
+                      cupom_codigo: str = None, precos_congelados: dict = None,
+                      valor_desconto_congelado: float = None):
     """
     itens: [{'produto_id': int, 'quantidade': int}, ...]
     Valida estoque via serviço central (com lock), calcula total e comissão
@@ -22,8 +27,16 @@ def criar_venda_core(barbearia_id: int, usuario_registro_id: int, itens: list,
     (saida_venda) tudo na mesma transação. Levanta APIError em qualquer
     violação (produto inexistente, estoque insuficiente, etc.) — quem
     chama decide se comita ou propaga.
+
+    `precos_congelados` ({produto_id: preco_unitario}) e
+    `valor_desconto_congelado` são usados só pela aprovação de compra do
+    cliente (gestor/compras.py) pra honrar o valor que já foi pago via PIX,
+    em vez de recalcular com o preço/cupom ATUAIS do momento da aprovação —
+    ver PLANO_DE_ACAO.md achado C1. Quando ausentes (uso normal do PDV),
+    comportamento idêntico a antes: preço atual do produto, cupom revalidado
+    do zero.
     """
-    from app.models import Venda, VendaItem, Produto, Barbeiro, Cliente
+    from app.models import Venda, VendaItem, Produto, Barbeiro, Cliente, Cupom
 
     if not itens:
         raise APIError('Informe ao menos um item para a venda.', 422)
@@ -71,7 +84,10 @@ def criar_venda_core(barbearia_id: int, usuario_registro_id: int, itens: list,
         if not produto:
             raise APIError(f'Produto id={produto_id} não encontrado ou inativo.', 404)
 
-        preco_unitario = float(produto.preco)
+        if precos_congelados is not None and produto_id in precos_congelados:
+            preco_unitario = float(precos_congelados[produto_id])
+        else:
+            preco_unitario = float(produto.preco)
         subtotal = round(preco_unitario * quantidade, 2)
         comissao = calcular_comissao_venda(barbeiro, subtotal) if barbeiro else 0.0
 
@@ -95,16 +111,53 @@ def criar_venda_core(barbearia_id: int, usuario_registro_id: int, itens: list,
 
     valor_desconto = 0.0
     if cupom_codigo:
-        try:
-            cupom, valor_desconto = validar_cupom(barbearia_id, cupom_codigo, itens_cupom)
-            incrementar_uso_cupom(cupom.id, barbearia_id)
-            registrar_uso_cupom(
-                cupom.id, barbearia_id, valor_original=valor_total, valor_desconto=valor_desconto,
-                cliente_id=cliente_id, venda_id=venda.id,
-            )
-        except APIError:
-            db.session.rollback()
-            raise
+        if valor_desconto_congelado is not None:
+            # Honra o valor que o cliente já pagou — não revalida o cupom
+            # (pode ter expirado/esgotado/sido desativado entre o pedido e a
+            # aprovação; o dinheiro já entrou com aquele desconto, então a
+            # venda não pode ser bloqueada nem recalculada por isso).
+            valor_desconto = round(float(valor_desconto_congelado), 2)
+            cupom = Cupom.query.filter_by(barbearia_id=barbearia_id, codigo=cupom_codigo.strip().upper()).first()
+            if cupom:
+                try:
+                    incrementar_uso_cupom(cupom.id, barbearia_id)
+                    registrar_uso_cupom(
+                        cupom.id, barbearia_id, valor_original=valor_total, valor_desconto=valor_desconto,
+                        cliente_id=cliente_id, venda_id=venda.id,
+                    )
+                except APIError:
+                    # Contador global esgotado nesse meio-tempo — venda segue
+                    # honrando o valor pago; só o contador de Cupom não é
+                    # incrementado. Fica marcado pra auditoria (ver
+                    # CupomUso.honrado_fora_limite) e logado como warning
+                    # (aparece no Sentry quando integrado).
+                    registrar_uso_cupom(
+                        cupom.id, barbearia_id, valor_original=valor_total, valor_desconto=valor_desconto,
+                        cliente_id=cliente_id, venda_id=venda.id, honrado_fora_limite=True,
+                    )
+                    logger.warning(
+                        'Compra aprovada com cupom fora do limite global (honrado mesmo assim): '
+                        'cupom_codigo=%s cupom_id=%s barbearia_id=%s venda_id=%s',
+                        cupom_codigo, cupom.id, barbearia_id, venda.id,
+                    )
+            else:
+                logger.warning(
+                    'Compra aprovada honrando desconto de cupom que não foi encontrado no catálogo '
+                    '(desconto aplicado à venda mesmo assim, sem registro de CupomUso): '
+                    'cupom_codigo=%s barbearia_id=%s venda_id=%s',
+                    cupom_codigo, barbearia_id, venda.id,
+                )
+        else:
+            try:
+                cupom, valor_desconto = validar_cupom(barbearia_id, cupom_codigo, itens_cupom)
+                incrementar_uso_cupom(cupom.id, barbearia_id)
+                registrar_uso_cupom(
+                    cupom.id, barbearia_id, valor_original=valor_total, valor_desconto=valor_desconto,
+                    cliente_id=cliente_id, venda_id=venda.id,
+                )
+            except APIError:
+                db.session.rollback()
+                raise
 
     venda.valor_total = round(valor_total - valor_desconto, 2)
     return venda
