@@ -140,7 +140,7 @@ def aprovar_compra(solicitacao_id):
 def rejeitar_compra(solicitacao_id):
     sol = SolicitacaoCompraProduto.query.filter_by(
         id=solicitacao_id, barbearia_id=g.barbearia_id
-    ).first()
+    ).with_for_update().first()
     if not sol:
         raise APIError('Pedido não encontrado.', 404)
     if sol.status != StatusSolicitacaoCompra.PENDENTE:
