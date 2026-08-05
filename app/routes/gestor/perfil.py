@@ -104,6 +104,12 @@ def editar_conta():
         email = (dados['email'] or '').strip().lower()
         if not email:
             raise APIError('"email" não pode ser vazio.', 422)
+        # Checagem GLOBAL de propósito (não escopada por barbearia_id): e-mail
+        # é único no sistema inteiro, não por tenant — decisão do dono
+        # (PLANO_DE_ACAO.md achado M3). Efeito colateral aceito: a resposta
+        # 409 confirma a um gestor que já existe uma conta com esse e-mail em
+        # OUTRA barbearia. Não "corrigir" pra escopar por tenant sem validar
+        # de novo com o dono antes — mudaria o comportamento de login.
         existente = Usuario.query.filter(Usuario.email == email, Usuario.id != u.id).first()
         if existente:
             raise APIError('Já existe uma conta com este e-mail.', 409)
