@@ -19,6 +19,7 @@ from app.utils.agenda import (
     aprovar_comprovante_pix, notificar_pix_aprovado,
 )
 from app.utils.cupons import decrementar_uso_cupom
+from app.utils.planos import estornar_creditos_plano
 from app.utils.comprovante_link import gerar_link_comprovante
 from app.utils.notificacoes import notificar
 from app.utils.auditoria import registrar_auditoria
@@ -230,6 +231,11 @@ def cancelar_agendamento_gestor(ag_id):
 
     if ag.cupom_id and ag.status == StatusAgendamento.AGENDADO:
         decrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
+    # Exceção manual: gestor pode marcar `sem_estorno_plano: true` pra
+    # cancelar sem devolver o crédito (ex: cliente confirmou presença fora
+    # do sistema) — decisão de negócio, não disponível pro próprio cliente
+    # nem pro barbeiro.
+    estornar_creditos_plano(ag, forcar_sem_estorno=bool(dados.get('sem_estorno_plano')))
 
     ag.status = StatusAgendamento.CANCELADO
     commit_ou_falhar('gestor.agendamento.cancelar_agendamento_gestor')

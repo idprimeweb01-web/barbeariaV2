@@ -15,6 +15,7 @@ from app.utils.agenda import (
     aprovar_comprovante_pix, notificar_pix_aprovado,
 )
 from app.utils.cupons import decrementar_uso_cupom
+from app.utils.planos import estornar_creditos_plano
 from app.utils.comprovante_link import gerar_link_comprovante
 from app.utils.notificacoes import notificar
 from app.utils.auditoria import registrar_auditoria
@@ -225,6 +226,7 @@ def cancelar_agendamento(ag_id):
         ag.observacao = motivo[:300]
     if ag.cupom_id and ag.status == StatusAgendamento.AGENDADO:
         decrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
+    estornar_creditos_plano(ag)
     ag.status = StatusAgendamento.CANCELADO
     commit_ou_falhar('barbeiro.agendamentos.cancelar_agendamento')
 

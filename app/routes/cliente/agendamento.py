@@ -7,6 +7,7 @@ from app.exceptions import APIError
 from app.decorators.auth import cliente_required
 from app.utils.agenda import fim_agendamento
 from app.utils.cupons import decrementar_uso_cupom
+from app.utils.planos import estornar_creditos_plano
 from app.utils.webhooks import disparar_webhook
 from app.utils.notificacoes import notificar
 from app.utils.auditoria import registrar_auditoria
@@ -175,6 +176,7 @@ def cancelar_agendamento(ag_id):
 
     if ag.cupom_id and ag.status == StatusAgendamento.AGENDADO:
         decrementar_uso_cupom(ag.cupom_id, ag.barbearia_id)
+    estornar_creditos_plano(ag)
 
     ag.status = StatusAgendamento.CANCELADO
     commit_ou_falhar(
