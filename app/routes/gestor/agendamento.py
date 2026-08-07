@@ -214,7 +214,7 @@ def aprovar_agendamento(ag_id):
 @gestor_agenda_bp.put('/agendamentos/<int:ag_id>/cancelar')
 @gestor_required
 def cancelar_agendamento_gestor(ag_id):
-    ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id).first()
+    ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id).with_for_update().first()
     if not ag:
         raise APIError(f'{L("agendamento")} não encontrado.', 404)
     if ag.status in (StatusAgendamento.CANCELADO, StatusAgendamento.CONCLUIDO):

@@ -143,7 +143,7 @@ def cancelar_agendamento(ag_id):
 
     ag = Agendamento.query.filter_by(
         id=ag_id, cliente_id=cliente.id, barbearia_id=g.barbearia_id
-    ).first()
+    ).with_for_update().first()
     if not ag:
         raise APIError(f'{L("agendamento")} não encontrado.', 404)
 

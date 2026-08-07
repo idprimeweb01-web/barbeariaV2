@@ -215,7 +215,7 @@ def concluir_agendamento(ag_id):
 @barbeiro_required
 def cancelar_agendamento(ag_id):
     b  = _get_barbeiro(g.user_id, g.barbearia_id)
-    ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id, barbeiro_id=b.id).first()
+    ag = Agendamento.query.filter_by(id=ag_id, barbearia_id=g.barbearia_id, barbeiro_id=b.id).with_for_update().first()
     if not ag:
         raise APIError('Agendamento não encontrado.', 404)
     if ag.status in (StatusAgendamento.CONCLUIDO, StatusAgendamento.CANCELADO):
