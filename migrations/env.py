@@ -25,11 +25,17 @@ def get_engine():
 
 
 def get_engine_url():
+    # hide_password=True (era False no boilerplate padrão do Flask-Migrate):
+    # essa URL vira config.sqlalchemy.url do Alembic e pode acabar em log de
+    # deploy (flask db upgrade roda a cada boot, via Procfile) — sem
+    # mascarar, a senha do Postgres ia em texto puro pro stdout do Railway.
     try:
-        return get_engine().url.render_as_string(hide_password=False).replace(
+        return get_engine().url.render_as_string(hide_password=True).replace(
             '%', '%%')
     except AttributeError:
-        return str(get_engine().url).replace('%', '%%')
+        # Fallback pra SQLAlchemy <1.4 (sem .render_as_string) — não usado
+        # com a versão instalada (2.0.x), mas mascarado por consistência.
+        return str(get_engine().url.set(password='***')).replace('%', '%%')
 
 
 # add your model's MetaData object here
